@@ -1,0 +1,3165 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  api,
+  ensureDesktopHost,
+  HostSocket,
+  isTauri,
+  pickFolderNative,
+  pollHostHealth,
+  restartDesktopHost,
+  type EffortLevel,
+  type ProductMode,
+  type PublicState,
+  type ServerEvent,
+} from "./api";
+import { ModeSwitch } from "./ModeSwitch";
+import { EffortControl } from "./EffortControl";
+import {
+  isOnboardingDone,
+  loadFirstRun,
+  patchFirstRun,
+  type FirstRunState,
+} from "./firstRun";
+import { Onboarding } from "./Onboarding";
+import { CommandPalette, type PaletteAction } from "./CommandPalette";
+import { MessageList, type ChatMessage } from "./MessageList";
+import { RunStatusBar, type RunPhase } from "./RunStatusBar";
+import {
+  formatToolInput,
+  formatToolOutput,
+  summarizeToolInput,
+} from "./toolFormat";
+import { type PendingDiff } from "./DiffPanel";
+import { type PermissionReq } from "./PermissionCard";
+import { ActionDock } from "./ActionDock";
+import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
+import {
+  createSession,
+  deleteSession,
+  ensureActiveSession,
+  flushSessions,
+  isExpanded,
+  listPinnedWorkspaces,
+  listSessions,
+  loadSession,
+  onSessionSaveError,
+  partitionKey,
+  saveSessionMessages,
+  setActiveSession,
+  setExpanded,
+  setSessionBranch,
+  toggleExpanded,
+  updateSessionMeta,
+  workspaceDisplayName,
+  type ChatSession,
+} from "./sessions";
+import { StreamBuffer } from "./streamBuffer";
+import { computeOverview, OverviewStrip } from "./OverviewStrip";
+import { EmptyStates } from "./EmptyStates";
+import { Sidebar, type WorkspaceNode } from "./Sidebar";
+import {
+  buildSessionMarkdown,
+  downloadDiagnostics,
+  suggestDiagnosticsFilename,
+} from "./exportDiagnostics";
+import {
+  downloadSessionsExport,
+  importSessionsJson,
+  pickImportFile,
+} from "./sessionIO";
+import { BrandMark } from "./BrandMark";
+import { ConnectorsPanel } from "./ConnectorsPanel";
+import { appChannel, channelBadge, hostPort } from "./api";
+import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
+import { useToast } from "./Toast";
+import { readFilesForAttach } from "./contextAttach";
+import {
+  downloadMarkdown,
+  suggestChatFilename,
+  transcriptToMarkdown,
+} from "./exportChat";
+import { expandAtMentions } from "./expandMentions";
+
+type View = "chat" | "settings";
+type BootPhase = "booting" | "ready" | "error";
+
+const MODEL_PRESETS = [
+  "grok-4",
+  "grok-4.5",
+  "grok-3",
+  "grok-2-latest",
+];
+
+interface OAuthPending {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete?: string;
+}
+
+function uid(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function statusChip(state: PublicState | null): {
+  text: string;
+  className: string;
+} {
+  if (!state || state.authMode === "signed_out") {
+    return { text: "Signed out", className: "chip signed-out" };
+  }
+  if (state.authMode === "sub_pool") {
+    return { text: "Grok · sub-pool", className: "chip sub" };
+  }
+  return { text: "Grok · API", className: "chip api" };
+}
+
+export function App() {
+  const tauri = isTauri();
+  const [boot, setBoot] = useState<BootPhase>("booting");
+  const [bootMsg, setBootMsg] = useState("Starting Forge…");
+  const [view, setView] = useState<View>("chat");
+  const [state, setState] = useState<PublicState | null>(null);
+  const [hostOk, setHostOk] = useState(false);
+  const [wsOk, setWsOk] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [pathInput, setPathInput] = useState("");
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [modelDraft, setModelDraft] = useState("grok-4");
+  const [shellAllowlist, setShellAllowlist] = useState(true);
+  const [permissions, setPermissions] = useState<PermissionReq[]>([]);
+  const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
+  const [activeDiffId, setActiveDiffId] = useState<string | null>(null);
+  const [oauth, setOauth] = useState<OAuthPending | null>(null);
+  const [forceOpenFailedTools, setForceOpenFailedTools] = useState(false);
+  const [runFooter, setRunFooter] = useState<string | null>(null);
+  const [openingWs, setOpeningWs] = useState(false);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const recentErrorsRef = useRef<string[]>([]);
+  const [recovery, setRecovery] = useState<
+    "api_key" | "reconnect" | "tools" | "workspace" | null
+  >(null);
+  const [firstRun, setFirstRun] = useState<FirstRunState>(() => loadFirstRun());
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [peek, setPeek] = useState<{ path: string; content: string } | null>(
+    null,
+  );
+  const [dragOver, setDragOver] = useState(false);
+  const toast = useToast();
+  const [sessionWrite, setSessionWrite] = useState(false);
+  const [sessionShell, setSessionShell] = useState(false);
+  const [fileIndex, setFileIndex] = useState<string[]>([]);
+  const [atSuggestions, setAtSuggestions] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
+  const [histIdx, setHistIdx] = useState(-1);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionList, setSessionList] = useState<ChatSession[]>([]);
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
+    listPinnedWorkspaces(),
+  );
+  const [branchMap, setBranchMap] = useState<Record<string, string | null>>({});
+  const [expandTick, setExpandTick] = useState(0);
+  const [connTest, setConnTest] = useState<string | null>(null);
+  const [modeSwitching, setModeSwitching] = useState(false);
+  const [runPhase, setRunPhase] = useState<RunPhase>(null);
+  const [runPhaseDetail, setRunPhaseDetail] = useState<string | null>(null);
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  /** After a finished answer, show “your turn” delimiter until next send */
+  const [awaitingNextTurn, setAwaitingNextTurn] = useState(false);
+  const thinkingIdRef = useRef<string | null>(null);
+  const cancelInFlightRef = useRef(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const streamIdRef = useRef<string | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const openInFlightRef = useRef<string | null>(null);
+  const lastOpenAtRef = useRef(0);
+  const stateRef = useRef(state);
+  const busyRef = useRef(false);
+  const toolFailCountRef = useRef(0);
+  const streamBufRef = useRef<StreamBuffer | null>(null);
+  /** Bumped on session/mode switch so late agent events cannot paint the wrong transcript. */
+  const eventEpochRef = useRef(0);
+  const streamEpochRef = useRef(0);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    return onSessionSaveError((err) => {
+      if (err) toast.push(`Session save failed: ${err}`, "error");
+    });
+  }, [toast]);
+
+  const discardTranscriptStream = useCallback(() => {
+    // Invalidate in-flight stream paint (session/mode switch).
+    eventEpochRef.current += 1;
+    streamEpochRef.current = eventEpochRef.current; // keep equal — only send() opens a new run
+    streamBufRef.current?.reset();
+    streamIdRef.current = null;
+    thinkingIdRef.current = null;
+  }, []);
+
+  /** Start accepting stream events for a new user turn. */
+  const beginStreamRun = useCallback(() => {
+    eventEpochRef.current += 1;
+    streamEpochRef.current = eventEpochRef.current;
+    streamBufRef.current?.reset();
+    streamIdRef.current = null;
+    thinkingIdRef.current = null;
+  }, []);
+
+  // Batched stream flushes → single setMessages per frame
+  useEffect(() => {
+    const buf = new StreamBuffer((text) => {
+      if (streamEpochRef.current !== eventEpochRef.current) return;
+      if (!text) return;
+      setMessages((prev) => {
+        let sid = streamIdRef.current;
+        if (sid) {
+          const idx = prev.findIndex((m) => m.id === sid);
+          if (idx >= 0) {
+            const next = prev.slice();
+            const cur = next[idx]!;
+            next[idx] = {
+              ...cur,
+              content: (cur.content || "") + text,
+              streaming: true,
+            };
+            return next;
+          }
+          // Race: streamId was reserved but this message isn't in `prev` yet
+          // (prior setState not committed). Do NOT mint a second bubble — create
+          // with the same id so later flushes merge into one answer.
+          return [
+            ...prev,
+            {
+              id: sid,
+              role: "assistant",
+              content: text,
+              streaming: true,
+            },
+          ];
+        }
+        // Prefer continuing the open streaming assistant (tools / thinking)
+        const openAsst = [...prev]
+          .reverse()
+          .find((m) => m.role === "assistant" && m.streaming);
+        if (openAsst) {
+          streamIdRef.current = openAsst.id;
+          return prev.map((m) =>
+            m.id === openAsst.id
+              ? {
+                  ...m,
+                  content: (m.content || "") + text,
+                  streaming: true,
+                }
+              : m,
+          );
+        }
+        // Reattach trailing junk (e.g. lone ".") to the last assistant answer
+        const lastAsst = [...prev]
+          .reverse()
+          .find((m) => m.role === "assistant");
+        const trivial = /^[.\s…·•]+$/.test(text);
+        if (
+          lastAsst &&
+          (busyRef.current || trivial) &&
+          (lastAsst.content?.trim() || lastAsst.thinking?.trim())
+        ) {
+          if (trivial && lastAsst.content?.trim()) {
+            return prev;
+          }
+          streamIdRef.current = lastAsst.id;
+          return prev.map((m) =>
+            m.id === lastAsst.id
+              ? {
+                  ...m,
+                  content: (m.content || "") + text,
+                  streaming: Boolean(busyRef.current),
+                }
+              : m,
+          );
+        }
+        const id = uid();
+        streamIdRef.current = id;
+        return [
+          ...prev,
+          { id, role: "assistant", content: text, streaming: true },
+        ];
+      });
+    });
+    streamBufRef.current = buf;
+    return () => {
+      buf.flush();
+      buf.reset();
+    };
+  }, []);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const refreshTree = useCallback(() => {
+    setPinnedPaths(listPinnedWorkspaces());
+    setExpandTick((t) => t + 1);
+  }, []);
+
+  const refreshBranches = useCallback(async (paths: string[]) => {
+    if (!paths.length || !hostOk) return;
+    try {
+      const { branches } = await api.workspaceBranches(paths);
+      setBranchMap((prev) => ({ ...prev, ...branches }));
+    } catch {
+      /* optional */
+    }
+  }, [hostOk]);
+
+  // Smart stick-to-bottom: only auto-scroll when user is near the end
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = gap < 96;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // rAF-throttle scroll-to-bottom so streaming doesn't force layout every token batch
+  const scrollRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [messages, permissions.length, diffQueue.length, oauth]);
+
+  const classifyRecovery = useCallback(
+    (msg: string, meta?: Record<string, unknown>) => {
+      const code = String(meta?.code || "").toLowerCase();
+      const low = msg.toLowerCase();
+      if (
+        code === "auth_expired" ||
+        code === "auth_forbidden" ||
+        low.includes("api key") ||
+        low.includes("unauthorized") ||
+        low.includes("401") ||
+        low.includes("sign in")
+      ) {
+        return "api_key" as const;
+      }
+      if (
+        low.includes("host") ||
+        low.includes("offline") ||
+        low.includes("econnrefused") ||
+        low.includes("failed to fetch")
+      ) {
+        return "reconnect" as const;
+      }
+      if (low.includes("workspace") || low.includes("open a project")) {
+        return "workspace" as const;
+      }
+      if (
+        low.includes("tool") ||
+        low.includes("blocked") ||
+        low.includes("exit ") ||
+        code === "tool_error"
+      ) {
+        return "tools" as const;
+      }
+      return null;
+    },
+    [],
+  );
+
+  const reportError = useCallback(
+    (message: string, meta?: Record<string, unknown>) => {
+      const msg = message.trim() || "Unknown error";
+      const stamp = new Date().toISOString();
+      recentErrorsRef.current = [
+        ...recentErrorsRef.current.slice(-19),
+        `${stamp} ${msg}`,
+      ];
+      setErrorBanner(msg);
+      setRecovery(classifyRecovery(msg, meta));
+      void api.clientLog("error", msg, meta);
+    },
+    [classifyRecovery],
+  );
+
+  const exportSessionDiagnostics = useCallback(async () => {
+    setExportStatus("Exporting…");
+    // Chat transcripts live under partitionKey, not FS workspace path
+    const mode = state?.mode === "code" ? "code" : "chat";
+    const partition =
+      mode === "chat"
+        ? partitionKey("chat", state?.chatRoot)
+        : state?.workspace ?? pathInput ?? "__no_workspace__";
+    const session = sessionId ? loadSession(partition, sessionId) : null;
+    const clientBundle = buildSessionMarkdown({
+      state,
+      sessionId,
+      sessionTitle: session?.title ?? null,
+      messages: messagesRef.current,
+      errorBanner,
+      recentErrors: recentErrorsRef.current,
+      bootMsg: boot === "error" ? bootMsg : null,
+    });
+    try {
+      const result = await api.exportDiagnostics({
+        markdown: clientBundle,
+        openFolder: true,
+      });
+      downloadDiagnostics(suggestDiagnosticsFilename(), result.markdown);
+      setExportStatus(`Saved: ${result.path}`);
+      setConnTest(`Diagnostics saved · ${result.path}`);
+      void api.openLogs().catch(() => undefined);
+    } catch (e) {
+      // Offline fallback: still download what the UI has.
+      const fallback = [
+        "# Forge — session diagnostics (client-only)",
+        "",
+        `Exported: ${new Date().toISOString()}`,
+        "",
+        "Host was unreachable; this file has the UI session only.",
+        "",
+        clientBundle,
+      ].join("\n");
+      downloadDiagnostics(suggestDiagnosticsFilename(), fallback);
+      const detail = e instanceof Error ? e.message : String(e);
+      setExportStatus(`Downloaded client-only (host failed: ${detail})`);
+      setConnTest(`Client-only export · ${detail}`);
+    }
+  }, [sessionId, state, pathInput, errorBanner, boot, bootMsg]);
+
+  const onServerEvent = useCallback((ev: ServerEvent) => {
+    if (ev.type === "state") {
+      setState(ev.state);
+      setModelDraft(ev.state.model);
+      if (typeof ev.state.shellAllowlist === "boolean") {
+        setShellAllowlist(ev.state.shellAllowlist);
+      }
+      return;
+    }
+    if (ev.type === "oauth_pending") {
+      setOauth({
+        user_code: ev.user_code,
+        verification_uri: ev.verification_uri,
+        verification_uri_complete: ev.verification_uri_complete,
+      });
+      return;
+    }
+    if (ev.type === "oauth_complete") {
+      setOauth(null);
+      if (ev.ok) {
+        setErrorBanner(null);
+        setFirstRun((fr) => patchFirstRun({ ...fr, signedIn: true }));
+        setMessages((m) => [
+          ...m,
+          { id: uid(), role: "system", content: "Signed in with Grok (OAuth)." },
+        ]);
+      } else {
+        reportError(ev.message || "OAuth failed", { source: "oauth" });
+      }
+      return;
+    }
+    // Transcript-bound events: ignore after session/mode switch
+    const epochOk = streamEpochRef.current === eventEpochRef.current;
+    if (ev.type === "run_phase") {
+      // Always update chrome for active busy runs even if epoch drifted
+      if (epochOk || busyRef.current) {
+        setRunPhase(ev.phase === "done" ? null : ev.phase);
+        setRunPhaseDetail(ev.detail ?? null);
+      }
+      if (ev.phase === "done" && epochOk) {
+        // keep thinkingId until text flush / done handler
+      }
+      return;
+    }
+    if (ev.type === "thinking_delta") {
+      if (!epochOk) return;
+      setRunPhase((p) => p || "reasoning");
+      setMessages((prev) => {
+        const tid = thinkingIdRef.current;
+        if (tid) {
+          const idx = prev.findIndex((m) => m.id === tid);
+          if (idx >= 0) {
+            const next = prev.slice();
+            const cur = next[idx]!;
+            next[idx] = {
+              ...cur,
+              thinking: (cur.thinking || "") + ev.text,
+              streaming: true,
+            };
+            return next;
+          }
+          // Same race as text stream: keep one bubble id
+          return [
+            ...prev,
+            {
+              id: tid,
+              role: "assistant",
+              content: "",
+              thinking: ev.text,
+              streaming: true,
+            },
+          ];
+        }
+        // Prefer existing streaming assistant over a second bubble
+        const openAsst = [...prev]
+          .reverse()
+          .find((m) => m.role === "assistant" && m.streaming);
+        if (openAsst) {
+          thinkingIdRef.current = openAsst.id;
+          streamIdRef.current = openAsst.id;
+          return prev.map((m) =>
+            m.id === openAsst.id
+              ? {
+                  ...m,
+                  thinking: (m.thinking || "") + ev.text,
+                  streaming: true,
+                }
+              : m,
+          );
+        }
+        const id = uid();
+        thinkingIdRef.current = id;
+        streamIdRef.current = id;
+        return [
+          ...prev,
+          {
+            id,
+            role: "assistant",
+            content: "",
+            thinking: ev.text,
+            streaming: true,
+          },
+        ];
+      });
+      return;
+    }
+    if (ev.type === "text_delta") {
+      if (!epochOk) {
+        // Recovery: if we are still busy, re-bind epoch so answer is not lost
+        if (busyRef.current) {
+          streamEpochRef.current = eventEpochRef.current;
+        } else {
+          return;
+        }
+      }
+      // Prefer same bubble as thinking if open
+      if (thinkingIdRef.current && !streamIdRef.current) {
+        streamIdRef.current = thinkingIdRef.current;
+      }
+      streamBufRef.current?.push(ev.text);
+      return;
+    }
+    if (ev.type === "tool_request") {
+      if (!epochOk) return;
+      streamBufRef.current?.flush();
+      setRunPhase("tools");
+      const summary = summarizeToolInput(ev.name, ev.input);
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.role === "tool" && m.id === ev.id);
+        const entry: ChatMessage = {
+          id: ev.id,
+          role: "tool",
+          content: formatToolInput(ev.input),
+          toolMeta: {
+            name: ev.name,
+            summary,
+            done: false,
+          },
+        };
+        if (idx >= 0) {
+          const next = prev.slice();
+          next[idx] = entry;
+          return next;
+        }
+        return [...prev, entry];
+      });
+      return;
+    }
+    if (ev.type === "tool_result") {
+      if (!epochOk) return;
+      streamBufRef.current?.flush();
+      const body = formatToolOutput(ev.output);
+      if (!ev.ok) {
+        toolFailCountRef.current += 1;
+        // Soft surface first fail + every 3rd after — avoid banner spam
+        if (
+          toolFailCountRef.current === 1 ||
+          toolFailCountRef.current % 3 === 0
+        ) {
+          const name =
+            messagesRef.current.find((m) => m.id === ev.id)?.toolMeta?.name ||
+            "tool";
+          reportError(`${name} failed`, {
+            code: "tool_error",
+            source: "tool",
+            snippet: body.slice(0, 200),
+          });
+        }
+      }
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.role === "tool" && m.id === ev.id);
+        if (idx >= 0) {
+          const cur = prev[idx]!;
+          const next = prev.slice();
+          next[idx] = {
+            ...cur,
+            content: body || cur.content,
+            toolMeta: {
+              ...cur.toolMeta,
+              name: cur.toolMeta?.name,
+              summary: cur.toolMeta?.summary,
+              ok: ev.ok,
+              done: true,
+            },
+          };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            id: ev.id,
+            role: "tool",
+            content: body,
+            toolMeta: {
+              name: "tool",
+              summary: ev.ok ? "completed" : "failed",
+              ok: ev.ok,
+              done: true,
+            },
+          },
+        ];
+      });
+      return;
+    }
+    if (ev.type === "permission_request") {
+      if (!epochOk) return;
+      streamBufRef.current?.flush();
+      setPermissions((q) => {
+        if (q.some((p) => p.id === ev.id)) return q;
+        return [...q, { id: ev.id, kind: ev.kind, detail: ev.detail }];
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `perm-sys-${ev.id}`,
+          role: "system",
+          content: `Permission requested: ${ev.kind}`,
+        },
+      ]);
+      return;
+    }
+    if (ev.type === "file_edit") {
+      if (!epochOk) return;
+      streamBufRef.current?.flush();
+      if (ev.status === "proposed" && ev.id) {
+        setDiffQueue((q) => {
+          if (q.some((d) => d.id === ev.id)) return q;
+          return [...q, { id: ev.id!, path: ev.path, diff: ev.diff }];
+        });
+        setActiveDiffId((cur) => cur ?? ev.id!);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: "system",
+            content: `Diff proposed: ${ev.path}`,
+          },
+        ]);
+      } else if (ev.status === "accepted" || ev.status === "rejected") {
+        setDiffQueue((q) => q.filter((d) => d.id !== ev.id));
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: "system",
+            content: `Diff ${ev.status}: ${ev.path}`,
+          },
+        ]);
+      }
+      return;
+    }
+    if (ev.type === "error") {
+      if (epochOk) streamBufRef.current?.flush();
+      // agent_exited / reconnect class
+      if (ev.code === "agent_exited" || ev.code === "prompt_failed") {
+        setSessionWrite(false);
+        setSessionShell(false);
+      }
+      reportError(ev.message, {
+        code: ev.code,
+        source: "agent",
+        detail: ev.detail,
+        status: ev.status,
+      });
+      // Don't paint system bubbles onto a switched-away transcript
+      if (epochOk && ev.code !== "agent_stderr") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: "system",
+            content: `Error (${ev.code}): ${ev.message}`,
+          },
+        ]);
+      }
+      return;
+    }
+    if (ev.type === "done") {
+      // Always flush buffered tokens first
+      if (epochOk || busyRef.current) {
+        streamBufRef.current?.flush();
+      }
+      const reason = ev.reason || "stop";
+      if (reason === "cancelled") {
+        setMessages((prev) => {
+          const settled = prev.map((m) =>
+            m.streaming ? { ...m, streaming: false } : m,
+          );
+          const cleaned = settled.filter(
+            (m) =>
+              !(
+                m.role === "assistant" &&
+                !m.content?.trim() &&
+                !m.thinking?.trim()
+              ),
+          );
+          const last = cleaned[cleaned.length - 1];
+          if (
+            last?.role === "system" &&
+            last.content.startsWith("Stopped by you")
+          ) {
+            return cleaned;
+          }
+          return [
+            ...cleaned,
+            { id: uid(), role: "system", content: "Stopped by you." },
+          ];
+        });
+        setRunFooter("Stopped by you");
+        toast.push("Stopped by you", "info");
+        setAwaitingNextTurn(true);
+        cancelInFlightRef.current = false;
+      } else {
+        setMessages((prev) => {
+          let settled = prev.map((m) =>
+            m.streaming ? { ...m, streaming: false } : m,
+          );
+          // Merge adjacent assistant bubbles only when they look like a mid-stream
+          // split (same run race), not two deliberate turns.
+          {
+            const merged: typeof settled = [];
+            for (const m of settled) {
+              const prevM = merged[merged.length - 1];
+              const looksLikeSplit =
+                m.role === "assistant" &&
+                prevM?.role === "assistant" &&
+                !prevM.toolMeta &&
+                !m.toolMeta &&
+                // Second piece is a continuation: no user between, and either
+                // short fragment or first bubble was clearly cut mid-stream.
+                ((m.content?.length ?? 0) > 0 &&
+                  (prevM.content?.length ?? 0) > 80 &&
+                  !(
+                    /^(#{1,6}\s|[-*]\s|\d+\.\s)/.test(
+                      (m.content || "").trimStart(),
+                    ) && (m.content?.length ?? 0) > 40
+                  ));
+              if (looksLikeSplit) {
+                merged[merged.length - 1] = {
+                  ...prevM!,
+                  content: `${prevM!.content || ""}${m.content || ""}`,
+                  thinking:
+                    [prevM!.thinking, m.thinking].filter(Boolean).join("\n") ||
+                    undefined,
+                  streaming: false,
+                };
+                continue;
+              }
+              merged.push(m);
+            }
+            settled = merged;
+          }
+          // Drop trailing punctuation-only assistant noise
+          while (settled.length >= 2) {
+            const last = settled[settled.length - 1]!;
+            if (
+              last.role === "assistant" &&
+              /^[.\s…·•]+$/.test(last.content?.trim() || "") &&
+              !last.thinking?.trim() &&
+              settled.some(
+                (m, i) =>
+                  i < settled.length - 1 &&
+                  m.role === "assistant" &&
+                  (m.content?.trim().length ?? 0) > 1,
+              )
+            ) {
+              settled = settled.slice(0, -1);
+              continue;
+            }
+            break;
+          }
+          // Did this run produce any assistant text?
+          const hasAssistantText = settled.some(
+            (m) => m.role === "assistant" && m.content?.trim(),
+          );
+          if (
+            !hasAssistantText &&
+            (reason === "stop" || reason === "error" || reason === "agent_exited")
+          ) {
+            // Keep thinking-only bubble if present; still surface a visible answer path
+            const hasThinking = settled.some(
+              (m) => m.role === "assistant" && m.thinking?.trim(),
+            );
+            if (hasThinking) {
+              // Promote thinking into content if model never sent final text
+              return settled.map((m) =>
+                m.role === "assistant" && m.thinking?.trim() && !m.content?.trim()
+                  ? {
+                      ...m,
+                      content:
+                        "*(Model returned reasoning only — no final answer text.)*\n\n" +
+                        m.thinking,
+                      streaming: false,
+                    }
+                  : m,
+              );
+            }
+            return [
+              ...settled,
+              {
+                id: uid(),
+                role: "system",
+                content:
+                  "Grok finished but no answer text was received. Use Retry on your last message.",
+              },
+            ];
+          }
+          return settled;
+        });
+        if (reason === "error" || reason === "agent_exited") {
+          setRunFooter(`Run ended · ${reason}`);
+          setAwaitingNextTurn(true);
+        } else if (reason === "auth_missing") {
+          setRunFooter("Auth missing");
+          setAwaitingNextTurn(false);
+        } else if (reason === "stop") {
+          setRunFooter(null);
+          setAwaitingNextTurn(true);
+        } else {
+          setRunFooter(`Done · ${reason}`);
+          setAwaitingNextTurn(true);
+        }
+      }
+      streamIdRef.current = null;
+      thinkingIdRef.current = null;
+      setRunPhase(null);
+      setRunPhaseDetail(null);
+      setRunStartedAt(null);
+      toolFailCountRef.current = 0;
+      return;
+    }
+  }, [reportError, toast]);
+
+  const bootApp = useCallback(async () => {
+    setBoot("booting");
+    setBootMsg(
+      tauri ? "Starting Forge…" : "Connecting to local assistant…",
+    );
+    let status = await ensureDesktopHost();
+    if (status.ok) setBootMsg("Almost ready…");
+    else {
+      setBootMsg("Starting local agent host…");
+      status = await ensureDesktopHost();
+    }
+    const ok = await pollHostHealth(status.ok ? 20 : 60, 150);
+    if (!ok) {
+      setBoot("error");
+      setBootMsg(
+        tauri
+          ? "Couldn’t start the local host. Click Retry — or check %USERPROFILE%\\.grokforge\\logs\\"
+          : "Host offline. Run npm run start (or npm run desktop), then Retry.",
+      );
+      setHostOk(false);
+      return;
+    }
+    setHostOk(true);
+    try {
+      const s = await api.state();
+      setState(s);
+      setModelDraft(s.model);
+      if (s.workspace) {
+        setPathInput(s.workspace);
+        setFirstRun((fr) => patchFirstRun({ ...fr, openedFolder: true }));
+      }
+      if (s.hasApiKey) {
+        setFirstRun((fr) => patchFirstRun({ ...fr, signedIn: true }));
+      }
+      if (typeof s.shellAllowlist === "boolean") setShellAllowlist(s.shellAllowlist);
+    } catch {
+      /* optional */
+    }
+    setBoot("ready");
+  }, [tauri]);
+
+  useEffect(() => {
+    void bootApp();
+  }, [bootApp]);
+
+  useEffect(() => {
+    if (boot !== "ready") return;
+    const sock = new HostSocket({
+      onStatus: (c) => {
+        setWsOk(c);
+        if (c) {
+          setHostOk(true);
+          return;
+        }
+        // Win+PrtScn / focus loss can briefly drop WS — don't silent-cancel.
+        // Surface interruption clearly if a run was in flight.
+        if (busyRef.current) {
+          setRunFooter(
+            "Connection interrupted while running — reconnecting. Your run was not intentionally cancelled.",
+          );
+          setRunPhaseDetail("Reconnecting… (still working if host is up)");
+          toast.push(
+            "Connection blip while Grok was running — reconnecting",
+            "info",
+          );
+        }
+      },
+    });
+    sock.on(onServerEvent);
+    sock.connect();
+    const healthTimer = setInterval(() => {
+      void api
+        .health()
+        .then(() => setHostOk(true))
+        .catch(() => setHostOk(false));
+    }, 4000);
+    return () => {
+      clearInterval(healthTimer);
+      sock.close();
+    };
+  }, [boot, onServerEvent, toast]);
+
+  const refreshFiles = useCallback(async () => {
+    try {
+      const { files } = await api.workspaceFiles();
+      setFileIndex(files);
+    } catch {
+      setFileIndex([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (state?.workspace && hostOk) void refreshFiles();
+  }, [state?.workspace, hostOk, refreshFiles]);
+
+  const chip = useMemo(() => statusChip(state), [state]);
+  const busy = Boolean(state?.busy);
+  busyRef.current = busy;
+  const connected = hostOk;
+  const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
+  const effortLevel: EffortLevel =
+    state?.effort === "fast" ||
+    state?.effort === "expert" ||
+    state?.effort === "heavy" ||
+    state?.effort === "auto"
+      ? state.effort
+      : prefs.effort || "auto";
+  const sessionPartition = useMemo(
+    () =>
+      partitionKey(
+        productMode,
+        productMode === "chat" ? state?.chatRoot : state?.workspace,
+      ),
+    [productMode, state?.chatRoot, state?.workspace],
+  );
+
+  const switchMode = useCallback(
+    async (mode: ProductMode) => {
+      if (mode === productMode && !modeSwitching) return;
+      setModeSwitching(true);
+      try {
+        if (busy) await api.cancel().catch(() => undefined);
+        // Persist current transcript into current partition before host mode flip
+        if (sessionId) {
+          const msgs = messagesRef.current
+            .filter((m) => m.role !== "tool" || m.content)
+            .map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              toolMeta: m.toolMeta,
+            }));
+          saveSessionMessages(sessionPartition, sessionId, msgs);
+          flushSessions();
+        }
+        const s = await api.setMode(mode);
+        setState(s);
+        setPrefs((p) =>
+          patchPrefs({
+            lastMode: mode,
+            usedCode: p.usedCode || mode === "code",
+          }),
+        );
+        const key = partitionKey(
+          mode,
+          mode === "chat" ? s.chatRoot : s.workspace,
+        );
+        const active = ensureActiveSession(key, null);
+        setSessionId(active.id);
+        setSessionList(listSessions(key));
+        setMessages(
+          active.messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            toolMeta: m.toolMeta,
+          })),
+        );
+        setPermissions([]);
+        setDiffQueue([]);
+        discardTranscriptStream();
+      } catch (e) {
+        reportError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setModeSwitching(false);
+      }
+    },
+    [
+      productMode,
+      modeSwitching,
+      busy,
+      reportError,
+      sessionId,
+      sessionPartition,
+      discardTranscriptStream,
+    ],
+  );
+
+  const setEffortUi = useCallback(
+    async (effort: EffortLevel) => {
+      try {
+        const s = await api.setEffort(effort);
+        setState(s);
+        setPrefs((p) => patchPrefs({ ...p, effort }));
+      } catch (e) {
+        reportError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [reportError],
+  );
+
+  const sendDisabledReason = useMemo(() => {
+    if (!connected) return "Host offline — reconnect first";
+    if (productMode === "code" && !state?.workspace)
+      return "Open a project folder first";
+    if (!state?.hasApiKey) return "Sign in or add an API key in Settings";
+    if (busy) return "Agent is running — wait or Cancel";
+    if (!draft.trim()) return "Type a message to send";
+    return null;
+  }, [connected, productMode, state?.workspace, state?.hasApiKey, busy, draft]);
+  const overview = useMemo(
+    () =>
+      computeOverview(
+        messages,
+        diffQueue.map((d) => d.path),
+      ),
+    [messages, diffQueue],
+  );
+
+  const retryHost = useCallback(async () => {
+    setBootMsg("Reconnecting…");
+    setBoot("booting");
+    await restartDesktopHost();
+    await bootApp();
+  }, [bootApp]);
+
+  const openPath = useCallback(async (p: string) => {
+    const trimmed = p.trim();
+    if (!trimmed) return;
+    // Guard: session partition keys must never hit the filesystem API (silent)
+    if (trimmed.startsWith("chat:") || trimmed === "__no_workspace__") {
+      return;
+    }
+
+    const current = stateRef.current?.workspace;
+    // Already on this workspace and not thrashing — just focus UI.
+    if (current === trimmed) {
+      setPathInput(trimmed);
+      setExpanded(trimmed, true);
+      refreshTree();
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      openInFlightRef.current === trimmed &&
+      now - lastOpenAtRef.current < 900
+    ) {
+      return;
+    }
+
+    if (busyRef.current) {
+      const ok = window.confirm(
+        "Agent is still running. Switch workspace? This cancels the current run.",
+      );
+      if (!ok) return;
+      try {
+        await api.cancel();
+      } catch {
+        /* continue */
+      }
+    }
+
+    openInFlightRef.current = trimmed;
+    lastOpenAtRef.current = now;
+    setErrorBanner(null);
+    setOpeningWs(true);
+    toast.push(`Opening ${trimmed.split(/[/\\]/).pop()}…`, "info");
+    try {
+      const s = await api.openWorkspace(trimmed);
+      setState(s);
+      const ws = s.workspace || trimmed;
+      setPathInput(ws);
+      let branch: string | null = null;
+      try {
+        const b = await api.workspaceBranch(ws);
+        branch = b.branch;
+        setBranchMap((m) => ({ ...m, [ws]: branch }));
+      } catch {
+        /* no git */
+      }
+      const active = ensureActiveSession(ws, branch);
+      if (branch) setSessionBranch(ws, active.id, branch);
+      setSessionId(active.id);
+      setSessionList(listSessions(ws));
+      setMessages(
+        active.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolMeta: m.toolMeta,
+        })),
+      );
+      setDiffQueue([]);
+      setActiveDiffId(null);
+      setPermissions([]);
+      setSessionWrite(false);
+      setSessionShell(false);
+      setView("chat");
+      setOpeningWs(false);
+      setFirstRun((fr) => patchFirstRun({ ...fr, openedFolder: true }));
+      setExpanded(ws, true);
+      refreshTree();
+      void refreshFiles();
+      void refreshBranches(listPinnedWorkspaces());
+      toast.push(`Workspace ready · ${ws.split(/[/\\]/).pop()}`, "success");
+    } catch (err) {
+      setOpeningWs(false);
+      reportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (openInFlightRef.current === trimmed) openInFlightRef.current = null;
+    }
+  }, [refreshFiles, refreshTree, refreshBranches, reportError, toast]);
+
+  const persistMessages = useCallback(
+    (ws: string, sid: string, msgs: ChatMessage[]) => {
+      const stored = msgs
+        .filter((m) => m.role !== "tool" || m.content)
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolMeta: m.toolMeta,
+        }));
+      const firstUser = msgs.find((m) => m.role === "user")?.content.slice(0, 48);
+      saveSessionMessages(ws, sid, stored, firstUser);
+      setSessionList(listSessions(ws));
+    },
+    [],
+  );
+
+  // Autosave active session (mode-partitioned key)
+  useEffect(() => {
+    if (!sessionId) return;
+    if (messages.length === 0) return;
+    const t = setTimeout(() => {
+      persistMessages(sessionPartition, sessionId, messages);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [messages, sessionPartition, sessionId, persistMessages]);
+
+  const switchSession = useCallback(
+    async (partition: string, id: string) => {
+      if (sessionId === id && partition === sessionPartition) return;
+      if (sessionId) {
+        persistMessages(sessionPartition, sessionId, messagesRef.current);
+        updateSessionMeta(sessionPartition, sessionId, { status: "idle" });
+        flushSessions();
+      }
+      if (busyRef.current) {
+        await api.cancel().catch(() => undefined);
+      }
+      discardTranscriptStream();
+      setAwaitingNextTurn(false);
+      setRunFooter(null);
+      // Code partitions only: open real FS path. Never open "chat:..." keys.
+      const isChatKey = partition.startsWith("chat:");
+      if (
+        !isChatKey &&
+        partition !== "__no_workspace__" &&
+        partition !== state?.workspace
+      ) {
+        await openPath(partition);
+      }
+      const s = loadSession(partition, id);
+      if (!s) return;
+      setActiveSession(partition, id);
+      setSessionId(id);
+      setSessionList(listSessions(partition));
+      setMessages(
+        s.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolMeta: m.toolMeta,
+        })),
+      );
+      setDiffQueue([]);
+      setPermissions([]);
+      setView("chat");
+      refreshTree();
+    },
+    [
+      sessionPartition,
+      sessionId,
+      persistMessages,
+      openPath,
+      refreshTree,
+      state?.workspace,
+      discardTranscriptStream,
+    ],
+  );
+
+  const newSession = useCallback(
+    (workspace?: string) => {
+      const ws = workspace || sessionPartition;
+      if (!ws || ws === "__no_workspace__") {
+        if (productMode === "code") {
+          reportError("Open a project folder first — use Open folder…");
+        }
+        return;
+      }
+      if (sessionId) {
+        persistMessages(sessionPartition, sessionId, messagesRef.current);
+        updateSessionMeta(sessionPartition, sessionId, { status: "idle" });
+      }
+      if (busyRef.current) {
+        void api.cancel().catch(() => undefined);
+      }
+      discardTranscriptStream();
+      const isChatKey = ws.startsWith("chat:");
+      const branch =
+        !isChatKey && ws === state?.workspace
+          ? (branchMap[ws] ?? null)
+          : null;
+      const s = createSession(ws, "New chat", branch);
+      if (
+        !isChatKey &&
+        ws !== state?.workspace &&
+        ws !== "__no_workspace__"
+      ) {
+        void openPath(ws).then(() => {
+          setSessionId(s.id);
+          setSessionList(listSessions(ws));
+          setMessages([]);
+        });
+      } else {
+        setSessionId(s.id);
+        setSessionList(listSessions(ws));
+        setMessages([]);
+      }
+      setDiffQueue([]);
+      setPermissions([]);
+      setView("chat");
+      refreshTree();
+    },
+    [
+      sessionPartition,
+      sessionId,
+      persistMessages,
+      branchMap,
+      openPath,
+      refreshTree,
+      state?.workspace,
+      productMode,
+      reportError,
+      discardTranscriptStream,
+    ],
+  );
+
+  // Reflect agent busy on active session — avoid full tree thrash every flip
+  useEffect(() => {
+    if (!sessionId) return;
+    updateSessionMeta(sessionPartition, sessionId, {
+      status: busy ? "busy" : "live",
+    });
+    setSessionList(listSessions(sessionPartition));
+    // Code pins only need branch refresh when not busy (settle)
+    if (!busy && productMode === "code") {
+      setExpandTick((t) => t + 1);
+    }
+  }, [busy, sessionPartition, sessionId, productMode]);
+
+  useEffect(() => {
+    if (productMode === "chat") return;
+    const paths = listPinnedWorkspaces();
+    setPinnedPaths(paths);
+    void refreshBranches(paths);
+  }, [refreshBranches, expandTick, productMode]);
+
+  const treeWorkspaces: WorkspaceNode[] = useMemo(() => {
+    if (productMode === "chat") return [];
+    const paths = pinnedPaths.length
+      ? pinnedPaths
+      : state?.workspace
+        ? [state.workspace]
+        : [];
+    return paths.map((path) => ({
+      path,
+      name: workspaceDisplayName(path),
+      branch: branchMap[path] ?? null,
+      sessions: listSessions(path),
+      expanded: isExpanded(path),
+      active: path === state?.workspace,
+    }));
+  }, [
+    productMode,
+    pinnedPaths,
+    branchMap,
+    state?.workspace,
+    expandTick,
+    sessionList,
+  ]);
+
+  const chatSessions = useMemo(
+    () => (productMode === "chat" ? listSessions(sessionPartition) : []),
+    [productMode, sessionPartition, sessionList, expandTick],
+  );
+
+  const browseFolder = useCallback(async () => {
+    const native = await pickFolderNative();
+    if (native) {
+      setPathInput(native);
+      await openPath(native);
+      return;
+    }
+    document.getElementById("workspace-path")?.focus();
+  }, [openPath]);
+
+  const bindChatFolder = useCallback(async () => {
+    const native = await pickFolderNative();
+    if (!native) return;
+    try {
+      const s = await api.setChatRoot(native);
+      setState(s);
+      const key = partitionKey("chat", s.chatRoot);
+      const active = ensureActiveSession(key, null);
+      setSessionId(active.id);
+      setSessionList(listSessions(key));
+      setMessages(
+        active.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolMeta: m.toolMeta,
+        })),
+      );
+      toast.push(`Chat files · ${s.workspaceName || "folder"}`, "success");
+    } catch (e) {
+      reportError(e instanceof Error ? e.message : String(e));
+    }
+  }, [reportError, toast]);
+
+  const clearChatFolder = useCallback(async () => {
+    try {
+      const s = await api.setChatRoot(null);
+      setState(s);
+      const key = partitionKey("chat", s.chatRoot);
+      const active = ensureActiveSession(key, null);
+      setSessionId(active.id);
+      setSessionList(listSessions(key));
+      setMessages(
+        active.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          toolMeta: m.toolMeta,
+        })),
+      );
+      toast.push("Using personal sandbox", "info");
+    } catch (e) {
+      reportError(e instanceof Error ? e.message : String(e));
+    }
+  }, [reportError, toast]);
+
+  const decidePermission = useCallback(
+    async (decision: "allow_once" | "allow_session" | "deny") => {
+      const p = permissions[0];
+      if (!p) return;
+      setPermissions((q) => q.filter((x) => x.id !== p.id));
+      if (decision === "allow_session") {
+        if (p.kind === "write") setSessionWrite(true);
+        if (p.kind === "shell") setSessionShell(true);
+      }
+      try {
+        await api.permission(p.id, decision);
+        toast.push(
+          decision === "deny"
+            ? `Denied ${p.kind}`
+            : `Allowed ${p.kind}${decision === "allow_session" ? " (session)" : ""}`,
+          decision === "deny" ? "info" : "success",
+        );
+      } catch (err) {
+        reportError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [permissions, reportError, toast],
+  );
+
+  const acceptDiff = useCallback(async (id: string) => {
+    try {
+      await api.diff(id, "accept");
+      setDiffQueue((q) => q.filter((d) => d.id !== id));
+      toast.push("Diff accepted", "success");
+    } catch (err) {
+      reportError(err instanceof Error ? err.message : String(err));
+    }
+  }, [reportError, toast]);
+
+  const rejectDiff = useCallback(async (id: string) => {
+    try {
+      await api.diff(id, "reject");
+      setDiffQueue((q) => q.filter((d) => d.id !== id));
+      toast.push("Diff rejected", "info");
+    } catch (err) {
+      reportError(err instanceof Error ? err.message : String(err));
+    }
+  }, [reportError, toast]);
+
+  const acceptAllDiffs = useCallback(async () => {
+    const ids = diffQueue.map((d) => d.id);
+    let ok = 0;
+    let fail = 0;
+    const failed = new Set<string>();
+    for (const id of ids) {
+      try {
+        await api.diff(id, "accept");
+        ok += 1;
+      } catch {
+        fail += 1;
+        failed.add(id);
+      }
+    }
+    setDiffQueue((q) => q.filter((d) => failed.has(d.id)));
+    toast.push(
+      fail
+        ? `Accepted ${ok}, failed ${fail}`
+        : `Accepted ${ok} file${ok === 1 ? "" : "s"}`,
+      fail ? "error" : "success",
+    );
+  }, [diffQueue, toast]);
+
+  const rejectAllDiffs = useCallback(async () => {
+    const ids = diffQueue.map((d) => d.id);
+    let ok = 0;
+    let fail = 0;
+    const failed = new Set<string>();
+    for (const id of ids) {
+      try {
+        await api.diff(id, "reject");
+        ok += 1;
+      } catch {
+        fail += 1;
+        failed.add(id);
+      }
+    }
+    setDiffQueue((q) => q.filter((d) => failed.has(d.id)));
+    toast.push(
+      fail
+        ? `Rejected ${ok}, failed ${fail}`
+        : `Rejected ${ok} file${ok === 1 ? "" : "s"}`,
+      fail ? "error" : "info",
+    );
+  }, [diffQueue, toast]);
+
+  const openToolPath = useCallback(async (path: string) => {
+    setPeek({ path, content: "Loading…" });
+    try {
+      const file = await api.workspaceRead(path);
+      setPeek({
+        path: file.path,
+        content:
+          file.content +
+          (file.truncated ? "\n\n… (truncated for display)" : ""),
+      });
+    } catch {
+      const tools = messagesRef.current.filter(
+        (m) =>
+          m.role === "tool" &&
+          (m.toolMeta?.summary === path || m.content.includes(path)),
+      );
+      const last = tools[tools.length - 1];
+      setPeek({
+        path,
+        content:
+          last?.content ||
+          "(Could not read file from workspace; no cached tool output.)",
+      });
+    }
+  }, []);
+
+  const renameSession = useCallback(
+    (workspace: string, id: string, title: string) => {
+      updateSessionMeta(workspace, id, { title });
+      // Compare partition key (chat:… or code path), not host FS workspace alone
+      setSessionList(listSessions(workspace));
+      refreshTree();
+      toast.push("Session renamed", "success");
+    },
+    [refreshTree, toast],
+  );
+
+  const removeSession = useCallback(
+    (workspace: string, id: string) => {
+      const next = deleteSession(workspace, id);
+      if (sessionId === id) {
+        discardTranscriptStream();
+        if (next) {
+          setSessionId(next.id);
+          setMessages(
+            next.messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              toolMeta: m.toolMeta,
+            })),
+          );
+        } else {
+          setSessionId(null);
+          setMessages([]);
+        }
+      }
+      setSessionList(listSessions(workspace));
+      refreshTree();
+      toast.push("Session deleted", "info");
+    },
+    [sessionId, refreshTree, toast, discardTranscriptStream],
+  );
+
+  const requestCancel = useCallback(() => {
+    if (cancelInFlightRef.current && !busyRef.current) return;
+    cancelInFlightRef.current = true;
+    setRunPhaseDetail("Cancelling…");
+    setRunFooter("Cancelling…");
+    toast.push("Cancel requested", "info");
+    void api
+      .cancel()
+      .catch((e) => {
+        cancelInFlightRef.current = false;
+        reportError(e instanceof Error ? e.message : String(e));
+      });
+  }, [toast, reportError]);
+
+  const sendText = useCallback(
+    async (
+      raw: string,
+      opts?: { skipUserBubble?: boolean; stripTrailingAssistant?: boolean },
+    ) => {
+      const text = raw.trim();
+      if (!text || busyRef.current || !connected) return;
+      const mode = state?.mode === "code" ? "code" : "chat";
+      if (mode === "code" && !state?.workspace) {
+        reportError("Open a project folder first — use Open folder…", {
+          source: "prompt",
+        });
+        return;
+      }
+      setDraft("");
+      setHistIdx(-1);
+      setAtSuggestions([]);
+      setHistory(pushPromptHistory(text));
+      setErrorBanner(null);
+      setRecovery(null);
+      setAwaitingNextTurn(false);
+      cancelInFlightRef.current = false;
+      // New generation — accepts only this run's stream events
+      beginStreamRun();
+      setRunPhase("waiting_model");
+      setRunPhaseDetail(
+        effortLevel === "auto"
+          ? "Waiting for Grok…"
+          : `Waiting for Grok (${effortLevel} effort)…`,
+      );
+      setRunStartedAt(Date.now());
+      setRunFooter(null);
+
+      // Build transcript base for history + UI (sync, before setState lag)
+      let base = messagesRef.current.slice();
+      if (opts?.stripTrailingAssistant) {
+        while (base.length) {
+          const last = base[base.length - 1]!;
+          if (
+            last.role === "assistant" ||
+            (last.role === "system" &&
+              (last.content.startsWith("Stopped by you") ||
+                last.content.startsWith("Run ended")))
+          ) {
+            base.pop();
+            continue;
+          }
+          break;
+        }
+      }
+      if (!opts?.skipUserBubble) {
+        base = [...base, { id: uid(), role: "user", content: text }];
+      }
+      setMessages(base);
+      setFirstRun((fr) => patchFirstRun({ ...fr, sentMessage: true }));
+
+      // Prior turns only — last bubble is the user prompt we're about to send
+      const history = base
+        .slice(0, -1)
+        .filter(
+          (m) =>
+            (m.role === "user" ||
+              m.role === "assistant" ||
+              m.role === "system") &&
+            m.content?.trim() &&
+            !m.content.startsWith("Stopped by you"),
+        )
+        .slice(-30)
+        .map((m) => ({
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content.slice(0, 12_000),
+        }));
+
+      let outbound = text;
+      if (state?.workspace && /@/.test(text)) {
+        try {
+          outbound = await expandAtMentions(text, async (p) => {
+            const r = await api.workspaceRead(p);
+            return { content: r.content, truncated: r.truncated };
+          });
+        } catch {
+          /* keep original */
+        }
+      }
+
+      try {
+        await api.prompt(outbound, effortLevel, { history });
+      } catch (err) {
+        setRunPhase(null);
+        setRunStartedAt(null);
+        setAwaitingNextTurn(true);
+        reportError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [
+      connected,
+      state?.workspace,
+      state?.mode,
+      effortLevel,
+      reportError,
+      beginStreamRun,
+    ],
+  );
+
+  const send = useCallback(async () => {
+    await sendText(draft);
+  }, [draft, sendText]);
+
+  const retryLastUser = useCallback(
+    (_id: string, content: string) => {
+      // Drop trailing assistant / stop chips; keep the last user bubble
+      void sendText(content, {
+        stripTrailingAssistant: true,
+        skipUserBubble: true,
+      });
+    },
+    [sendText],
+  );
+
+  const regenerateLast = useCallback(
+    (userContent: string) => {
+      void sendText(userContent, {
+        skipUserBubble: true,
+        stripTrailingAssistant: true,
+      });
+    },
+    [sendText],
+  );
+
+  const lastUserId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]!.role === "user") return messages[i]!.id;
+    }
+    return null;
+  }, [messages]);
+
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.role === "assistant" && (m.content?.trim() || m.thinking?.trim())) {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const attachFilesToComposer = useCallback(
+    async (files: FileList | File[]) => {
+      const { blocks, errors } = await readFilesForAttach(files);
+      if (blocks.length) {
+        setDraft((d) => d + blocks.join(""));
+        toast.push(
+          `Attached ${blocks.length} file${blocks.length === 1 ? "" : "s"} as text`,
+          "success",
+        );
+      }
+      for (const e of errors.slice(0, 3)) {
+        toast.push(e, "error");
+      }
+      composerRef.current?.focus();
+    },
+    [toast],
+  );
+
+  const exportCurrentChat = useCallback(() => {
+    const title =
+      sessionId != null
+        ? listSessions(sessionPartition).find((s) => s.id === sessionId)
+            ?.title
+        : undefined;
+    const md = transcriptToMarkdown({
+      title: title || "Chat",
+      mode: productMode,
+      messages: messagesRef.current,
+    });
+    downloadMarkdown(suggestChatFilename(title), md);
+    toast.push("Downloaded chat as Markdown", "success");
+  }, [sessionId, sessionPartition, productMode, toast]);
+
+  const onComposerChange = (value: string) => {
+    setDraft(value);
+    const m = value.match(/@([^\s@]*)$/);
+    if (m && fileIndex.length) {
+      const q = m[1]!.toLowerCase();
+      setAtSuggestions(
+        fileIndex.filter((f) => f.toLowerCase().includes(q)).slice(0, 8),
+      );
+    } else {
+      setAtSuggestions([]);
+    }
+  };
+
+  const insertAtFile = (file: string) => {
+    setDraft((d) => d.replace(/@([^\s@]*)$/, `@${file} `));
+    setAtSuggestions([]);
+    composerRef.current?.focus();
+  };
+
+  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (atSuggestions.length && (e.key === "ArrowDown" || e.key === "Tab")) {
+      e.preventDefault();
+      insertAtFile(atSuggestions[0]!);
+      return;
+    }
+    if (e.key === "ArrowUp" && !e.shiftKey && draft === "" && history.length) {
+      e.preventDefault();
+      const next = histIdx < 0 ? 0 : Math.min(histIdx + 1, history.length - 1);
+      setHistIdx(next);
+      setDraft(history[next] ?? "");
+      return;
+    }
+    if (e.key === "ArrowDown" && histIdx >= 0) {
+      e.preventDefault();
+      const next = histIdx - 1;
+      if (next < 0) {
+        setHistIdx(-1);
+        setDraft("");
+      } else {
+        setHistIdx(next);
+        setDraft(history[next] ?? "");
+      }
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  // Global keys: palette, composer, sessions, permissions, diffs
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const t = e.target as HTMLElement | null;
+      const inField =
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable);
+
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        setView("chat");
+        setTimeout(() => composerRef.current?.focus(), 0);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        newSession();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (peek) {
+          e.preventDefault();
+          setPeek(null);
+          return;
+        }
+        if (paletteOpen) {
+          e.preventDefault();
+          setPaletteOpen(false);
+          return;
+        }
+      }
+
+      // Dock decisions work even with composer focused (Y/N/S, A/R)
+      const dockOpen =
+        permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+
+      if (permissions.length > 0 && !mod && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === "y" || k === "n" || k === "s") {
+          // Allow when dock open even if inField
+          if (inField && !dockOpen) return;
+          e.preventDefault();
+          if (k === "y") void decidePermission("allow_once");
+          else if (k === "n") void decidePermission("deny");
+          else void decidePermission("allow_session");
+          return;
+        }
+      }
+
+      if (diffQueue.length > 0 && !mod && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === "a" || k === "r") {
+          if (inField && !dockOpen) return;
+          const active =
+            diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
+          e.preventDefault();
+          if (k === "a") void acceptDiff(active.id);
+          else void rejectDiff(active.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    permissions,
+    decidePermission,
+    newSession,
+    peek,
+    paletteOpen,
+    diffQueue,
+    activeDiffId,
+    oauth,
+    acceptDiff,
+    rejectDiff,
+  ]);
+
+  const saveSettings = async () => {
+    try {
+      const s = await api.settings({
+        apiKey: apiKeyDraft || undefined,
+        model: modelDraft,
+        shellAllowlist,
+      });
+      setState(s);
+      setApiKeyDraft("");
+      setErrorBanner(null);
+      setRecovery(null);
+      if (s.hasApiKey) {
+        setFirstRun((fr) => patchFirstRun({ ...fr, signedIn: true }));
+      }
+    } catch (err) {
+      reportError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  useEffect(() => {
+    if (state?.hasApiKey) {
+      setFirstRun((fr) =>
+        fr.signedIn ? fr : patchFirstRun({ ...fr, signedIn: true }),
+      );
+    }
+  }, [state?.hasApiKey]);
+
+  const paletteActions: PaletteAction[] = useMemo(() => {
+    const acts: PaletteAction[] = [
+      {
+        id: "open-folder",
+        label: "Open folder…",
+        hint: "Native picker",
+        run: () => void browseFolder(),
+      },
+      {
+        id: "mode-chat",
+        label: "Switch to Chat mode",
+        run: () => void switchMode("chat"),
+      },
+      {
+        id: "mode-code",
+        label: "Switch to Code mode",
+        run: () => void switchMode("code"),
+      },
+      {
+        id: "chat",
+        label: "Go to Chat view",
+        run: () => setView("chat"),
+      },
+      {
+        id: "settings",
+        label: "Go to Settings",
+        run: () => setView("settings"),
+      },
+      {
+        id: "cancel",
+        label: "Cancel run",
+        hint: "Stop agent",
+        run: () => requestCancel(),
+      },
+      {
+        id: "retry-last",
+        label: "Retry last message",
+        hint: "Send the last user message again",
+        run: () => {
+          if (!lastUserId) return;
+          const u = messages.find((m) => m.id === lastUserId);
+          if (u) retryLastUser(u.id, u.content);
+        },
+      },
+      {
+        id: "regenerate",
+        label: "Regenerate last reply",
+        hint: "New answer for the last question",
+        run: () => {
+          if (!lastUserId) return;
+          const u = messages.find((m) => m.id === lastUserId);
+          if (u) regenerateLast(u.content);
+        },
+      },
+      {
+        id: "reconnect",
+        label: "Reconnect host",
+        run: () => void retryHost(),
+      },
+      {
+        id: "toggle-allowlist",
+        label: shellAllowlist
+          ? "Disable shell allowlist"
+          : "Enable shell allowlist",
+        run: () => {
+          const next = !shellAllowlist;
+          setShellAllowlist(next);
+          void api.settings({ shellAllowlist: next }).then(setState);
+        },
+      },
+      {
+        id: "new-session",
+        label: "New chat session",
+        run: () => newSession(),
+      },
+      {
+        id: "focus-composer",
+        label: "Focus composer",
+        run: () => {
+          setView("chat");
+          setTimeout(() => composerRef.current?.focus(), 0);
+        },
+      },
+      {
+        id: "test-connection",
+        label: "Test connection",
+        run: () => {
+          setView("settings");
+          void api
+            .testConnection()
+            .then((r) =>
+              setConnTest(
+                r.probe.ok
+                  ? `OK · ${r.authSource} · ${r.model}`
+                  : `Fail · ${r.probe.detail || r.authSource}`,
+              ),
+            )
+            .catch((e) => setConnTest(String(e)));
+        },
+      },
+      {
+        id: "export-diagnostics",
+        label: "Export session diagnostics",
+        hint: "Logs + transcript",
+        run: () => void exportSessionDiagnostics(),
+      },
+      {
+        id: "export-chat-md",
+        label: "Export this chat as Markdown",
+        hint: "Download current transcript",
+        run: () => exportCurrentChat(),
+      },
+      {
+        id: "export-sessions",
+        label: "Export all sessions (JSON)",
+        hint: "Backup chats + code history",
+        run: () => {
+          try {
+            const name = downloadSessionsExport();
+            toast.push(`Exported ${name}`, "success");
+          } catch (e) {
+            reportError(e instanceof Error ? e.message : String(e));
+          }
+        },
+      },
+      {
+        id: "import-sessions",
+        label: "Import sessions (JSON)",
+        hint: "Merge backup into this device",
+        run: () => {
+          void pickImportFile().then((raw) => {
+            if (!raw) return;
+            const result = importSessionsJson(raw, "merge");
+            if (!result.ok) {
+              reportError(result.error);
+              return;
+            }
+            refreshTree();
+            setSessionList(listSessions(sessionPartition));
+            toast.push(
+              `Imported ${result.sessions} sessions (${result.partitions} groups)`,
+              "success",
+            );
+          });
+        },
+      },
+      {
+        id: "open-logs",
+        label: "Open logs folder",
+        run: () =>
+          void api
+            .openLogs()
+            .then((r) => setConnTest(r.path ? `Logs: ${r.path}` : "Opened logs"))
+            .catch((e) => setConnTest(String(e))),
+      },
+      {
+        id: "density",
+        label:
+          prefs.density === "compact"
+            ? "Density: Comfortable"
+            : "Density: Compact",
+        run: () => {
+          const next = patchPrefs({
+            density: prefs.density === "compact" ? "comfortable" : "compact",
+          });
+          setPrefs(next);
+          toast.push(`Density · ${next.density}`, "info");
+        },
+      },
+      {
+        id: "theme",
+        label:
+          prefs.theme === "light" ? "Theme: Aeon (dark)" : "Theme: Light",
+        run: () => {
+          const next = patchPrefs({
+            theme: prefs.theme === "light" ? "aeon" : "light",
+          });
+          setPrefs(next);
+          toast.push(
+            `Theme · ${next.theme === "light" ? "Light" : "Aeon"}`,
+            "info",
+          );
+        },
+      },
+      {
+        id: "motion",
+        label:
+          prefs.motion === "calm" ? "Motion: Full" : "Motion: Calm",
+        run: () => {
+          const next = patchPrefs({
+            motion: prefs.motion === "calm" ? "full" : "calm",
+          });
+          setPrefs(next);
+          toast.push(
+            `Motion · ${next.motion === "calm" ? "Calm" : "Full"}`,
+            "info",
+          );
+        },
+      },
+      {
+        id: "shortcuts",
+        label: "Keyboard shortcuts",
+        hint: "Ctrl+K L N · Y/N/S · A/R",
+        run: () =>
+          toast.push(
+            "Ctrl+K palette · Ctrl+L composer · Ctrl+N new · Y/N/S perms · A/R diffs · Esc close",
+            "info",
+          ),
+      },
+      {
+        id: "jump-diff",
+        label: "Jump to diffs",
+        hint: diffQueue.length ? `${diffQueue.length} pending` : "none",
+        run: () =>
+          document.getElementById("diff-panel")?.scrollIntoView({ behavior: "smooth" }),
+      },
+      {
+        id: "jump-perm",
+        label: "Jump to permission",
+        run: () =>
+          document.getElementById("perm-card")?.scrollIntoView({ behavior: "smooth" }),
+      },
+    ];
+    for (const r of state?.recent ?? []) {
+      acts.push({
+        id: `recent-${r.path}`,
+        label: `Open recent: ${r.name}`,
+        hint: r.path,
+        run: () => void openPath(r.path),
+      });
+    }
+    return acts;
+  }, [
+    browseFolder,
+    shellAllowlist,
+    diffQueue.length,
+    state?.recent,
+    openPath,
+    retryHost,
+    newSession,
+    exportSessionDiagnostics,
+    exportCurrentChat,
+    prefs.density,
+    prefs.theme,
+    prefs.motion,
+    toast,
+    switchMode,
+    reportError,
+    refreshTree,
+    sessionPartition,
+    requestCancel,
+    retryLastUser,
+    regenerateLast,
+    lastUserId,
+    messages,
+  ]);
+
+  const showOnboarding =
+    !isOnboardingDone(firstRun, productMode) &&
+    view === "chat" &&
+    messages.length === 0;
+
+  if (boot === "booting") {
+    return (
+      <div className="boot-screen">
+        <div className="boot-card">
+          <div className="brand">
+            <BrandMark className="brand-mark brand-mark-lg" />
+            <span className="brand-word">Forge</span>
+          </div>
+          <p className="boot-msg">{bootMsg}</p>
+          <div className="boot-spinner" aria-hidden />
+          <p className="boot-hint">
+            Agent shell · Grok first · Chat & Code
+            {channelBadge() ? ` · ${channelBadge()}` : ""}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (boot === "error") {
+    return (
+      <div className="boot-screen">
+        <div className="boot-card">
+          <div className="brand">
+            <BrandMark className="brand-mark brand-mark-lg" />
+            <span className="brand-word">Forge</span>
+          </div>
+          <p className="boot-msg error">{bootMsg}</p>
+          <div className="row" style={{ justifyContent: "center", gap: 10 }}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void retryHost()}
+            >
+              Retry connection
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void exportSessionDiagnostics()}
+            >
+              Export diagnostics
+            </button>
+          </div>
+          {exportStatus && <p className="boot-hint">{exportStatus}</p>}
+          <p className="boot-hint">
+            Logs: %USERPROFILE%\.grokforge\logs\
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <a className="skip-link" href="#composer-input">
+        Skip to composer
+      </a>
+      <CommandPalette
+        open={paletteOpen}
+        actions={paletteActions}
+        onClose={() => setPaletteOpen(false)}
+      />
+
+      {channelBadge() && (
+        <div
+          className={`channel-banner channel-banner-${channelBadge()?.toLowerCase()}`}
+          role="status"
+        >
+          <strong>{channelBadge()}</strong>
+          <span>
+            Non-production build · host :{hostPort()} · data{" "}
+            <code>
+              ~/.grokforge{appChannel() === "dev" ? "-dev" : ""}
+            </code>
+            · safe beside Prod
+          </span>
+        </div>
+      )}
+      <header className="topbar">
+        <div className="brand" title="Forge — agent shell">
+          <BrandMark />
+          <span className="brand-word">Forge</span>
+          <span className="brand-mode">
+            {productMode === "chat" ? "Chat" : "Code"}
+          </span>
+        </div>
+        <ModeSwitch
+          mode={productMode}
+          busy={busy || modeSwitching}
+          onChange={(m) => void switchMode(m)}
+        />
+        <div className="workspace-label" title={state?.workspace ?? ""}>
+          {productMode === "chat" ? (
+            state?.chatRoot ? (
+              <>
+                Files · <strong>{state.workspaceName || "folder"}</strong>
+              </>
+            ) : (
+              "Chat · personal sandbox"
+            )
+          ) : state?.workspace ? (
+            <>
+              Project · <strong>{state.workspaceName}</strong>
+              {branchMap[state.workspace] && (
+                <>
+                  {" "}
+                  <span className="branch top-branch">
+                    {branchMap[state.workspace]}
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            "No project open"
+          )}
+        </div>
+        {channelBadge() && (
+          <span
+            className={`chip channel-badge channel-${channelBadge()?.toLowerCase()}`}
+            title={`${channelBadge()} channel · host :${hostPort()} · data ~/.grokforge${appChannel() === "dev" ? "-dev" : ""} (isolated from Prod)`}
+          >
+            {channelBadge()}
+          </span>
+        )}
+        <span className={chip.className} title={state ? `source: ${state.authSource}` : ""}>
+          {chip.text}
+        </span>
+        {(sessionWrite || sessionShell) && (
+          <span className="chip api" title="Session allow policy">
+            session
+            {sessionWrite ? " write" : ""}
+            {sessionShell ? " shell" : ""}
+          </span>
+        )}
+        <span
+          className={`chip ${hostOk ? "api" : "signed-out"}`}
+          title={wsOk ? "WebSocket connected" : "WebSocket reconnecting…"}
+        >
+          {hostOk ? (tauri ? "Desktop · live" : "Host · live") : "Host offline"}
+        </span>
+        <button
+          type="button"
+          className="btn ghost"
+          title="Command palette (Ctrl+K)"
+          onClick={() => setPaletteOpen(true)}
+        >
+          ⌘K
+        </button>
+        {!hostOk && (
+          <button type="button" className="btn" onClick={() => void retryHost()}>
+            Reconnect
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => setView(view === "settings" ? "chat" : "settings")}
+        >
+          {view === "settings" ? "Chat" : "Settings"}
+        </button>
+      </header>
+
+      {!hostOk && (
+        <div className="banner-error" role="alert">
+          <div>
+            <strong>Disconnected</strong> — the local agent host stopped responding.
+          </div>
+          <button type="button" className="btn primary" onClick={() => void retryHost()}>
+            Reconnect
+          </button>
+        </div>
+      )}
+
+      {errorBanner && (
+        <div className="banner-error" role="alert">
+          <div>
+            <div>{errorBanner}</div>
+            <div className="recovery">
+              {recovery === "api_key" && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    setView("settings");
+                    setErrorBanner(null);
+                  }}
+                >
+                  Sign in / API key
+                </button>
+              )}
+              {recovery === "reconnect" && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void retryHost()}
+                >
+                  Reconnect host
+                </button>
+              )}
+              {recovery === "workspace" && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void browseFolder()}
+                >
+                  Open folder…
+                </button>
+              )}
+              {recovery === "tools" && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    setForceOpenFailedTools(true);
+                    setView("chat");
+                    setErrorBanner(null);
+                    setTimeout(() => setForceOpenFailedTools(false), 2500);
+                  }}
+                >
+                  Show failed tools
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="banner-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void exportSessionDiagnostics()}
+            >
+              Export diagnostics
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                setErrorBanner(null);
+                setRecovery(null);
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="layout">
+        <div className="sidebar-stack" data-mode={productMode}>
+          <Sidebar
+            mode={productMode}
+            chatSessions={chatSessions}
+            chatRootLabel={
+              state?.chatRoot?.includes("chat-sandbox")
+                ? null
+                : state?.workspaceName ||
+                  state?.chatRoot?.split(/[/\\]/).pop() ||
+                  null
+            }
+            showChatFiles={prefs.showChatFiles}
+            showSubagents={prefs.showSubagents}
+            onNewChat={() => newSession(sessionPartition)}
+            onSelectChat={(id) => void switchSession(sessionPartition, id)}
+            onRenameChat={(id, title) =>
+              renameSession(sessionPartition, id, title)
+            }
+            onDeleteChat={(id) => removeSession(sessionPartition, id)}
+            onBindChatFolder={() => void bindChatFolder()}
+            onClearChatFolder={() => void clearChatFolder()}
+            workspaces={treeWorkspaces}
+            activeWorkspace={state?.workspace ?? null}
+            activeSessionId={sessionId}
+            onOpenFolder={() => void browseFolder()}
+            onToggleFolder={(path) => {
+              toggleExpanded(path);
+              refreshTree();
+            }}
+            onSelectWorkspace={(path) => void openPath(path)}
+            onSelectCodeSession={(ws, sid) => void switchSession(ws, sid)}
+            onNewCodeSession={(ws) => newSession(ws)}
+            onRenameCodeSession={renameSession}
+            onDeleteCodeSession={removeSession}
+            pathInput={pathInput}
+            onPathInputChange={setPathInput}
+            onPathOpen={() => void openPath(pathInput)}
+            viewTab={view === "settings" ? "settings" : "messages"}
+            onViewTab={(t) => setView(t === "settings" ? "settings" : "chat")}
+          />
+        </div>
+
+        <main className="main">
+          {view === "settings" ? (
+            <div className="panel-settings">
+              <div className="settings">
+                <h1>Settings</h1>
+                <p className="lead">
+                  Forge · sign in with Grok (flagship agent) or API key backup.
+                  Ctrl+K for commands.
+                </p>
+                <div className="callout">
+                  {tauri
+                    ? "Desktop Forge — host managed automatically."
+                    : "Browser UI — prefer npm run desktop for the native window."}
+                  <br />
+                  Logs:{" "}
+                  <code>{state?.logHint || "%USERPROFILE%\\.grokforge\\logs"}</code>
+                </div>
+                <div className="row" style={{ marginBottom: 16 }}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() =>
+                      void api.oauthStart().catch((e) => reportError(String(e), { source: "oauth" }))
+                    }
+                  >
+                    Sign in with Grok
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() =>
+                      void api
+                        .oauthLogout()
+                        .then(setState)
+                        .catch((e) => reportError(String(e), { source: "oauth" }))
+                    }
+                  >
+                    Sign out
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void restartDesktopHost().then(() => bootApp())}
+                  >
+                    Restart host
+                  </button>
+                </div>
+                {oauth && (
+                  <div className="oauth-box">
+                    <h3>Complete sign-in</h3>
+                    <p>
+                      Open{" "}
+                      <a
+                        href={oauth.verification_uri_complete || oauth.verification_uri}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {oauth.verification_uri}
+                      </a>
+                    </p>
+                    <p className="user-code">{oauth.user_code}</p>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => {
+                        void api.oauthCancel();
+                        setOauth(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                <div className="field">
+                  <label>Auth priority</label>
+                  <p className="hint" style={{ marginTop: 4 }}>
+                    1) SuperGrok / subscription pool · 2) API key backup ·{" "}
+                    Active:{" "}
+                    <strong>
+                      {state?.authSource || "none"}
+                      {state?.authMode ? ` (${state.authMode})` : ""}
+                    </strong>
+                  </p>
+                </div>
+
+                <ConnectorsPanel
+                  onOpenChat={() => setView("chat")}
+                  onUseSample={(text) => {
+                    setDraft(text);
+                    setView("chat");
+                    setTimeout(() => composerRef.current?.focus(), 0);
+                  }}
+                />
+                <div className="field">
+                  <label htmlFor="apiKey">xAI API key (backup only)</label>
+                  <input
+                    id="apiKey"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={
+                      state?.authSource === "config"
+                        ? "•••• saved — paste to replace"
+                        : "Optional if signed in with Grok"
+                    }
+                    value={apiKeyDraft}
+                    onChange={(e) => setApiKeyDraft(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="agentId">ACP agent backend</label>
+                  <select
+                    id="agentId"
+                    value={state?.agentId || "grok-acp"}
+                    onChange={(e) => {
+                      void api
+                        .settings({ agentId: e.target.value })
+                        .then(setState)
+                        .catch((err) =>
+                          reportError(
+                            err instanceof Error ? err.message : String(err),
+                          ),
+                        );
+                    }}
+                  >
+                    <option value="grok-acp">
+                      Grok (xAI) — ready
+                    </option>
+                    <option value="codex-acp" disabled>
+                      Codex (OpenAI) — planned
+                    </option>
+                    <option value="claude-acp" disabled>
+                      Claude (Anthropic) — planned
+                    </option>
+                  </select>
+                  <p className="hint" style={{ marginTop: 4 }}>
+                    Provider-agnostic shell · only Grok ships today.{" "}
+                    {state?.agentName
+                      ? `Active: ${state.agentName}.`
+                      : null}
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="model">Model</label>
+                  <input
+                    id="model"
+                    type="text"
+                    value={modelDraft}
+                    onChange={(e) => setModelDraft(e.target.value)}
+                    list="model-presets"
+                  />
+                  <datalist id="model-presets">
+                    {MODEL_PRESETS.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                  <div className="model-presets row">
+                    {MODEL_PRESETS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`btn ghost ${modelDraft === m ? "active-toggle" : ""}`}
+                        onClick={() => setModelDraft(m)}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={shellAllowlist}
+                    onChange={(e) => setShellAllowlist(e.target.checked)}
+                  />
+                  Enforce shell allowlist (npm, git, node, …)
+                </label>
+                {connTest && (
+                  <div className="conn-test" role="status">
+                    Connection: {connTest}
+                  </div>
+                )}
+                {exportStatus && (
+                  <div className="conn-test" role="status">
+                    Export: {exportStatus}
+                  </div>
+                )}
+                <div className="field">
+                  <span>Appearance</span>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const next = patchPrefs({
+                          theme: prefs.theme === "light" ? "aeon" : "light",
+                        });
+                        setPrefs(next);
+                      }}
+                    >
+                      Theme: {themeLabel(prefs.theme)}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const next = patchPrefs({
+                          density:
+                            prefs.density === "compact"
+                              ? "comfortable"
+                              : "compact",
+                        });
+                        setPrefs(next);
+                      }}
+                    >
+                      Density: {prefs.density}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      title="Reduce field motion and brand animations"
+                      onClick={() => {
+                        const next = patchPrefs({
+                          motion: prefs.motion === "calm" ? "full" : "calm",
+                        });
+                        setPrefs(next);
+                      }}
+                    >
+                      Motion: {prefs.motion === "calm" ? "Calm" : "Full"}
+                    </button>
+                  </div>
+                  <label className="check-row" style={{ marginTop: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={prefs.showChatFiles}
+                      onChange={(e) =>
+                        setPrefs(
+                          patchPrefs({ showChatFiles: e.target.checked }),
+                        )
+                      }
+                    />
+                    Chat sidebar: show local files panel
+                  </label>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={prefs.showSubagents}
+                      onChange={(e) =>
+                        setPrefs(
+                          patchPrefs({ showSubagents: e.target.checked }),
+                        )
+                      }
+                    />
+                    Code sidebar: show nested subagents
+                  </label>
+                </div>
+                <div className="field">
+                  <span>Shortcuts</span>
+                  <p className="settings-hint">
+                    <kbd>Ctrl+K</kbd> palette · <kbd>Ctrl+L</kbd> composer ·{" "}
+                    <kbd>Ctrl+N</kbd> new chat · <kbd>Y/N/S</kbd> permissions ·{" "}
+                    <kbd>A/R</kbd> diffs · <kbd>Enter</kbd> send ·{" "}
+                    <kbd>Shift+Enter</kbd> newline
+                  </p>
+                </div>
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void saveSettings()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      void api
+                        .testConnection()
+                        .then((r) =>
+                          setConnTest(
+                            r.probe.ok
+                              ? `OK · ${r.authSource} · model ${r.model}`
+                              : `Fail · ${r.probe.detail || "no credential"}`,
+                          ),
+                        )
+                        .catch((e) => setConnTest(String(e)))
+                    }
+                  >
+                    Test connection
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() =>
+                      void api
+                        .openLogs()
+                        .then((r) =>
+                          setConnTest(r.path ? `Logs: ${r.path}` : "Opened logs"),
+                        )
+                        .catch((e) => setConnTest(String(e)))
+                    }
+                  >
+                    Open logs folder
+                  </button>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void exportSessionDiagnostics()}
+                  >
+                    Export diagnostics
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      try {
+                        toast.push(
+                          `Exported ${downloadSessionsExport()}`,
+                          "success",
+                        );
+                      } catch (e) {
+                        reportError(
+                          e instanceof Error ? e.message : String(e),
+                        );
+                      }
+                    }}
+                  >
+                    Export sessions
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => {
+                      void pickImportFile().then((raw) => {
+                        if (!raw) return;
+                        const result = importSessionsJson(raw, "merge");
+                        if (!result.ok) {
+                          reportError(result.error);
+                          return;
+                        }
+                        refreshTree();
+                        setSessionList(listSessions(sessionPartition));
+                        toast.push(
+                          `Imported ${result.sessions} sessions`,
+                          "success",
+                        );
+                      });
+                    }}
+                  >
+                    Import sessions
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() =>
+                      void api.settings({ clearKey: true }).then(setState)
+                    }
+                  >
+                    Clear saved key
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="panel-chat">
+              {prefs.density !== "compact" && (
+                <OverviewStrip
+                  overview={overview}
+                  workspaceName={state?.workspaceName ?? null}
+                />
+              )}
+              <RunStatusBar
+                busy={busy || Boolean(runStartedAt)}
+                phase={runPhase}
+                phaseDetail={runPhaseDetail}
+                runStartedAt={runStartedAt}
+                effortLabel={
+                  effortLevel !== "auto" ? `Effort: ${effortLevel}` : null
+                }
+                modelLabel={state?.appliedModel || state?.model || null}
+                permissionPending={permissions.length > 0}
+                diffCount={diffQueue.length}
+                onJumpPermission={() =>
+                  document
+                    .getElementById("perm-card")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
+                onJumpDiff={() =>
+                  document
+                    .getElementById("diff-panel")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
+                onCancel={requestCancel}
+              />
+              {(openingWs || runFooter) && (
+                <div className="run-footer" role="status">
+                  {openingWs ? "Opening workspace…" : runFooter}
+                </div>
+              )}
+
+              <div className="transcript" tabIndex={-1} ref={transcriptRef}>
+                {showOnboarding ? (
+                  <Onboarding
+                    firstRun={firstRun}
+                    hasWorkspace={Boolean(state?.workspace)}
+                    signedIn={Boolean(state?.hasApiKey)}
+                    mode={productMode}
+                    onOpenFolder={() => void browseFolder()}
+                    onOpenSettings={() => setView("settings")}
+                    onSetMode={(m) => {
+                      setFirstRun((fr) =>
+                        patchFirstRun({ ...fr, pickedMode: true }),
+                      );
+                      void switchMode(m);
+                    }}
+                    onDismiss={() =>
+                      setFirstRun((fr) => patchFirstRun({ ...fr, dismissed: true }))
+                    }
+                  />
+                ) : messages.length === 0 && hostOk ? (
+                  <EmptyStates
+                    kind={
+                      !state?.hasApiKey
+                        ? "signed-out"
+                        : productMode === "code" && !state?.workspace
+                          ? "no-workspace"
+                          : "ready"
+                    }
+                    productMode={productMode}
+                    onOpenFolder={() => void browseFolder()}
+                    onSettings={() => setView("settings")}
+                    onSamplePrompt={(text) => {
+                      setDraft(text);
+                      setTimeout(() => composerRef.current?.focus(), 0);
+                    }}
+                  />
+                ) : messages.length === 0 && !hostOk ? (
+                  <EmptyStates
+                    kind="host-offline"
+                    onReconnect={() => void retryHost()}
+                  />
+                ) : (
+                  <>
+                    {!hostOk && (
+                      <div className="transcript-offline" role="status">
+                        Host offline — transcript preserved. Reconnect to continue.
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={() => void retryHost()}
+                        >
+                          Reconnect
+                        </button>
+                      </div>
+                    )}
+                    <MessageList
+                      messages={messages}
+                      busy={busy || Boolean(runStartedAt)}
+                      thinkingDetail={runPhaseDetail}
+                      showTurnDelimiter={
+                        awaitingNextTurn && messages.length > 0 && !busy
+                      }
+                      lastUserId={lastUserId}
+                      lastAssistantId={lastAssistantId}
+                      onRetryUser={retryLastUser}
+                      onRegenerate={regenerateLast}
+                      onChoose={(label, meta) => {
+                        const line = meta
+                          ? `I choose: ${label}\n\n${meta}`
+                          : `I choose: ${label}`;
+                        setDraft((d) =>
+                          d.trim() ? `${d.trim()}\n\n${line}` : line,
+                        );
+                        toast.push(`Added “${label}” to composer`, "info");
+                        setTimeout(() => composerRef.current?.focus(), 0);
+                      }}
+                      onOpenPath={(p) => void openToolPath(p)}
+                      forceOpenFailedTools={forceOpenFailedTools}
+                    />
+                  </>
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              <ActionDock
+                permissions={permissions}
+                diffQueue={diffQueue}
+                activeDiffId={activeDiffId}
+                onActiveDiffId={setActiveDiffId}
+                oauth={oauth}
+                onPermission={(d) => void decidePermission(d)}
+                onAccept={(id) => void acceptDiff(id)}
+                onReject={(id) => void rejectDiff(id)}
+                onAcceptAll={() => void acceptAllDiffs()}
+                onRejectAll={() => void rejectAllDiffs()}
+                onOauthCancel={() => {
+                  void api.oauthCancel();
+                  setOauth(null);
+                }}
+              />
+
+              <div
+                className={`composer-wrap${dragOver ? " drag-over" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const files = Array.from(e.dataTransfer.files || []);
+                  if (files.length) {
+                    void attachFilesToComposer(files);
+                    return;
+                  }
+                  const text = e.dataTransfer.getData("text/plain")?.trim();
+                  if (text) {
+                    setDraft((d) =>
+                      `${d}${d && !d.endsWith("\n") ? "\n\n" : ""}${text}`,
+                    );
+                  }
+                  composerRef.current?.focus();
+                }}
+              >
+                {atSuggestions.length > 0 && (
+                  <ul className="at-menu">
+                    {atSuggestions.map((f) => (
+                      <li key={f}>
+                        <button type="button" onClick={() => insertAtFile(f)}>
+                          @{f}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="composer">
+                  <textarea
+                    id="composer-input"
+                    ref={composerRef}
+                    value={draft}
+                    onChange={(e) => onComposerChange(e.target.value)}
+                    onKeyDown={onComposerKeyDown}
+                    aria-label="Message to agent"
+                    placeholder={
+                      sendDisabledReason && !draft.trim()
+                        ? sendDisabledReason
+                        : productMode === "chat"
+                          ? "Speak into the continuum… paste text, attach .txt/.md"
+                          : "Speak into the continuum… @file · attach · Enter send"
+                    }
+                    disabled={!connected}
+                    rows={prefs.density === "compact" ? 2 : 3}
+                  />
+                  <input
+                    type="file"
+                    id="composer-attach"
+                    multiple
+                    accept=".txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yml,.yaml,.ts,.tsx,.js,.py,.rs,text/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      if (e.target.files?.length) {
+                        void attachFilesToComposer(e.target.files);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    title="Attach text files into this message"
+                    disabled={!connected || busy}
+                    onClick={() =>
+                      document.getElementById("composer-attach")?.click()
+                    }
+                  >
+                    Attach
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    title="Download this chat as Markdown"
+                    disabled={messages.length === 0}
+                    onClick={exportCurrentChat}
+                  >
+                    Export
+                  </button>
+                  {busy ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={requestCancel}
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={Boolean(sendDisabledReason)}
+                      title={sendDisabledReason || "Send (Enter)"}
+                      onClick={() => void send()}
+                    >
+                      Send
+                    </button>
+                  )}
+                </div>
+                <div className="composer-footer">
+                  <EffortControl
+                    value={effortLevel}
+                    applied={state?.appliedEffort}
+                    onChange={(e) => void setEffortUi(e)}
+                    disabled={!connected}
+                  />
+                  <span className="composer-meta">
+                    {productMode === "chat"
+                      ? "Chat"
+                      : state?.workspaceName || "no project"}
+                    {" · "}
+                    {state?.appliedModel || state?.model || modelDraft}
+                    {state?.authSource ? ` · ${state.authSource}` : ""}
+                  </span>
+                  <span className="composer-hint">
+                    Attach text · Export .md · Enter send · Ctrl+K
+                  </span>
+                </div>
+                {sendDisabledReason && draft.trim() ? (
+                  <div className="composer-block-reason" role="status">
+                    {sendDisabledReason}
+                  </div>
+                ) : null}
+                {(busy || runStartedAt) && (
+                  <div className="composer-thinking" role="status">
+                    <span className="run-dot" />
+                    {runPhaseDetail ||
+                      (runPhase === "reasoning"
+                        ? "Thinking aloud…"
+                        : runPhase === "tools"
+                          ? "Using tools…"
+                          : runPhase === "writing"
+                            ? "Writing answer…"
+                            : "Grok is working — see status bar above. Cancel if stuck.")}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {peek && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Path peek"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPeek(null);
+          }}
+        >
+          <div className="modal peek-modal">
+            <div className="peek-head">
+              <strong title={peek.path}>{peek.path}</strong>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setPeek(null)}
+              >
+                Close
+              </button>
+            </div>
+            <pre className="peek-body">{peek.content}</pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

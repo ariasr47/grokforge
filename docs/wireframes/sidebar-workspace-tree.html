@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sidebar · Workspaces · Sessions · Subagents — Wireframe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-2: rgba(255, 255, 255, 0.07);
+      --stroke: rgba(255, 255, 255, 0.08);
+      --stroke-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --cyan: #5ce1ff;
+      --violet: #a78bfa;
+      --amber: #f0b45a;
+      --ok: #7ee0a8;
+      --glow: 0 0 32px rgba(92, 225, 255, 0.12);
+      --r: 14px;
+      --font: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+      --rail: 300px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--font);
+      background:
+        radial-gradient(900px 500px at 8% -8%, rgba(92, 225, 255, 0.07), transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, rgba(167, 139, 250, 0.09), transparent 50%),
+        var(--void);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: var(--rail) 1fr;
+      height: 100%;
+    }
+
+    /* ——— SIDEBAR ——— */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border-right: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .side-top {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--stroke);
+    }
+    .logo {
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .logo em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--cyan), var(--violet));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .open-btn {
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      color: #041016;
+      background: linear-gradient(135deg, var(--cyan), #7dd3fc 45%, var(--violet));
+      box-shadow: 0 8px 28px rgba(92, 225, 255, 0.15);
+    }
+    .section-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 6px;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .section-label .hint {
+      font-family: var(--mono);
+      letter-spacing: 0;
+      text-transform: none;
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
+    .tree {
+      flex: 1;
+      overflow: auto;
+      padding: 4px 8px 16px;
+    }
+
+    /* Folder (pinned workspace) */
+    .folder {
+      margin-bottom: 8px;
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .folder.active-ws {
+      border-color: rgba(92, 225, 255, 0.28);
+      box-shadow: inset 0 0 0 1px rgba(92, 225, 255, 0.06);
+    }
+    .folder-head {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: start;
+      text-align: left;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      padding: 10px 10px 8px;
+      cursor: pointer;
+    }
+    .folder-head:hover { background: var(--panel-2); }
+    .chev {
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 18px;
+      font-family: var(--mono);
+    }
+    .folder-meta { min-width: 0; }
+    .folder-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .pin {
+      font-size: 9px;
+      font-family: var(--mono);
+      color: var(--cyan);
+      border: 1px solid rgba(92, 225, 255, 0.3);
+      border-radius: 999px;
+      padding: 1px 6px;
+      font-weight: 500;
+    }
+    .folder-path {
+      display: block;
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .folder-count {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      padding-top: 2px;
+    }
+
+    .folder-body {
+      padding: 0 6px 8px 10px;
+      border-top: 1px solid transparent;
+    }
+    .folder.expanded .folder-body {
+      border-top-color: var(--stroke);
+      padding-top: 6px;
+    }
+    .folder:not(.expanded) .folder-body { display: none; }
+    .folder:not(.expanded) .chev { transform: rotate(-90deg); display: inline-block; }
+
+    /* Session under folder */
+    .session {
+      margin: 4px 0 4px 8px;
+      border-left: 1px solid var(--stroke);
+      padding-left: 8px;
+    }
+    .session-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 6px;
+      align-items: start;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .session-row:hover {
+      background: var(--panel-2);
+      border-color: var(--stroke);
+    }
+    .session-row.active {
+      background: rgba(92, 225, 255, 0.07);
+      border-color: rgba(92, 225, 255, 0.28);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 4px;
+      background: var(--muted);
+    }
+    .dot.live {
+      background: var(--cyan);
+      box-shadow: 0 0 10px rgba(92, 225, 255, 0.55);
+    }
+    .dot.idle { background: #4a5163; }
+    .dot.busy {
+      background: var(--violet);
+      box-shadow: 0 0 10px rgba(167, 139, 250, 0.5);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      50% { opacity: 0.45; }
+    }
+    .session-title {
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .session-sub {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+      align-items: center;
+    }
+    .branch {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--ok);
+      background: rgba(126, 224, 168, 0.08);
+      border: 1px solid rgba(126, 224, 168, 0.25);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .branch::before {
+      content: "⎇";
+      opacity: 0.8;
+    }
+    .badge {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--stroke);
+      border-radius: 6px;
+      padding: 2px 5px;
+    }
+    .badge.running {
+      color: var(--violet);
+      border-color: rgba(167, 139, 250, 0.4);
+    }
+
+    /* Subagents under session */
+    .subagents {
+      margin: 2px 0 6px 22px;
+      border-left: 1px dashed rgba(167, 139, 250, 0.35);
+      padding-left: 8px;
+    }
+    .subagent {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 12px 1fr;
+      gap: 6px;
+      align-items: start;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 8px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .subagent:hover { background: rgba(167, 139, 250, 0.08); }
+    .sub-ico {
+      width: 8px;
+      height: 8px;
+      margin-top: 4px;
+      border-radius: 2px;
+      background: var(--violet);
+      opacity: 0.85;
+    }
+    .sub-ico.explore { background: var(--cyan); }
+    .sub-ico.plan { background: var(--amber); }
+    .sub-name {
+      font-size: 11px;
+      font-weight: 500;
+      color: #d4d8e4;
+    }
+    .sub-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 3px;
+    }
+    .sub-role {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--violet);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .side-foot {
+      padding: 10px 12px;
+      border-top: 1px solid var(--stroke);
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .side-foot kbd {
+      font-family: var(--mono);
+      font-size: 10px;
+      border: 1px solid var(--stroke);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--cyan);
+    }
+
+    /* ——— MAIN (context chrome only) ——— */
+    .main {
+      display: grid;
+      grid-template-rows: 48px 1fr;
+      min-width: 0;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--stroke);
+      background: rgba(5, 5, 8, 0.65);
+      backdrop-filter: blur(16px);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .topbar strong { color: var(--text); font-weight: 500; }
+    .pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke-strong);
+      color: var(--cyan);
+      background: rgba(92, 225, 255, 0.06);
+    }
+    .spacer { flex: 1; }
+    .canvas {
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+      text-align: center;
+    }
+    .canvas h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .legend {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 420px;
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      background: var(--panel);
+      padding: 14px 16px;
+      font-size: 12px;
+    }
+    .legend h3 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .legend ul { margin: 0; padding-left: 1.1rem; color: #c5ccd9; }
+    .legend li { margin: 5px 0; }
+    .tag {
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      border: 1px solid var(--stroke);
+      background: rgba(0,0,0,0.5);
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Workspaces and sessions">
+      <div class="side-top">
+        <div class="logo">Grok Code <em>Shell</em></div>
+        <button class="open-btn" type="button">Open folder…</button>
+      </div>
+
+      <div class="section-label">
+        <span>Pinned workspaces</span>
+        <span class="hint">active sessions</span>
+      </div>
+
+      <div class="tree">
+        <!-- Workspace 1: expanded, active -->
+        <div class="folder expanded active-ws" data-folder>
+          <button class="folder-head" type="button" data-toggle>
+            <span class="chev">▾</span>
+            <span class="folder-meta">
+              <span class="folder-name">
+                grokforge
+                <span class="pin">pinned</span>
+              </span>
+              <span class="folder-path" title="C:\Dev\grokforge">C:\Dev\grokforge</span>
+            </span>
+            <span class="folder-count">3</span>
+          </button>
+          <div class="folder-body">
+            <!-- Session active + subagents -->
+            <div class="session">
+              <button class="session-row active" type="button">
+                <span class="dot live" title="Active"></span>
+                <span>
+                  <span class="session-title">Self-host packaging plan</span>
+                  <span class="session-sub">
+                    <span class="branch">feat/desktop-self-host</span>
+                    <span class="badge running">agent</span>
+                  </span>
+                </span>
+              </button>
+              <div class="subagents" aria-label="Subagents for this session">
+                <button class="subagent" type="button">
+                  <span class="sub-ico explore"></span>
+                  <span>
+                    <span class="sub-name">Scan install layout</span>
+                    <span class="sub-meta">
+                      <span class="sub-role">explore</span>
+                      <span class="branch">feat/desktop-self-host</span>
+                    </span>
+                  </span>
+                </button>
+                <button class="subagent" type="button">
+                  <span class="sub-ico plan"></span>
+                  <span>
+                    <span class="sub-name">PR plan: sidecar host</span>
+                    <span class="sub-meta">
+                      <span class="sub-role">plan</span>
+                      <span class="branch">feat/desktop-self-host</span>
+                    </span>
+                  </span>
+                </button>
+                <button class="subagent" type="button">
+                  <span class="sub-ico"></span>
+                  <span>
+                    <span class="sub-name">Implement spawn + health</span>
+                    <span class="sub-meta">
+                      <span class="sub-role">general</span>
+                      <span class="branch">feat/desktop-self-host</span>
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div class="session">
+              <button class="session-row" type="button">
+                <span class="dot idle"></span>
+                <span>
+                  <span class="session-title">Voidglass restyle review</span>
+                  <span class="session-sub">
+                    <span class="branch">master</span>
+                    <span class="badge">idle</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+
+            <div class="session">
+              <button class="session-row" type="button">
+                <span class="dot busy"></span>
+                <span>
+                  <span class="session-title">UI sessions + overview strip</span>
+                  <span class="session-sub">
+                    <span class="branch">ui/sidebar-tree</span>
+                    <span class="badge running">streaming</span>
+                  </span>
+                </span>
+              </button>
+              <div class="subagents">
+                <button class="subagent" type="button">
+                  <span class="sub-ico explore"></span>
+                  <span>
+                    <span class="sub-name">Audit App.tsx structure</span>
+                    <span class="sub-meta">
+                      <span class="sub-role">explore</span>
+                      <span class="branch">ui/sidebar-tree</span>
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workspace 2 -->
+        <div class="folder expanded" data-folder>
+          <button class="folder-head" type="button" data-toggle>
+            <span class="chev">▾</span>
+            <span class="folder-meta">
+              <span class="folder-name">
+                delivery-kit
+                <span class="pin">pinned</span>
+              </span>
+              <span class="folder-path" title="C:\Dev\delivery-kit">C:\Dev\delivery-kit</span>
+            </span>
+            <span class="folder-count">1</span>
+          </button>
+          <div class="folder-body">
+            <div class="session">
+              <button class="session-row" type="button">
+                <span class="dot idle"></span>
+                <span>
+                  <span class="session-title">Gate tooling syntax fix</span>
+                  <span class="session-sub">
+                    <span class="branch">fix/contract-lint-strings</span>
+                    <span class="badge">idle</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workspace 3: collapsed -->
+        <div class="folder" data-folder>
+          <button class="folder-head" type="button" data-toggle>
+            <span class="chev">▾</span>
+            <span class="folder-meta">
+              <span class="folder-name">
+                market-intel
+                <span class="pin">pinned</span>
+              </span>
+              <span class="folder-path">C:\Dev\market-intel</span>
+            </span>
+            <span class="folder-count">2</span>
+          </button>
+          <div class="folder-body">
+            <div class="session">
+              <button class="session-row" type="button">
+                <span class="dot idle"></span>
+                <span>
+                  <span class="session-title">Pipeline dry-run</span>
+                  <span class="session-sub">
+                    <span class="branch">main</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-foot">
+        Folders pin when they have open sessions.<br />
+        Subagents nest under their parent session.<br />
+        <kbd>⌘K</kbd> command palette · click chevron to collapse
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <span>Active · <strong>Self-host packaging plan</strong></span>
+        <span class="branch">feat/desktop-self-host</span>
+        <span class="pill">Grok · sub-pool</span>
+        <div class="spacer"></div>
+        <span>3 subagents under session</span>
+      </header>
+      <div class="canvas">
+        <div>
+          <h2>Sidebar information architecture</h2>
+          <p>
+            Wireframe only — main chat pane stays as today.<br />
+            Hierarchy: <strong>Workspace (folder)</strong> → <strong>Session</strong> → <strong>Subagent</strong>.
+          </p>
+          <div class="legend">
+            <h3>Rules (proposed)</h3>
+            <ul>
+              <li><strong>Pin</strong> = workspace has ≥1 non-archived session still “open” in the app.</li>
+              <li>Each session shows its <strong>git branch</strong> at last activity (or live if cwd tracked).</li>
+              <li>Subagents group <strong>under the spawning session</strong>, each with role + branch.</li>
+              <li>Only one session is <strong>focused</strong> (cyan); folder of that session is <strong>active-ws</strong>.</li>
+              <li>Collapsing a folder hides sessions/subagents but keeps the pin.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="tag">WIREFRAME · sidebar tree · Voidglass</div>
+
+  <script>
+    document.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        btn.closest("[data-folder]")?.classList.toggle("expanded");
+      });
+    });
+  </script>
+</body>
+</html>

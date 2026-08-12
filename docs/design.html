@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grok Code Shell — Design + Spec</title>
+  <!-- UI design canon (tokens/type/palette): .spire/clusters/tech/context/DESIGN_SYSTEM.md — this HTML is product architecture only, not UI token authority. -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --bg2: #121820;
+      --bg3: #182230;
+      --card: #151c27;
+      --border: #243044;
+      --text: #e7eef8;
+      --muted: #8b9bb4;
+      --accent: #6ea8ff;
+      --accent2: #7ee0a8;
+      --accent3: #f0b45a;
+      --accent4: #c792ea;
+      --xai: #c5d0e0;
+      --shadow: 0 12px 40px rgba(0,0,0,.35);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background:
+        radial-gradient(1200px 600px at 12% -10%, #1a2a44 0%, transparent 55%),
+        radial-gradient(900px 500px at 90% 0%, #1a3328 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+    header.hero {
+      padding: 28px 0 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px;
+    }
+    .badge {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .badge span {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .badge .hot {
+      color: #b8f5d0;
+      border-color: #2a6b4a;
+      background: #0f2a1c;
+    }
+    h1 {
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      line-height: 1.15;
+      margin: 0 0 12px;
+      font-weight: 700;
+    }
+    .lead {
+      font-size: 1.08rem;
+      color: var(--muted);
+      max-width: 72ch;
+      margin: 0;
+    }
+    nav.toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 22px 0 8px;
+    }
+    nav.toc a {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      text-decoration: none;
+    }
+    nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
+    section { margin: 36px 0; }
+    h2 {
+      font-size: 1.35rem;
+      margin: 0 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: 1.05rem; margin: 22px 0 10px; color: #d7e4f7; }
+    p { margin: 0 0 12px; color: #c9d5e7; }
+    ul, ol { margin: 0 0 14px; padding-left: 1.2rem; color: #c9d5e7; }
+    li { margin: 6px 0; }
+    .grid { display: grid; gap: 14px; }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 860px) {
+      .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .card h3 { margin-top: 0; }
+    .card .tag {
+      display: inline-block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .tag.now { color: #b8f5d0; border-color: #2a6b4a; background: #0f2a1c; }
+    .tag.later { color: #9ec1ff; border-color: #2a4a7a; background: #132033; }
+    .tag.xai { color: #d5dbe6; border-color: #3d4656; background: #1c222c; }
+    .kpi {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 14px 0 6px;
+    }
+    .kpi div {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      min-width: 140px;
+    }
+    .kpi strong { display: block; font-size: 1.1rem; color: var(--accent2); }
+    .kpi span { font-size: 12px; color: var(--muted); }
+    .mermaid {
+      background: #0e141d;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin: 14px 0 8px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin: 10px 0 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg3);
+      color: #dbe7f8;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    tr:last-child td { border-bottom: none; }
+    code {
+      font-family: var(--mono);
+      font-size: 0.9em;
+      background: #0f1620;
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 6px;
+      color: #d7e8ff;
+    }
+    pre {
+      background: #0a1018;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: #d5e2f5;
+    }
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: linear-gradient(90deg, #142033, transparent);
+      padding: 12px 14px;
+      border-radius: 0 12px 12px 0;
+      margin: 14px 0;
+      color: #cfe0f7;
+    }
+    .callout.warn {
+      border-left-color: var(--accent3);
+      background: linear-gradient(90deg, #2a2110, transparent);
+    }
+    .callout.good {
+      border-left-color: var(--accent2);
+      background: linear-gradient(90deg, #10261a, transparent);
+    }
+    .phase {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 12px;
+      margin: 12px 0;
+      align-items: start;
+    }
+    .phase .n {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--accent2);
+    }
+    .check li { list-style: none; margin-left: -1.2rem; padding-left: 0; }
+    .check li::before { content: "☐ "; color: var(--accent2); }
+    footer {
+      margin-top: 48px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="badge">
+        <span class="hot">Grok-first</span>
+        <span>Design + Spec</span>
+        <span>v0.2</span>
+      </div>
+      <h1>Grok Code Shell</h1>
+      <p class="lead">
+        A local desktop coding agent for <strong>Grok</strong> first — because Claude and ChatGPT already have
+        strong GUIs/CLIs, and Grok is where a custom shell creates immediate daily value.
+        Architecture still leaves room for Codex and Claude Code later via ACP.
+      </p>
+      <nav class="toc">
+        <a href="#decision">Priority decision</a>
+        <a href="#product">Product</a>
+        <a href="#arch">Architecture</a>
+        <a href="#auth">Auth</a>
+        <a href="#spec">Implementation spec</a>
+        <a href="#milestones">Milestones</a>
+        <a href="#later">Later: multi-agent</a>
+        <a href="#acceptance">Acceptance</a>
+      </nav>
+      <div class="kpi">
+        <div><strong>Now</strong><span>Grok agent + shell</span></div>
+        <div><strong>Auth</strong><span>Sub-pool → API fallback</span></div>
+        <div><strong>Protocol</strong><span>ACP-ready host</span></div>
+        <div><strong>Later</strong><span>Codex + Claude adapters</span></div>
+      </div>
+    </header>
+
+    <section id="decision">
+      <h2>1. Priority decision (updated)</h2>
+      <div class="callout good">
+        <strong>Build Grok integration first.</strong>
+        Claude Code and Codex already ship usable desktop/CLI experiences.
+        Grok does not have an equivalent first-class coding GUI for local repos — that gap is the product.
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <span class="tag now">Build now</span>
+          <h3>Grok Code Shell</h3>
+          <ul>
+            <li>Desktop shell (project, chat, diffs, approvals)</li>
+            <li>Grok ACP agent (tools + xAI)</li>
+            <li>SuperGrok <strong>sub-pool OAuth</strong> as default</li>
+            <li>API key fallback when pool is exhausted</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag later">Build later</span>
+          <h3>Unified multi-agent</h3>
+          <ul>
+            <li>Codex via official ACP adapter</li>
+            <li>Claude Code via official ACP adapter</li>
+            <li>Agent switcher in the same UI</li>
+            <li>Shared sessions/diffs already exist from Grok work</li>
+          </ul>
+        </div>
+      </div>
+      <p>
+        Implementing Grok first forces the hard shell work (permissions, patches, process host) once.
+        Adding Codex/Claude later is mostly registry entries + onboarding copy.
+      </p>
+    </section>
+
+    <section id="product">
+      <h2>2. Product definition (v1)</h2>
+      <p><strong>One-liner:</strong> Local project agent powered by Grok — subscription pool by default, API as backup.</p>
+      <table>
+        <thead><tr><th>User</th><th>Job to be done</th></tr></thead>
+        <tbody>
+          <tr><td>You (solo)</td><td>Open a repo, ask Grok to explore/fix/test, review diffs, keep using SuperGrok quota</td></tr>
+          <tr><td>Future you</td><td>Same window, optionally switch to Codex or Claude without rebuilding the app</td></tr>
+        </tbody>
+      </table>
+      <h3>In scope (v1)</h3>
+      <ul>
+        <li>Open a local folder as workspace</li>
+        <li>Chat thread with streaming replies</li>
+        <li>Tools: read file, list/search, apply patch, run shell command</li>
+        <li>Permission prompts before write/shell</li>
+        <li>Diff view for proposed edits</li>
+        <li>Grok auth: OAuth sub-pool + API key</li>
+      </ul>
+      <h3>Out of scope (v1)</h3>
+      <ul>
+        <li>Codex / Claude wiring (architecture only)</li>
+        <li>Full IDE (LSP, debugger, git GUI)</li>
+        <li>Multi-user or sharing one sub across people</li>
+        <li>Browser scraping of grok.com</li>
+      </ul>
+    </section>
+
+    <section id="arch">
+      <h2>3. Architecture (Grok-first)</h2>
+      <div class="mermaid">
+flowchart TB
+  subgraph V1["v1 — ship this"]
+    UI["Shell UI\nproject · chat · diffs · permissions"]
+    HOST["ACP client + process manager"]
+    GK["grok-acp agent"]
+    UI --> HOST --> GK
+    GK --> XAI["xAI\nOAuth sub-pool or API key"]
+    GK --> TOOLS["Local tools\nread · grep · patch · shell"]
+  end
+
+  subgraph V2["v2 — same host"]
+    CX["codex-acp"]
+    CC["claude-agent-acp"]
+    HOST -.-> CX
+    HOST -.-> CC
+  end
+      </div>
+      <p>
+        The shell speaks <strong>ACP</strong> even when only Grok exists, so the host is not rewritten for multi-agent later.
+      </p>
+    </section>
+
+    <section id="auth">
+      <h2>4. Auth (Grok)</h2>
+      <table>
+        <thead><tr><th>Mode</th><th>When</th><th>Billing</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Subscription (default)</strong></td>
+            <td>User completes Grok/xAI OAuth (PKCE)</td>
+            <td>SuperGrok / product <strong>weekly pool</strong></td>
+          </tr>
+          <tr>
+            <td><strong>API key (fallback)</strong></td>
+            <td>Pool exhausted, or user chooses heavy runs</td>
+            <td>console.x.ai pay-per-token credits</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="mermaid">
+stateDiagram-v2
+  [*] --> SignedOut
+  SignedOut --> SubPool: OAuth success
+  SignedOut --> ApiMode: paste XAI_API_KEY
+  SubPool --> ApiMode: pool limit / user switch
+  ApiMode --> SubPool: prefer subscription
+  SubPool --> SignedOut: logout
+  ApiMode --> SignedOut: clear key
+      </div>
+      <div class="callout warn">
+        <strong>Implementation order:</strong> ship API-key mode first so the agent loop works immediately;
+        then add OAuth and make sub-pool the default. Dual-mode stays in the design either way.
+      </div>
+    </section>
+
+    <section id="spec">
+      <h2>5. Implementation spec</h2>
+
+      <h3>5.1 Repo layout</h3>
+      <pre>grok-code-shell/
+├── apps/
+│   └── shell/                 # Tauri (preferred) or Electron + React UI
+├── packages/
+│   ├── acp-client/            # JSON-RPC stdio client, session types
+│   └── grok-acp/              # ACP agent process for Grok
+├── docs/
+│   └── SPEC.md                # this living spec
+└── README.md</pre>
+
+      <h3>5.2 Package: <code>acp-client</code></h3>
+      <ul>
+        <li>Spawn child with <code>cwd = workspaceRoot</code></li>
+        <li>Methods: <code>initialize</code>, <code>session/new</code>, <code>session/prompt</code>, cancel/dispose</li>
+        <li>Normalize notifications into UI events: <code>text_delta</code>, <code>tool_request</code>, <code>permission_request</code>, <code>file_edit</code>, <code>error</code>, <code>done</code></li>
+        <li>One subprocess per active thread (v1 simplicity)</li>
+      </ul>
+
+      <h3>5.3 Package: <code>grok-acp</code></h3>
+      <ul>
+        <li>stdio ACP server compatible with the host client</li>
+        <li>Model calls to xAI (streaming)</li>
+        <li>Auth provider interface: <code>SubPoolAuth</code> | <code>ApiKeyAuth</code></li>
+        <li>Tools (workspace-scoped):
+          <ul>
+            <li><code>read_file(path)</code></li>
+            <li><code>list_dir(path)</code> / <code>grep(pattern, glob?)</code></li>
+            <li><code>apply_patch(path, diff)</code> or write with preview</li>
+            <li><code>run_shell(command)</code> — always permission-gated</li>
+          </ul>
+        </li>
+        <li>Path allowlist: cannot escape workspace root</li>
+        <li>On pool/rate limit: structured error the UI can map to “Switch to API key”</li>
+      </ul>
+
+      <h3>5.4 App: <code>shell</code></h3>
+      <ul>
+        <li><strong>Project:</strong> open folder, show root name, recent projects</li>
+        <li><strong>Chat:</strong> streaming markdown transcript</li>
+        <li><strong>Permissions:</strong> modal for shell/write; remember “allow for session” optional</li>
+        <li><strong>Diffs:</strong> side-by-side or unified; Accept / Reject</li>
+        <li><strong>Settings:</strong> Sign in with Grok · paste API key · clear auth · model id</li>
+        <li><strong>Status chip:</strong> <code>Grok · sub-pool</code> | <code>Grok · API</code> | <code>Signed out</code></li>
+      </ul>
+
+      <h3>5.5 Config sketch</h3>
+      <pre>{
+  "workspace": "/path/to/repo",
+  "agent": {
+    "id": "grok",
+    "command": "node",
+    "args": ["./packages/grok-acp/dist/index.js"],
+    "model": "grok-4"
+  },
+  "auth": {
+    "mode": "sub_pool",
+    "apiKeyRef": "keychain:xai_api_key"
+  },
+  "permissions": {
+    "autoApproveRead": true,
+    "autoApproveWrite": false,
+    "autoApproveShell": false
+  }
+}</pre>
+
+      <h3>5.6 Security rules (non-negotiable)</h3>
+      <ul>
+        <li>All tool paths resolved under workspace; reject <code>..</code> escapes</li>
+        <li>Shell runs with explicit user approval (or session policy)</li>
+        <li>Secrets in OS keychain, not plaintext config in git</li>
+        <li>No embedding of other users’ credentials; single-user app</li>
+      </ul>
+    </section>
+
+    <section id="milestones">
+      <h2>6. Milestones (Grok-first)</h2>
+
+      <div class="phase">
+        <div class="n">M0</div>
+        <div class="card">
+          <h3>Skeleton</h3>
+          <p>Shell opens, select folder, empty chat UI, settings page stub. No model calls.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="n">M1</div>
+        <div class="card">
+          <h3>API-key Grok loop</h3>
+          <p><code>grok-acp</code> + host: prompt → stream text only (no tools). Proves transport + xAI connectivity.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="n">M2</div>
+        <div class="card">
+          <h3>Read tools</h3>
+          <p>read_file / grep / list_dir with auto-approve reads. Agent can answer about the repo.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="n">M3</div>
+        <div class="card">
+          <h3>Write + shell + diffs</h3>
+          <p>Patches and commands behind permissions; diff pane Accept/Reject. Daily-driver usable.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="n">M4</div>
+        <div class="card">
+          <h3>Sub-pool OAuth</h3>
+          <p>Sign in with Grok; default mode sub-pool; API key remains fallback; status chip accurate.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="n">M5</div>
+        <div class="card">
+          <h3>Hardening</h3>
+          <p>Cancel run, restart agent, error copy for limits, basic logging, README first-run.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="later">
+      <h2>7. Later: multi-agent (unchanged north star)</h2>
+      <div class="mermaid">
+flowchart LR
+  UI[Same shell] --> Host[ACP host]
+  Host --> G[Grok]
+  Host --> X[Codex]
+  Host --> C[Claude Code]
+      </div>
+      <p>
+        After M5, add agent registry entries for Codex and Claude adapters.
+        No change to transcript/diff/permission components — only spawn target + auth onboarding.
+      </p>
+    </section>
+
+    <section id="acceptance">
+      <h2>8. Acceptance criteria (v1 done)</h2>
+      <ul class="check">
+        <li>Open a real repo and ask Grok what the entrypoint is (uses read tools)</li>
+        <li>Ask for a small bugfix; see a diff; accept; file on disk matches</li>
+        <li>Shell command requires approval and shows output in the thread</li>
+        <li>API-key mode works end-to-end</li>
+        <li>Sub-pool sign-in works and status shows subscription mode</li>
+        <li>On pool/limit error, UI offers switch to API key without crashing</li>
+        <li>Agent cannot read/write outside workspace root</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>9. Open decisions</h2>
+      <table>
+        <thead><tr><th>Topic</th><th>Options</th><th>Default proposal</th></tr></thead>
+        <tbody>
+          <tr><td>Desktop framework</td><td>Tauri vs Electron</td><td><strong>Tauri</strong> (lighter); Electron if faster hire/ecosystem needed</td></tr>
+          <tr><td>UI kit</td><td>Custom vs shadcn-style</td><td>Simple dark UI, minimal deps</td></tr>
+          <tr><td>Patch format</td><td>Unified diff vs full file write</td><td>Unified diff + apply</td></tr>
+          <tr><td>Model default</td><td>Latest Grok coding-capable id</td><td>Configurable in settings</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Grok Code Shell · design + implementation spec v0.2 · Grok-first, ACP-ready, multi-agent later.
+      Companion markdown: <code>GROK_CODE_SHELL_SPEC.md</code>
+    </footer>
+  </div>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "dark",
+      securityLevel: "loose",
+      themeVariables: {
+        primaryColor: "#1a2740",
+        primaryTextColor: "#e7eef8",
+        primaryBorderColor: "#3d4f6f",
+        lineColor: "#8b9bb4",
+        secondaryColor: "#15231c",
+        tertiaryColor: "#121820"
+      }
+    });
+  </script>
+</body>
+</html>

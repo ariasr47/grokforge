@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FORGE — Brand &amp; UI wireframes (approval)</title>
+  <style>
+    :root {
+      --page: #0a0a0c;
+      --ink: #e8eaef;
+      --muted: #8b93a7;
+      --line: rgba(255,255,255,0.1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    .hero {
+      padding: 32px 40px 16px;
+      border-bottom: 1px solid var(--line);
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+    .hero p { margin: 0; color: var(--muted); max-width: 70ch; }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 16px 40px;
+      max-width: 1400px;
+      margin: 0 auto;
+      position: sticky;
+      top: 0;
+      background: rgba(10,10,12,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+    }
+    .tabs button {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink);
+      padding: 10px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .tabs button.active {
+      background: rgba(92,225,255,0.12);
+      border-color: rgba(92,225,255,0.45);
+      color: #9ef0ff;
+    }
+    .panel { display: none; padding: 24px 40px 64px; max-width: 1400px; margin: 0 auto; }
+    .panel.active { display: block; }
+    .meta {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) {
+      .meta { grid-template-columns: 1fr; }
+      .hero, .tabs, .panel { padding-left: 16px; padding-right: 16px; }
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,0.03);
+    }
+    .card h2 { margin: 0 0 8px; font-size: 18px; }
+    .card h3 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .card ul { margin: 0; padding-left: 18px; color: #c5cad6; font-size: 14px; }
+    .mood {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      min-height: 180px;
+      background: #111;
+    }
+    .mood img { width: 100%; display: block; object-fit: cover; max-height: 280px; }
+    .wire {
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+    }
+    .approve {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .approve label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    /* ========== THEME A: Voidglass Forge ========== */
+    .A {
+      --bg: #050508;
+      --bg2: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --accent: #5ce1ff;
+      --accent2: #a78bfa;
+      --mono: ui-monospace, Consolas, monospace;
+      --sans: system-ui, sans-serif;
+      background:
+        radial-gradient(900px 500px at 10% -10%, rgba(92,225,255,0.08), transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, rgba(167,139,250,0.1), transparent 50%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 720px;
+    }
+    .A .top {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: rgba(5,5,8,0.72); backdrop-filter: blur(16px);
+    }
+    .A .brand {
+      font-weight: 700; letter-spacing: 0.12em; font-size: 13px;
+    }
+    .A .brand span {
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .A .seg {
+      display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
+    }
+    .A .seg b {
+      padding: 6px 14px; font-size: 12px; font-weight: 500;
+    }
+    .A .seg b.on {
+      background: rgba(92,225,255,0.15); color: var(--accent);
+    }
+    .A .chip {
+      margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono);
+    }
+    .A .body { display: grid; grid-template-columns: 240px 1fr; min-height: 640px; }
+    .A .side {
+      border-right: 1px solid var(--border); padding: 12px;
+      background: rgba(0,0,0,0.25);
+    }
+    .A .side .lbl {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+      margin: 8px 0;
+    }
+    .A .sess {
+      padding: 10px; border-radius: 12px; border: 1px solid transparent;
+      margin-bottom: 6px; font-size: 13px;
+    }
+    .A .sess.on {
+      border-color: rgba(92,225,255,0.3); background: rgba(92,225,255,0.08);
+    }
+    .A .main { display: flex; flex-direction: column; min-width: 0; }
+    .A .status {
+      padding: 8px 16px; font-size: 11px; font-family: var(--mono); color: var(--accent);
+      border-bottom: 1px solid var(--border); background: rgba(92,225,255,0.05);
+    }
+    .A .transcript { flex: 1; padding: 16px; overflow: auto; }
+    .A .msg {
+      max-width: 720px; margin-bottom: 16px; padding: 12px 14px;
+      border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    }
+    .A .msg .who { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-family: var(--mono); }
+    .A .cards { display: flex; gap: 8px; overflow: hidden; }
+    .A .card-ui {
+      flex: 0 0 200px; padding: 12px; border-radius: 12px;
+      border: 1px solid rgba(92,225,255,0.25); background: rgba(92,225,255,0.06);
+      font-size: 12px;
+    }
+    .A .badge {
+      display: inline-block; font-size: 9px; font-family: var(--mono);
+      padding: 2px 6px; border-radius: 999px; background: rgba(167,139,250,0.2); color: var(--accent2);
+    }
+    .A .composer {
+      border-top: 1px solid var(--border); padding: 12px 16px;
+      display: flex; gap: 8px; background: rgba(5,5,8,0.9);
+    }
+    .A .composer input {
+      flex: 1; border-radius: 12px; border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04); padding: 12px; color: var(--text);
+    }
+    .A .btn {
+      border: none; border-radius: 12px; padding: 0 18px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #041018; font-weight: 600; font-size: 13px;
+    }
+
+    /* ========== THEME B: Foundry Graphite ========== */
+    .B {
+      --bg: #141210;
+      --paper: #1c1916;
+      --copper: #c47a4a;
+      --steel: #9aa3ad;
+      --text: #f4efe8;
+      --muted: #9a9086;
+      --line: rgba(255,240,220,0.1);
+      background: linear-gradient(180deg, #1a1714 0%, #100e0c 100%);
+      color: var(--text);
+      font-family: "Georgia", "Times New Roman", serif;
+      min-height: 720px;
+    }
+    .B .top {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 20px; border-bottom: 1px solid var(--line);
+      background: #161310;
+    }
+    .B .brand {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-weight: 700; letter-spacing: 0.2em; font-size: 12px;
+      color: var(--copper);
+    }
+    .B .brand small { color: var(--steel); letter-spacing: 0.05em; font-weight: 400; margin-left: 8px; }
+    .B .modes {
+      display: flex; gap: 2px; background: #0e0c0a; border-radius: 4px; padding: 2px;
+      font-family: system-ui, sans-serif; font-size: 12px;
+    }
+    .B .modes span { padding: 6px 14px; border-radius: 3px; color: var(--muted); }
+    .B .modes span.on { background: var(--copper); color: #1a1008; font-weight: 600; }
+    .B .body { display: grid; grid-template-columns: 260px 1fr; min-height: 640px; }
+    .B .side {
+      border-right: 1px solid var(--line); padding: 16px;
+      background: #120f0d;
+      font-family: system-ui, sans-serif;
+    }
+    .B .side .lbl {
+      font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--copper);
+      margin-bottom: 12px;
+    }
+    .B .proj {
+      border: 1px solid var(--line); border-radius: 2px; padding: 12px; margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .B .proj.on { border-color: var(--copper); box-shadow: inset 3px 0 0 var(--copper); }
+    .B .main { display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
+    .B .rail {
+      display: flex; gap: 16px; padding: 8px 20px; font-size: 11px; color: var(--steel);
+      border-bottom: 1px solid var(--line); letter-spacing: 0.04em;
+    }
+    .B .transcript { flex: 1; padding: 24px 28px; }
+    .B .msg {
+      max-width: 680px; margin-bottom: 20px;
+    }
+    .B .msg .who {
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--copper); margin-bottom: 8px;
+    }
+    .B .msg .body-text {
+      font-size: 15px; line-height: 1.65; color: #ebe4db;
+    }
+    .B .table {
+      width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px;
+    }
+    .B .table th, .B .table td {
+      border: 1px solid var(--line); padding: 8px 10px; text-align: left;
+    }
+    .B .table th { background: rgba(196,122,74,0.12); color: var(--copper); }
+    .B .composer {
+      border-top: 1px solid var(--line); padding: 16px 20px; display: flex; gap: 10px;
+      background: #100e0c;
+    }
+    .B .composer textarea {
+      flex: 1; min-height: 56px; border: 1px solid var(--line); border-radius: 2px;
+      background: #1a1612; color: var(--text); padding: 12px; resize: none;
+      font-family: system-ui, sans-serif;
+    }
+    .B .btn {
+      background: var(--copper); color: #1a1008; border: none; padding: 0 22px;
+      font-weight: 700; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase;
+    }
+
+    /* ========== THEME C: Aeon Continuum (post-human) ========== */
+    .C {
+      --void: #03040a;
+      --field: rgba(120, 255, 230, 0.06);
+      --edge: rgba(160, 255, 245, 0.35);
+      --plasma: #7dffe8;
+      --mind: #c4b5fd;
+      --whisper: rgba(220, 240, 255, 0.55);
+      background:
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(100,80,255,0.15), transparent 50%),
+        radial-gradient(ellipse 40% 40% at 80% 80%, rgba(0,255,200,0.08), transparent 45%),
+        var(--void);
+      color: #eef8ff;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      min-height: 720px;
+      position: relative;
+      overflow: hidden;
+    }
+    .C::before {
+      content: "";
+      position: absolute; inset: 0; pointer-events: none;
+      background-image:
+        radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.35), transparent),
+        radial-gradient(1px 1px at 70% 60%, rgba(125,255,232,0.4), transparent),
+        radial-gradient(1px 1px at 40% 80%, rgba(196,181,253,0.35), transparent),
+        radial-gradient(1px 1px at 90% 20%, rgba(255,255,255,0.25), transparent);
+      opacity: 0.7;
+    }
+    .C .shell {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: 72px 1fr 280px;
+      min-height: 720px;
+    }
+    .C .nav {
+      display: flex; flex-direction: column; align-items: center; gap: 18px;
+      padding: 20px 0; border-right: 1px solid rgba(125,255,232,0.12);
+    }
+    .C .mark {
+      width: 36px; height: 36px; border-radius: 40% 60% 55% 45%;
+      background: conic-gradient(from 120deg, var(--plasma), var(--mind), var(--plasma));
+      box-shadow: 0 0 24px rgba(125,255,232,0.45);
+      animation: breathe 4s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); filter: brightness(1); }
+      50% { transform: scale(1.06); filter: brightness(1.15); }
+    }
+    .C .nav-item {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      box-shadow: 0 0 0 0 rgba(125,255,232,0);
+    }
+    .C .nav-item.on {
+      background: var(--plasma);
+      box-shadow: 0 0 12px var(--plasma);
+    }
+    .C .stream {
+      padding: 28px 32px 100px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .C .presence {
+      display: flex; align-items: center; gap: 10px; font-size: 11px;
+      letter-spacing: 0.2em; text-transform: uppercase; color: var(--whisper);
+    }
+    .C .presence i {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--plasma);
+      display: inline-block; box-shadow: 0 0 10px var(--plasma);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .C .thought {
+      align-self: flex-start;
+      max-width: 85%;
+      padding: 16px 20px;
+      border-radius: 28px 28px 28px 8px;
+      background: linear-gradient(135deg, rgba(125,255,232,0.08), rgba(196,181,253,0.1));
+      border: 1px solid rgba(125,255,232,0.2);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 0 40px rgba(100,80,255,0.12);
+      font-size: 14px; line-height: 1.55;
+    }
+    .C .thought .label {
+      font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--plasma); margin-bottom: 8px; opacity: 0.9;
+    }
+    .C .orbit {
+      display: flex; gap: 12px; perspective: 800px;
+    }
+    .C .orb {
+      flex: 1; min-height: 120px; padding: 14px;
+      border-radius: 24px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(196,181,253,0.25);
+      transform: rotateY(-4deg);
+      transition: transform 0.4s ease, border-color 0.3s;
+      font-size: 12px;
+    }
+    .C .orb:hover {
+      transform: rotateY(0) scale(1.03);
+      border-color: var(--plasma);
+      box-shadow: 0 0 30px rgba(125,255,232,0.2);
+    }
+    .C .orb strong { display: block; margin-bottom: 6px; color: var(--mind); }
+    .C .compose-field {
+      position: absolute; bottom: 20px; left: 100px; right: 300px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 4px 4px 4px 20px;
+      border-radius: 999px;
+      background: rgba(8,12,20,0.75);
+      border: 1px solid rgba(125,255,232,0.3);
+      box-shadow: 0 0 40px rgba(125,255,232,0.1), inset 0 0 20px rgba(125,255,232,0.05);
+      backdrop-filter: blur(24px);
+    }
+    .C .compose-field input {
+      flex: 1; border: none; background: transparent; color: #eef8ff;
+      padding: 14px 0; outline: none; font-size: 14px;
+    }
+    .C .compose-field .send {
+      width: 48px; height: 48px; border-radius: 50%; border: none;
+      background: radial-gradient(circle at 30% 30%, #fff, var(--plasma) 40%, var(--mind));
+      box-shadow: 0 0 20px rgba(125,255,232,0.5);
+      cursor: pointer;
+    }
+    .C .context {
+      border-left: 1px solid rgba(125,255,232,0.12);
+      padding: 24px 16px;
+      font-size: 11px;
+      color: var(--whisper);
+    }
+    .C .context h4 {
+      margin: 0 0 12px; font-weight: 500; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--plasma); font-size: 10px;
+    }
+    .C .ctx-chip {
+      display: block; margin-bottom: 8px; padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .C .ctx-chip em { color: var(--mind); font-style: normal; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>FORGE — brand &amp; UI wireframes</h1>
+    <p>
+      Product name: <strong>Forge</strong> (ACP-native agent shell). Grok is flagship agent, not the brand.
+      Review three visual directions. Pick one primary (or mix: e.g. A chrome + C motion language).
+    </p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="a">A · Voidglass Forge (current DNA)</button>
+    <button type="button" data-tab="b">B · Foundry Graphite (new)</button>
+    <button type="button" data-tab="c">C · Aeon Continuum (post-human)</button>
+  </nav>
+
+  <!-- A -->
+  <section class="panel active" id="panel-a">
+    <div class="meta">
+      <div class="card">
+        <h2>A — Voidglass Forge</h2>
+        <p style="margin:0;color:var(--muted);font-size:14px">
+          Evolution of today’s dark glass UI. Strongest continuity for dogfood; rebrand is mostly naming,
+          wordmark, and agent-neutral chrome.
+        </p>
+        <h3>Brand</h3>
+        <ul>
+          <li>Wordmark: <strong>FORGE</strong> (gradient cyan→violet)</li>
+          <li>Tagline: “Agent shell · Grok first”</li>
+          <li>Agent chip in UI: “Grok · xAI” not product title</li>
+        </ul>
+        <h3>Visual system</h3>
+        <ul>
+          <li>Near-black #050508, glass blur topbar</li>
+          <li>Accent cyan #5ce1ff + violet #a78bfa</li>
+          <li>Geist-like sans + mono chips</li>
+          <li>16px radius cards, soft glow</li>
+        </ul>
+        <h3>Interactions</h3>
+        <ul>
+          <li>Chat | Code segmented control</li>
+          <li>Rich carousel + effort chips as today</li>
+          <li>Familiar = lowest risk for brother dogfood</li>
+        </ul>
+        <div class="approve">
+          <label><input type="radio" name="pick" value="A" /> Approve A as primary</label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Mood</h2>
+        <p class="note">Same DNA as current Voidglass — refined, not reinvented.</p>
+        <div style="margin-top:12px;padding:24px;border-radius:12px;background:linear-gradient(135deg,#050508,#0a1520);border:1px solid rgba(92,225,255,0.2)">
+          <div style="font-size:11px;letter-spacing:0.2em;color:#5ce1ff">FORGE</div>
+          <div style="margin-top:8px;font-size:20px;font-weight:600">Desktop agent shell</div>
+          <div style="margin-top:4px;color:#8b93a7;font-size:13px">Chat · Code · any ACP</div>
+        </div>
+      </div>
+    </div>
+    <div class="wire A">
+      <div class="top">
+        <div class="brand">FORGE <span>·</span></div>
+        <div class="seg"><b class="on">Chat</b><b>Code</b></div>
+        <span class="chip">Agent: Grok · Effort Auto</span>
+      </div>
+      <div class="body">
+        <aside class="side">
+          <div class="lbl">Projects</div>
+          <div class="sess on">Japan market Q3</div>
+          <div class="sess">Client emails</div>
+          <div class="sess">Translation EN↔JA</div>
+          <div class="lbl">Local files</div>
+          <div class="sess" style="opacity:0.7">Open folder…</div>
+        </aside>
+        <div class="main">
+          <div class="status">● Thinking · 12s · Expert</div>
+          <div class="transcript">
+            <div class="msg">
+              <div class="who">You</div>
+              Compare Auto / Fast / Expert / Heavy for my research week.
+            </div>
+            <div class="msg">
+              <div class="who">Forge · Grok</div>
+              Here’s a structured view — pick what fits this week.
+              <div class="cards" style="margin-top:10px">
+                <div class="card-ui"><span class="badge">Speed</span><br/><strong>Fast</strong><br/>Snappy · low reasoning</div>
+                <div class="card-ui"><span class="badge">Depth</span><br/><strong>Expert</strong><br/>High reasoning · slower</div>
+                <div class="card-ui"><span class="badge">Max</span><br/><strong>Heavy</strong><br/>Longest · hardest work</div>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <input placeholder="Message Forge…" />
+            <button class="btn" type="button">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section class="panel" id="panel-b">
+    <div class="meta">
+      <div class="card">
+        <h2>B — Foundry Graphite</h2>
+        <p style="margin:0;color:var(--muted);font-size:14px">
+          Whole new direction: industrial atelier for knowledge workers. Warm copper + charcoal.
+          Feels like a premium instrument, not a coding terminal.
+        </p>
+        <h3>Brand</h3>
+        <ul>
+          <li>Wordmark: <strong>FORGE</strong> in copper, tracking wide</li>
+          <li>Tagline: “Make with agents”</li>
+          <li>Grok appears only as “Connected agent”</li>
+        </ul>
+        <h3>Visual system</h3>
+        <ul>
+          <li>Charcoal #141210, copper #c47a4a, steel greys</li>
+          <li>Sharp 2px radii (not soft glass blobs)</li>
+          <li>Serif accents + UI sans for density</li>
+          <li>Tables and long prose first-class</li>
+        </ul>
+        <h3>Interactions</h3>
+        <ul>
+          <li>Mode as copper “tabs” not neon pills</li>
+          <li>Projects as document ledgers</li>
+          <li>Calm; motion reserved for status rail</li>
+        </ul>
+        <div class="approve">
+          <label><input type="radio" name="pick" value="B" /> Approve B as primary</label>
+        </div>
+      </div>
+      <div class="mood">
+        <img src="foundry-mood.jpg" alt="Foundry Graphite mood concept" />
+      </div>
+    </div>
+    <div class="wire B">
+      <div class="top">
+        <div class="brand">FORGE <small>agent shell</small></div>
+        <div class="modes"><span class="on">Chat</span><span>Code</span></div>
+        <span style="margin-left:auto;font-size:11px;color:#9aa3ad;font-family:system-ui">Agent · Grok</span>
+      </div>
+      <div class="body">
+        <aside class="side">
+          <div class="lbl">Workspace</div>
+          <div class="proj on">Market research · Sector pack</div>
+          <div class="proj">Correspondence</div>
+          <div class="proj">JA glossary</div>
+        </aside>
+        <div class="main">
+          <div class="rail"><span>Status idle</span><span>Effort Expert</span><span>Local files optional</span></div>
+          <div class="transcript">
+            <div class="msg">
+              <div class="who">You</div>
+              <div class="body-text">Outline a sector brief structure for the team.</div>
+            </div>
+            <div class="msg">
+              <div class="who">Forge</div>
+              <div class="body-text">
+                Recommended structure for a non-technical brief:
+                <table class="table">
+                  <tr><th>Section</th><th>Purpose</th><th>Length</th></tr>
+                  <tr><td>Summary</td><td>Decision context</td><td>½ page</td></tr>
+                  <tr><td>Players</td><td>Competitive map</td><td>1 page</td></tr>
+                  <tr><td>Risks</td><td>What to watch</td><td>½ page</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <textarea placeholder="Write to Forge…"></textarea>
+            <button class="btn" type="button">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section class="panel" id="panel-c">
+    <div class="meta">
+      <div class="card">
+        <h2>C — Aeon Continuum</h2>
+        <p style="margin:0;color:var(--muted);font-size:14px">
+          Speculative: UI as evolved by a civilization thousands of years past rectangles and menus.
+          Light-fields, presence indicators, decision orbs, gravity of attention. High risk, high distinctiveness.
+        </p>
+        <h3>Brand</h3>
+        <ul>
+          <li>Living mark (morphing plasma glyph), wordmark secondary</li>
+          <li>Name: <strong>FORGE</strong> whispered in UI, not stamped</li>
+          <li>Agent = “presence”, not product identity</li>
+        </ul>
+        <h3>Visual / UX (far future)</h3>
+        <ul>
+          <li>Non-rectilinear soft geometry; conic-gradient identity</li>
+          <li>Micro-constellations for system state</li>
+          <li>Thought surfaces with blur-glass plasma edges</li>
+          <li>Decision orbs with 3D hover (rotateY)</li>
+          <li>Composer as floating gravity well (pill field)</li>
+          <li>Context as ambient side stream, not a file tree</li>
+          <li>Motion: breathe, pulse, soft attention shifts</li>
+        </ul>
+        <h3>Risk</h3>
+        <ul>
+          <li>Brother dogfood may need “calm mode”</li>
+          <li>Best as brand film + hero surfaces, or hybrid with A/B</li>
+        </ul>
+        <div class="approve">
+          <label><input type="radio" name="pick" value="C" /> Approve C as primary</label>
+          <label><input type="radio" name="pick" value="C-hybrid" /> Approve C motion + A layout</label>
+        </div>
+      </div>
+      <div class="mood">
+        <img src="aeon-mood.jpg" alt="Aeon Continuum mood concept" />
+      </div>
+    </div>
+    <div class="wire C">
+      <div class="shell">
+        <nav class="nav">
+          <div class="mark" title="FORGE"></div>
+          <div class="nav-item on"></div>
+          <div class="nav-item"></div>
+          <div class="nav-item"></div>
+        </nav>
+        <div class="stream">
+          <div class="presence"><i></i> Presence · Grok continuum</div>
+          <div class="thought">
+            <div class="label">You</div>
+            Shape a research path for the week — options, not a wall of text.
+          </div>
+          <div class="thought">
+            <div class="label">Forge · thinking field</div>
+            Three gravity wells of effort. Touch one to commit intent.
+            <div class="orbit" style="margin-top:14px">
+              <div class="orb"><strong>Fast field</strong>Low latency cognition. Briefs, mail, light translate.</div>
+              <div class="orb"><strong>Expert field</strong>Deep structure. Sector synthesis, long JA.</div>
+              <div class="orb"><strong>Heavy field</strong>Maximum depth. Multi-doc corpus work.</div>
+            </div>
+          </div>
+          <div class="compose-field">
+            <input placeholder="Speak into the field…" />
+            <button class="send" type="button" aria-label="Send"></button>
+          </div>
+        </div>
+        <aside class="context">
+          <h4>Context stream</h4>
+          <div class="ctx-chip"><em>Project</em><br/>Japan market Q3</div>
+          <div class="ctx-chip"><em>Attached</em><br/>sector-notes.md</div>
+          <div class="ctx-chip"><em>Mode</em><br/>Chat continuum</div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const tabs = document.querySelectorAll(".tabs button");
+    const panels = {
+      a: document.getElementById("panel-a"),
+      b: document.getElementById("panel-b"),
+      c: document.getElementById("panel-c"),
+    };
+    function showTab(id) {
+      const key = id === "b" || id === "c" ? id : "a";
+      tabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === key));
+      Object.entries(panels).forEach(([k, p]) => {
+        p.classList.toggle("active", k === key);
+      });
+      document.title =
+        key === "a"
+          ? "FORGE — A Voidglass"
+          : key === "b"
+            ? "FORGE — B Foundry Graphite"
+            : "FORGE — C Aeon Continuum";
+    }
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => showTab(btn.dataset.tab));
+    });
+    const q = new URLSearchParams(location.search).get("theme");
+    showTab(q || "a");
+  </script>
+</body>
+</html>

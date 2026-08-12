@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+*.local
+.vite/
+coverage/
+.turbo/
+**/src-tauri/target/
+**/src-tauri/target-dev/
+.cargo-target-dev/
+.tauri-dev-run.cmd
+.tauri-build-run.cmd
+.desktop-profile/
+*.tsbuildinfo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local agent / session tooling (keep skills if project-owned under .grok/skills)
+.claude/
+.codex/
+.spire/

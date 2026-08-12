@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>C · Gridpulse — Grok Code Shell</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --panel: #12141c;
+      --panel-2: #181b26;
+      --line: #2a2f3d;
+      --text: #eef0f6;
+      --muted: #8d95a8;
+      --lime: #c8f542;
+      --lime-dim: rgba(200, 245, 66, 0.12);
+      --pink: #ff5c8a;
+      --blue: #6ea8ff;
+      --font: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --r: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--font);
+      background:
+        linear-gradient(rgba(42, 47, 61, 0.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(42, 47, 61, 0.35) 1px, transparent 1px),
+        var(--bg);
+      background-size: 24px 24px, 24px 24px, auto;
+      color: var(--text);
+    }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      padding: 10px;
+      gap: 10px;
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      background: var(--panel);
+    }
+    .mark {
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      font-size: 15px;
+    }
+    .mark i {
+      font-style: normal;
+      color: var(--lime);
+    }
+    .badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 5px 9px;
+      border-radius: 8px;
+      background: var(--lime-dim);
+      color: var(--lime);
+      border: 1px solid rgba(200, 245, 66, 0.35);
+    }
+    .badge.muted {
+      background: var(--panel-2);
+      color: var(--muted);
+      border-color: var(--line);
+    }
+    .grow { flex: 1; }
+    .icon-btn {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 2fr 1.1fr;
+      grid-template-rows: 1fr 120px;
+      gap: 10px;
+      min-height: 0;
+    }
+    .tile {
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      background: var(--panel);
+      min-height: 0;
+      overflow: hidden;
+    }
+    .tile.chat {
+      grid-row: 1 / 2;
+      grid-column: 2 / 3;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .tile.nav { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; }
+    .tile.diff { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; }
+    .tile.compose {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      align-items: stretch;
+    }
+    .tile-h {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .tile-h span {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .nav-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .big {
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      background: var(--lime);
+      color: #111;
+    }
+    .row-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .row-item:hover, .row-item.on {
+      background: var(--panel-2);
+      border-color: var(--line);
+    }
+    .row-item strong { font-size: 13px; font-weight: 600; }
+    .row-item em {
+      font-style: normal;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .chat-stream {
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .bubble {
+      max-width: 90%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+    .bubble.me {
+      align-self: flex-end;
+      background: rgba(110, 168, 255, 0.1);
+      border-color: rgba(110, 168, 255, 0.35);
+    }
+    .bubble .meta {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .bubble code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--lime);
+      background: rgba(0,0,0,0.35);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .pulse {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--pink);
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(255, 92, 138, 0.08);
+      border: 1px dashed rgba(255, 92, 138, 0.4);
+    }
+    .diff-body {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.5;
+      color: #b7c0d4;
+      white-space: pre-wrap;
+    }
+    .diff-body .p { color: var(--lime); }
+    .diff-body .m { color: var(--pink); }
+    .diff-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .diff-actions button {
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      padding: 10px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      background: var(--panel-2);
+      color: var(--text);
+    }
+    .diff-actions .go {
+      background: var(--lime);
+      border-color: var(--lime);
+      color: #111;
+    }
+    .compose-box {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel-2);
+      padding: 12px 14px;
+      color: var(--text);
+      font: inherit;
+      resize: none;
+      outline: none;
+    }
+    .compose-box:focus {
+      border-color: rgba(200, 245, 66, 0.5);
+      box-shadow: 0 0 0 3px var(--lime-dim);
+    }
+    .send {
+      width: 120px;
+      border: none;
+      border-radius: 12px;
+      background: var(--lime);
+      color: #111;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tag {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--bg);
+      background: var(--lime);
+      padding: 6px 10px;
+      border-radius: 6px;
+      z-index: 20;
+    }
+    @media (max-width: 960px) {
+      .grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+      }
+      .tile.chat, .tile.nav, .tile.diff, .tile.compose {
+        grid-column: 1;
+        grid-row: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="tag">C · GRIDPULSE</div>
+  <div class="app">
+    <header class="bar">
+      <div class="mark">GROK CODE <i>SHELL</i></div>
+      <span class="badge">sub-pool</span>
+      <span class="badge muted">host live</span>
+      <div class="grow"></div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">grokforge</span>
+      <button class="icon-btn" type="button">Settings</button>
+    </header>
+    <div class="grid">
+      <section class="tile nav">
+        <div class="tile-h">NAV <span>01</span></div>
+        <div class="nav-body">
+          <button class="big" type="button">Open folder…</button>
+          <div class="row-item on">
+            <strong>grokforge</strong>
+            <em>C:\Dev\grokforge</em>
+          </div>
+          <div class="row-item">
+            <strong>delivery-kit</strong>
+            <em>C:\Dev\delivery-kit</em>
+          </div>
+          <div style="flex:1"></div>
+          <p style="margin:0;font-size:11px;color:var(--muted);line-height:1.45">
+            Direction C — modular bento grid, Space Grotesk + JetBrains Mono, lime signal on ink.
+          </p>
+        </div>
+      </section>
+      <section class="tile chat">
+        <div class="tile-h">THREAD <span>stream</span></div>
+        <div class="chat-stream">
+          <div class="bubble me">
+            <div class="meta">You</div>
+            Wire a self-contained host for the release build.
+          </div>
+          <div class="pulse">tool_request · list_dir packages/</div>
+          <div class="pulse">tool_request · read_file apps/shell/src-tauri/src/lib.rs</div>
+          <div class="bubble">
+            <div class="meta">Grok</div>
+            Sidecar strategy: spawn <code>node</code> against bundled host entry, health-gate on
+            <code>:8787</code>, kill owned process on window close. Env
+            <code>GROKFORGE_ROOT</code> remains escape hatch.
+          </div>
+        </div>
+      </section>
+      <section class="tile diff">
+        <div class="tile-h">DIFF <span>pending</span></div>
+        <div class="diff-body"><span class="m">- // monorepo only</span>
+<span class="p">+ fn find_host_entry() -> PathBuf {</span>
+<span class="p">+   bundled_or_repo("apps/host/dist/index.js")</span>
+<span class="p">+ }</span></div>
+        <div class="diff-actions">
+          <button class="go" type="button">Accept</button>
+          <button type="button">Reject</button>
+        </div>
+      </section>
+      <section class="tile compose">
+        <textarea class="compose-box" placeholder="Pulse the agent… Enter to send"></textarea>
+        <button class="send" type="button">SEND →</button>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

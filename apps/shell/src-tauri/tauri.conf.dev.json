@@ -1,0 +1,19 @@
+{
+  "productName": "Forge Dev",
+  "identifier": "dev.grokforge.shell.dev",
+  "build": {
+    "devUrl": "http://localhost:5174"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Forge Dev · DEV"
+      }
+    ]
+  },
+  "bundle": {
+    "shortDescription": "Forge development channel (side-by-side with Prod)",
+    "longDescription": "Forge Dev — monorepo/dogfood build. Isolated host port 8788 and ~/.grokforge-dev data. Use Prod installer for stable daily use."
+  }
+}

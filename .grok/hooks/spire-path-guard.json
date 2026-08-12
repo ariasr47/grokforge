@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|search_replace",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .grok/tools/path_guard.js --protocol grok",
+            "commandWindows": "node .grok/tools/path_guard.js --protocol grok",
+            "timeout": 30,
+            "statusMessage": "path-guard: workspace fence (system-4b)",
+            "spireOwner": "spire:tech/path-guard"
+          }
+        ]
+      }
+    ]
+  }
+}

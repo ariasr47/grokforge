@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A · Voidglass — Grok Code Shell</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-2: rgba(255, 255, 255, 0.07);
+      --stroke: rgba(255, 255, 255, 0.08);
+      --stroke-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --cyan: #5ce1ff;
+      --violet: #a78bfa;
+      --glow: 0 0 40px rgba(92, 225, 255, 0.12);
+      --r: 16px;
+      --font: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--font);
+      background:
+        radial-gradient(900px 500px at 10% -10%, rgba(92, 225, 255, 0.08), transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, rgba(167, 139, 250, 0.1), transparent 50%),
+        var(--void);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .shell {
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      height: 100%;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--stroke);
+      background: rgba(5, 5, 8, 0.7);
+      backdrop-filter: blur(20px) saturate(1.2);
+    }
+    .logo {
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      font-size: 14px;
+    }
+    .logo em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--cyan), var(--violet));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .pill {
+      font-size: 11px;
+      font-family: var(--mono);
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke-strong);
+      color: var(--cyan);
+      background: rgba(92, 225, 255, 0.06);
+      box-shadow: var(--glow);
+    }
+    .pill.dim { color: var(--muted); border-color: var(--stroke); box-shadow: none; background: var(--panel); }
+    .spacer { flex: 1; }
+    .ghost {
+      background: transparent;
+      border: 1px solid var(--stroke);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .ghost:hover { border-color: rgba(255,255,255,0.2); }
+    .body {
+      display: grid;
+      grid-template-columns: 260px 1fr 300px;
+      min-height: 0;
+    }
+    .rail, .main, .inspector {
+      min-height: 0;
+      border-right: 1px solid var(--stroke);
+    }
+    .inspector { border-right: none; border-left: 1px solid var(--stroke); }
+    .rail {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255,255,255,0.015);
+    }
+    .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .cta {
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      color: #041016;
+      background: linear-gradient(135deg, var(--cyan), #7dd3fc 40%, var(--violet));
+      box-shadow: 0 8px 32px rgba(92, 225, 255, 0.2);
+    }
+    .proj {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .proj:hover, .proj.active {
+      background: var(--panel-2);
+      border-color: var(--stroke);
+    }
+    .proj strong { display: block; font-size: 13px; font-weight: 500; }
+    .proj span { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+    .main {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: 0;
+    }
+    .stream {
+      overflow: auto;
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .msg {
+      max-width: 720px;
+      padding: 14px 16px;
+      border-radius: var(--r);
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: rgba(92, 225, 255, 0.06);
+      border-color: rgba(92, 225, 255, 0.15);
+    }
+    .msg .who {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .msg p { margin: 0; font-size: 14px; line-height: 1.55; color: #d8dee9; }
+    .msg code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--cyan);
+      background: rgba(0,0,0,0.35);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+    .tool {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      border-left: 2px solid var(--violet);
+      padding: 8px 12px;
+      background: rgba(167, 139, 250, 0.05);
+      border-radius: 0 10px 10px 0;
+    }
+    .composer {
+      padding: 16px 20px 20px;
+      border-top: 1px solid var(--stroke);
+      background: rgba(5,5,8,0.85);
+      backdrop-filter: blur(16px);
+      display: flex;
+      gap: 10px;
+    }
+    .composer textarea {
+      flex: 1;
+      resize: none;
+      min-height: 56px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 14px 16px;
+      font: inherit;
+      outline: none;
+    }
+    .composer textarea:focus {
+      border-color: var(--stroke-strong);
+      box-shadow: var(--glow);
+    }
+    .send {
+      align-self: flex-end;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      background: var(--cyan);
+      color: #041016;
+    }
+    .inspector {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(0,0,0,0.25);
+    }
+    .card {
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      padding: 14px;
+      background: var(--panel);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+    .card pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 10px;
+      line-height: 1.45;
+      color: #9fb0c8;
+      white-space: pre-wrap;
+      max-height: 160px;
+      overflow: auto;
+    }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .actions button {
+      flex: 1;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: transparent;
+      color: var(--text);
+      padding: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .actions .ok {
+      background: rgba(92, 225, 255, 0.15);
+      border-color: var(--stroke-strong);
+      color: var(--cyan);
+    }
+    .tag {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--stroke);
+      padding: 6px 10px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+    @media (max-width: 960px) {
+      .body { grid-template-columns: 1fr; }
+      .rail, .inspector { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div class="logo">Grok Code <em>Shell</em></div>
+      <span class="pill">Grok · sub-pool</span>
+      <span class="pill dim">Desktop · live</span>
+      <div class="spacer"></div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">grokforge</span>
+      <button class="ghost" type="button">Settings</button>
+    </header>
+    <div class="body">
+      <aside class="rail">
+        <div class="label">Workspace</div>
+        <button class="cta" type="button">Open folder…</button>
+        <div class="label" style="margin-top:8px">Recent</div>
+        <div class="proj active">
+          <strong>grokforge</strong>
+          <span>C:\Dev\grokforge</span>
+        </div>
+        <div class="proj">
+          <strong>delivery-kit</strong>
+          <span>C:\Dev\delivery-kit</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <div class="label">Direction A</div>
+        <p style="margin:0;font-size:12px;color:var(--muted);line-height:1.45">
+          Voidglass — OLED glass, cyan→violet energy, zero chrome weight.
+        </p>
+      </aside>
+      <section class="main">
+        <div class="stream">
+          <article class="msg user">
+            <div class="who">You</div>
+            <p>Where is the host entrypoint and how does auth resolve?</p>
+          </article>
+          <div class="tool">→ read_file · apps/host/src/index.ts</div>
+          <div class="tool">→ grep · resolveApiKeyAsync</div>
+          <article class="msg">
+            <div class="who">Grok</div>
+            <p>
+              Host boots at <code>apps/host/src/index.ts</code> on <code>:8787</code>.
+              Auth order: env → config → OAuth → Grok Build <code>auth.json</code>.
+              Workspace tools stay confined under the open folder.
+            </p>
+          </article>
+        </div>
+        <div class="composer">
+          <textarea placeholder="Message Grok… glass composer, Enter to send"></textarea>
+          <button class="send" type="button">Send</button>
+        </div>
+      </section>
+      <aside class="inspector">
+        <div class="label">Diff</div>
+        <div class="card">
+          <h3>apps/host/src/config.ts</h3>
+          <pre>--- a/config.ts
++++ b/config.ts
+@@ resolveApiKeyAsync
++  // prefer oauth refresh before grok_build
+   const oauth = await getValidAccessToken();</pre>
+          <div class="actions">
+            <button class="ok" type="button">Accept</button>
+            <button type="button">Reject</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Permission</h3>
+          <p style="margin:0;font-size:12px;color:var(--muted)">write · config.ts</p>
+          <div class="actions">
+            <button class="ok" type="button">Allow once</button>
+            <button type="button">Deny</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <div class="tag">A · VOIDGLASS · wireframe</div>
+</body>
+</html>
