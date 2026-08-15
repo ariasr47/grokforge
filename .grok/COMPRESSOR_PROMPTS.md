@@ -57,9 +57,15 @@ I'm about to continue this work in a fresh session. Write a resume note to
 .spire/clusters/tech/state/<branch-slug>/RESUME.md (or .spire/clusters/tech/contracts/{FEATURE}/RESUME.md for a single
 in-flight build) capturing: current objective, what's already done (files changed + decisions
 locked), what's in-progress and exactly where it stopped, the next concrete step, and any gotchas
-discovered. Date it. ≤150 lines. Self-contained against PROJECT_CONTEXT.md. No narration of how we
-got here — just the state needed to pick up cold.
+discovered. Date it. Start with **Resume status:** ACTIVE (as of YYYY-MM-DD). ≤150 lines.
+Self-contained against PROJECT_CONTEXT.md. No narration of how we got here — just the state needed
+to pick up cold. (The next the boot sequence in `ORCHESTRATOR.md` §0 boot will mark it CONSUMED or delete it after re-orientation.)
 ```
+
+**Consume after pickup (not optional):** once a fresh session has delivered its re-orientation card
+from a RESUME, run `node .grok/tools/continuity.mjs mark-consumed <path>` (or `--delete` for RESUME
+only). Dated HANDOVER files (ISO date in the name) use
+`**Continuity status:** LIVE|SUPERSEDED|CONSUMED` — never delete; supersede when writing a newer handover.
 
 ---
 ### Conventions

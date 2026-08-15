@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { callDesktop } from "./desktopBridge";
 
 export function isTauri(): boolean {
   if (typeof window === "undefined") return false;
@@ -9,9 +9,17 @@ export function isTauri(): boolean {
   return Boolean(w.__TAURI_INTERNALS__ || w.__TAURI__);
 }
 
+// `import.meta.env` is a Vite-injected surface; outside a Vite build (e.g. the
+// component test harness running under plain Node) it is undefined, so every
+// read below is defensive (`?.`) rather than assuming Vite is present.
+type ViteEnv = Record<string, string | boolean | undefined>;
+function viteEnv(): ViteEnv {
+  return (import.meta as unknown as { env?: ViteEnv }).env ?? {};
+}
+
 /** Channel: prod (stable) vs dev (side-by-side). Injected by Vite for dev. */
 export function appChannel(): "prod" | "dev" {
-  const c = String(import.meta.env.VITE_GROKFORGE_CHANNEL || "prod").toLowerCase();
+  const c = String(viteEnv().VITE_GROKFORGE_CHANNEL || "prod").toLowerCase();
   if (c === "dev" || c === "tst" || c === "test" || c === "qa") return "dev";
   return "prod";
 }
@@ -19,8 +27,8 @@ export function appChannel(): "prod" | "dev" {
 /** User-facing channel label (DEV / TST / empty for prod). */
 export function channelBadge(): string | null {
   const raw = String(
-    import.meta.env.VITE_GROKFORGE_CHANNEL_LABEL ||
-      import.meta.env.VITE_GROKFORGE_CHANNEL ||
+    viteEnv().VITE_GROKFORGE_CHANNEL_LABEL ||
+      viteEnv().VITE_GROKFORGE_CHANNEL ||
       "prod",
   ).toLowerCase();
   if (raw === "tst" || raw === "test" || raw === "qa") return "TST";
@@ -29,25 +37,129 @@ export function channelBadge(): string | null {
   return null;
 }
 
-export function hostPort(): number {
-  const fromEnv = Number(import.meta.env.VITE_GROKFORGE_PORT);
+/**
+ * Channel label mirroring `apps/host/src/channel.ts::channelLabel()`
+ * exactly — unlike `channelBadge()` (which returns `null` for prod so the
+ * topbar badge chip hides itself) this is never `null`: "PROD" is the
+ * correct value for a prod build wherever build identity is being reported
+ * (`Details`, diagnostics), never for badge visibility.
+ */
+export function buildIdentityChannelLabel(): string {
+  const raw = String(
+    viteEnv().VITE_GROKFORGE_CHANNEL_LABEL ||
+      viteEnv().VITE_GROKFORGE_CHANNEL ||
+      "prod",
+  ).toLowerCase();
+  if (raw === "tst" || raw === "test" || raw === "qa") return "TST";
+  if (raw === "dev" || raw === "development") return "DEV";
+  return appChannel() === "dev" ? "DEV" : "PROD";
+}
+
+/** Test-only: replace the Tauri app-version lookup used by
+ *  `localBuildIdentity()` without needing a real Tauri IPC transport (the
+ *  jsdom test harness has no `window.__TAURI_INTERNALS__.invoke`). Mirrors
+ *  the `setDesktopBridge` seam for the other IPC boundary. */
+let appVersionResolver: (() => Promise<string>) | null = null;
+export function setAppVersionResolver(fn: (() => Promise<string>) | null): void {
+  appVersionResolver = fn;
+}
+
+export interface BuildIdentity {
+  version?: string;
+  channel: string;
+  channelLabel: string;
+}
+
+/**
+ * QA GATE Q N-2 (AC-S8) + N-3 — build identity sourced from the running
+ * executable and compile-time constants, **never from a fetch to
+ * `hostPort()`**. This exists because `LaunchFailureCard`'s `Details` and
+ * the diagnostics export need build identity in exactly the states where
+ * `GET /api/health` cannot be trusted: either nothing answers at all (every
+ * failure class that renders a full-screen card), or — before the N-3 fix —
+ * a *foreign* engine on the fallback port answers instead and reports
+ * *its* identity, not this install's. `channel`/`channelLabel` are
+ * compile-time (no IO at all); `version` is Tauri's own `core:app` command
+ * (`getVersion()`, bundled `tauri.conf.json` version) — already covered by
+ * the `core:default` capability, no custom Rust and no network needed. In
+ * the browser-dev path (`!isTauri()`) there is no such IPC, so `version` is
+ * left undefined there — that path is never the packaged build AC-S8 is
+ * about.
+ */
+export async function localBuildIdentity(): Promise<BuildIdentity> {
+  const channel = appChannel();
+  const channelLabel = buildIdentityChannelLabel();
+  if (!isTauri()) return { channel, channelLabel };
+  try {
+    const version = appVersionResolver
+      ? await appVersionResolver()
+      : await (await import("@tauri-apps/api/app")).getVersion();
+    return { version, channel, channelLabel };
+  } catch {
+    return { channel, channelLabel };
+  }
+}
+
+/**
+ * In a packaged build the port is NOT a build-time constant
+ * (INTERFACE_CONTRACT.md): the launcher walks the port ladder and publishes
+ * the resolved value over the Tauri IPC boundary. This module consumes that
+ * value in a packaged run instead of `VITE_GROKFORGE_PORT`; the browser/dev
+ * path (Vite proxy / env var) is unchanged.
+ */
+let runtimePort: number | null = null;
+export function setRuntimePort(port: number | null): void {
+  runtimePort = port;
+}
+
+/**
+ * QA GATE Q N-3 (SPEC §2.5 `instance-ownership-attach`, non-cuttable): in a
+ * packaged/Tauri build there is exactly one trustworthy source for the port
+ * — the launcher's own IPC value (`runtimePort`, set from
+ * `DesktopHostStatus.port`). A launcher failure that supplies `port: null`
+ * (`entry_missing`, `runtime_missing`, `health_timeout`, `port_unavailable`
+ * with an exhausted ladder…) means NO ENGINE, full stop. Falling back to the
+ * compile-time default port here is exactly the bug: any prod engine
+ * already sitting on that port — a second install, an orphaned host, the
+ * operator's own `npm run start` (SPEC §2.5 names this the normal loop) —
+ * would silently become "this app's engine". `null` is returned instead so
+ * every caller (`hostBase`, `wsUrl`, `json`) refuses to talk to anything
+ * rather than guessing.
+ *
+ * The **development-browser path is unaffected**: `isTauri()` is false
+ * there (no launcher exists at all), so the `VITE_GROKFORGE_PORT` / default
+ * fallback below still applies — that path targets a from-source host
+ * started the ordinary way, not a foreign packaged engine.
+ */
+export function hostPort(): number | null {
+  if (runtimePort != null && Number.isFinite(runtimePort) && runtimePort > 0) {
+    return runtimePort;
+  }
+  if (isTauri()) return null;
+  const fromEnv = Number(viteEnv().VITE_GROKFORGE_PORT);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
   return appChannel() === "dev" ? 8788 : 8787;
 }
 
-/** API base: always absolute in Tauri; Vite proxy in browser dev. */
-export function hostBase(): string {
-  const env = import.meta.env.VITE_HOST_URL as string | undefined;
+/** API base: always absolute in Tauri; Vite proxy in browser dev. `null`
+ *  when packaged/Tauri and `hostPort()` has nothing to offer — see
+ *  `hostPort()`'s N-3 note. Callers must not fetch when this is `null`. */
+export function hostBase(): string | null {
+  const env = viteEnv().VITE_HOST_URL as string | undefined;
   if (env) return env.replace(/\/$/, "");
   const port = hostPort();
-  if (isTauri()) return `http://127.0.0.1:${port}`;
+  if (isTauri()) {
+    if (port == null) return null;
+    return `http://127.0.0.1:${port}`;
+  }
   // Browser dev: Vite proxies /api and /ws to the channel host
-  if (import.meta.env.DEV) return "";
+  if (viteEnv().DEV) return "";
   return `http://127.0.0.1:${port}`;
 }
 
-export function wsUrl(): string {
+export function wsUrl(): string | null {
   const base = hostBase();
+  if (base == null) return null;
   if (base) return base.replace(/^http/, "ws") + "/ws";
   if (typeof window !== "undefined") {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -80,6 +192,50 @@ export interface PublicState {
   agentId?: string;
   agentName?: string;
   agentStatus?: string;
+  /** GET /api/state — INTERFACE_CONTRACT.md `priorConversations`. Origin-keyed
+   *  signal: true when THIS shell's engine data root has at least one
+   *  completed conversation. Outlives the WebView localStorage partition, so
+   *  a wiped/re-keyed partition cannot masquerade as a genuine first run
+   *  (SPEC §2.8, AC12b/AC12d/AC12e). Absent on older hosts -> undefined,
+   *  treated as "unknown" (never as a false first-run signal) by callers. */
+  priorConversations?: boolean;
+}
+
+/**
+ * INTERFACE_CONTRACT.md "Which surfaces carry it, and what a response that
+ * omits it means" / SPEC.md §2.8 property 4 (GATE Q pass 1j finding N-8).
+ *
+ * The engine's state object has exactly one origin-aware builder, and every
+ * response whose body is that shape carries every field the builder knows —
+ * but a per-requester field (today, `priorConversations`) exists only where
+ * that builder ran, so an older or not-yet-updated endpoint can still answer
+ * with a state-shaped body that simply omits it. The contract's rule for a
+ * consumer is explicit: an absent field is not an answer about that field —
+ * not `false`, not "unknown", and never a reason to blank a value already
+ * held. This function is the ONE place that turns a state-bearing response
+ * into the shell's held state, so that rule is enforced structurally rather
+ * than re-implemented (or forgotten) at each of the eight-and-counting call
+ * sites: it merges the payload's OWN properties onto whatever the shell
+ * already holds, and a property the payload does not carry — whether
+ * because `JSON.parse` never materialized the key, or because it was
+ * explicitly serialized as `undefined` — leaves the held value untouched.
+ *
+ * `prev == null` (nothing held yet, e.g. the very first response of the
+ * session) has nothing to preserve, so the payload is returned as-is.
+ */
+export function mergeState(
+  prev: PublicState | null,
+  payload: PublicState,
+): PublicState {
+  if (prev == null) return payload;
+  const merged: PublicState = { ...prev };
+  for (const key of Object.keys(payload) as Array<keyof PublicState>) {
+    const value = payload[key];
+    if (value !== undefined) {
+      (merged as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
 }
 
 export interface AgentDescriptor {
@@ -131,15 +287,45 @@ export type ServerEvent =
     }
   | { type: "oauth_complete"; ok: boolean; message?: string };
 
+/**
+ * Launcher -> shell boundary (INTERFACE_CONTRACT.md "Launcher → shell
+ * boundary"). The shell consumes ALL of it — `message` is free text for the
+ * `Details` disclosure and diagnostics only, never a headline or body copy
+ * (AC-U4 bans developer tokens from rendered surfaces).
+ */
+export type LaunchPhase = "starting" | "ready" | "failed";
+export type LaunchReason =
+  | "entry_missing"
+  | "runtime_missing"
+  | "port_unavailable"
+  | "health_timeout"
+  | "crashed"
+  | "origin_refused"
+  | "foreign_host"
+  | "unknown";
+
 export interface DesktopHostStatus {
   ok: boolean;
-  message: string;
+  phase: LaunchPhase;
+  /** True when this launcher spawned the listener. Always true in a packaged
+   *  prod build (instance ownership, SPEC §2.5); false is dev-shell-only. */
   owned: boolean;
-  pid?: number | null;
+  port: number | null;
+  pid: number | null;
+  reason: LaunchReason | null;
+  osError: number | null;
+  message: string;
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${hostBase()}${path}`, {
+  const base = hostBase();
+  if (base == null) {
+    // N-3 — packaged build, no launcher-published port: there is no engine
+    // to reach. Refusing here (rather than guessing a port) is the fix; see
+    // `hostPort()`.
+    throw new Error("No engine: the launcher has not published a port");
+  }
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -167,7 +353,18 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => json<{ ok: boolean; log?: string }>("/api/health"),
+  health: () =>
+    json<{
+      ok: boolean;
+      service?: string;
+      version?: string;
+      channel?: string;
+      channelLabel?: string;
+      port?: number;
+      dataDir?: string;
+      log?: string;
+      pid?: number;
+    }>("/api/health"),
   state: () => json<PublicState>("/api/state"),
   workspaceFiles: () => json<{ files: string[] }>("/api/workspace/files"),
   workspaceRead: (path: string) =>
@@ -285,14 +482,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
-  prefetchMode: (mode: ProductMode) =>
-    json<{ ok: boolean; ready: boolean; mode: ProductMode }>(
-      "/api/prefetch-mode",
-      {
-        method: "POST",
-        body: JSON.stringify({ mode }),
-      },
-    ).catch(() => ({ ok: false, ready: false, mode })),
   cancel: () =>
     json<{ ok: boolean }>("/api/cancel", { method: "POST", body: "{}" }),
   restart: () =>
@@ -357,52 +546,76 @@ export interface ConnectorInfo {
   hasToken?: boolean;
 }
 
-/** Desktop: ask Tauri to ensure host is up. Browser: poll health only. */
+function browserFallbackStatus(ok: boolean, message: string): DesktopHostStatus {
+  // The browser dev path has no launcher IPC to consult — synthesize the
+  // full shape rather than a partial one so every caller (App.tsx, the
+  // failure-card mapping) can rely on the shape being complete everywhere.
+  return {
+    ok,
+    phase: ok ? "ready" : "failed",
+    owned: false,
+    port: null,
+    pid: null,
+    reason: ok ? null : "health_timeout",
+    osError: null,
+    message,
+  };
+}
+
+function invokeFailureStatus(e: unknown): DesktopHostStatus {
+  return {
+    ok: false,
+    phase: "failed",
+    owned: false,
+    port: null,
+    pid: null,
+    reason: "unknown",
+    osError: null,
+    message: e instanceof Error ? e.message : String(e),
+  };
+}
+
+/** Desktop: ask Tauri's launcher to ensure the engine is up. Browser: poll
+ *  health only. Ordering note (INTERFACE_CONTRACT.md / PLAN F1): the runtime
+ *  port is published here, before the caller's first health poll — a caller
+ *  that reads `hostPort()` before this resolves would still hit the stale
+ *  build-time constant. */
 export async function ensureDesktopHost(): Promise<DesktopHostStatus> {
   if (isTauri()) {
     try {
-      return await invoke<DesktopHostStatus>("ensure_host");
+      const status = await callDesktop<DesktopHostStatus>("ensure_host");
+      setRuntimePort(status.port);
+      return status;
     } catch (e) {
-      return {
-        ok: false,
-        message: e instanceof Error ? e.message : String(e),
-        owned: false,
-      };
+      return invokeFailureStatus(e);
     }
   }
   try {
     await api.health();
-    return { ok: true, message: "Host healthy", owned: false };
+    return browserFallbackStatus(true, "Host healthy");
   } catch (e) {
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "Host offline",
-      owned: false,
-    };
+    return browserFallbackStatus(
+      false,
+      e instanceof Error ? e.message : "Host offline",
+    );
   }
 }
 
 export async function restartDesktopHost(): Promise<DesktopHostStatus> {
   if (isTauri()) {
     try {
-      return await invoke<DesktopHostStatus>("restart_host");
+      const status = await callDesktop<DesktopHostStatus>("restart_host");
+      setRuntimePort(status.port);
+      return status;
     } catch (e) {
-      return {
-        ok: false,
-        message: e instanceof Error ? e.message : String(e),
-        owned: false,
-      };
+      return invokeFailureStatus(e);
     }
   }
   try {
     await api.restart();
-    return { ok: true, message: "Agent restarted", owned: false };
+    return browserFallbackStatus(true, "Agent restarted");
   } catch (e) {
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : String(e),
-      owned: false,
-    };
+    return browserFallbackStatus(false, e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -437,9 +650,19 @@ export class HostSocket {
   connect(): void {
     this.closed = false;
     this.detachSocket();
+    const url = wsUrl();
+    if (url == null) {
+      // N-3 — no launcher-published port: nothing to connect to. Retry
+      // later rather than guessing a port (this only fires transiently;
+      // App only constructs a HostSocket once `boot === "ready"`, i.e.
+      // once a real port is already known).
+      this.onStatus?.(false);
+      this.scheduleReconnect();
+      return;
+    }
     let socket: WebSocket;
     try {
-      socket = new WebSocket(wsUrl());
+      socket = new WebSocket(url);
     } catch {
       this.scheduleReconnect();
       return;

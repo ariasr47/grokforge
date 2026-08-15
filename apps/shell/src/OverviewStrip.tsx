@@ -9,14 +9,16 @@ export interface RunOverview {
 interface Props {
   overview: RunOverview;
   workspaceName: string | null;
+  /** Chat must never be labelled a Code "workspace" (SPEC §4). */
+  mode?: "chat" | "code";
 }
 
-export function OverviewStrip({ overview, workspaceName }: Props) {
+export function OverviewStrip({ overview, workspaceName, mode = "code" }: Props) {
   if (!workspaceName) return null;
   return (
     <div className="overview-strip" role="status" aria-label="Run overview">
       <span className="ov-item">
-        <em>ws</em> {workspaceName}
+        <em>{mode === "chat" ? "files" : "ws"}</em> {workspaceName}
       </span>
       <span className="ov-item">
         <em>turns</em> {overview.userTurns}

@@ -34,13 +34,17 @@
 //     {"endpoints": [{
 //        "method": "GET", "path": "/api/example/{id}", "auth": true,
 //        "path_params": {"id": "abc"}, "query": {"limit": 7},
+//        "expect_status": 200,
 //        "required": { "<dot.path>": "<typespec>", ... }
 //     }]}
 // Type specs: number | string | boolean | object | array | null ; unions "object|null"; trailing "?"
 // = optional (absent ⇒ pass, present ⇒ must match). A path segment "name[]" means "the value at name
 // is an array — apply the rest of the path to EACH element" (empty array ⇒ vacuously passes). `auth`
 // (default false; anything not clearly false counts as needing a session) marks an endpoint that only
-// receives the session cookie — never sent to an endpoint that doesn't ask for one.
+// receives the session cookie — never sent to an endpoint that doesn't ask for one. `expect_status`
+// (default 200; integer 100–599) is the live HTTP status the runner accepts; body `required` is
+// validated only when the status matches. Existing 200-only specs stay valid. Sample mode still
+// checks body shape only (status is live evidence).
 //
 // Receipt (--report): a JSON object {tool, verdict, mode, source, base_url, auth, checked_at, summary,
 // endpoints}. `verdict` is PASS (live, all pass) | FAIL (any failure, either mode) | UNVERIFIABLE
@@ -50,7 +54,7 @@
 // request (e.g. --sample, or a live spec with no `auth`-marked endpoint) records null. The flag never
 // changes stdout or the exit code.
 //
-// Exit: 1 if any endpoint FAILs (missing field / type mismatch / non-200 / unreachable). 2 if the run
+// Exit: 1 if any endpoint FAILs (missing field / type mismatch / wrong status / unreachable). 2 if the run
 // could not be performed at all — bad/missing args, an unparseable spec or contract, neither --url nor
 // --sample, a spec endpoint marked `auth` with no session supplied, --auth-signup with no (or
 // malformed) `conformance.auth`, --auth-signup combined with --sample, or — under a `conformance.command`
@@ -88,7 +92,10 @@ const COOKIE_RE = /^[^\s=;,]+=[\x21-\x3a\x3c-\x7e]*$/;
 // argparse auto-generates its usage block from the parser; parseArgs does not. Spec §4.1 N4: these
 // paths are compared by exit code only, and this line is the hand-written close equivalent.
 const USAGE =
-  'usage: interface_conformance.mjs (--contract C | --spec S) [--url U] [--sample F] [--endpoint P] [--report F] [--auth-cookie NAME=VALUE] [--auth-signup]';
+  'usage: interface_conformance.mjs (--contract C | --spec S) [--url U] [--sample F] [--endpoint P] [--report F] [--auth-cookie NAME=VALUE] [--auth-signup] [--timeout-ms N]';
+
+/** Default HTTP timeout (ms). Overridable via --timeout-ms for slow local stacks (QoS). */
+let FETCH_TIMEOUT_MS = 30000;
 
 // A Map (not an object literal) so a typespec like "constructor" cannot reach Object.prototype.
 const TYPE_CHECKS = new Map([
@@ -268,7 +275,39 @@ export function needsSession(ep) {
   return Boolean(v);
 }
 
-/** urllib fetch → global fetch. Same URL construction, same 30s timeout, same non-200 → Fail. */
+/**
+ * Expected HTTP status for a live endpoint check (H1).
+ * Default 200. Accepts integer-like values in 100–599; anything else throws Fail (endpoint FAIL).
+ * @param {object} ep endpoint from the conformance spec
+ * @returns {number}
+ */
+export function expectStatus(ep) {
+  const raw = pyGet(ep, 'expect_status', 200);
+  if (raw === undefined || raw === null || raw === '') return 200;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isInteger(n) || n < 100 || n > 599) {
+    throw new Fail(`invalid expect_status ${pyRepr(raw)} (want integer 100–599)`);
+  }
+  return n;
+}
+
+/**
+ * Parse response body for required-field checks. Empty body → {} so empty required maps pass.
+ * Non-empty non-JSON → Fail with a clear message (error pages are not field-checked as objects).
+ * @param {string} text
+ * @returns {object}
+ */
+export function parseResponseBody(text) {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+  if (trimmed === '') return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    throw new Fail(`response body is not JSON: ${pyErrStr(error)}`);
+  }
+}
+
+/** urllib fetch → global fetch. Timeout from FETCH_TIMEOUT_MS; status must match expect_status. */
 async function fetchEndpoint(base, ep, cookie = null) {
   let epPath = ep.path;
   for (const [k, v] of Object.entries(pyGet(ep, 'path_params', {}))) {
@@ -288,16 +327,29 @@ async function fetchEndpoint(base, ep, cookie = null) {
     headers['Content-Type'] = 'application/json';
   }
   // urlopen raises HTTPError (a URLError) for >=400 before Python reaches its own status check;
-  // fetch resolves instead, so the check below is what turns a 500 into the same FAIL branch.
+  // fetch resolves instead, so the check below is what turns a wrong status into the FAIL branch.
   // The message text differs ("HTTP 500" vs "HTTP Error 500: …") — spec §4.1 N6 covers exactly that.
-  const resp = await fetch(url, {
-    method: pyGet(ep, 'method', 'GET'),
-    body: data,
-    headers,
-    signal: AbortSignal.timeout(30000),
-  });
-  if (resp.status !== 200) throw new Fail(`HTTP ${resp.status}`);
-  return JSON.parse(await resp.text());
+  // H1: compare to per-endpoint expect_status (default 200); then validate body required when matched.
+  const wanted = expectStatus(ep);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: pyGet(ep, 'method', 'GET'),
+      body: data,
+      headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const name = error?.name ?? '';
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new Fail(`request timed out after ${FETCH_TIMEOUT_MS}ms (${epPath})`);
+    }
+    throw error;
+  }
+  if (resp.status !== wanted) {
+    throw new Fail(`HTTP ${resp.status} (expected ${wanted})`);
+  }
+  return parseResponseBody(await resp.text());
 }
 
 export function validateEndpoint(ep, payload) {
@@ -327,12 +379,21 @@ async function bootstrapSession(base, authCfg) {
   const token = randomUUID().replaceAll('-', '').slice(0, 12);
   const body = substituteUnique(authCfg.signup_body, token);
   const url = base.replace(TRAILING_SLASHES_RE, '') + authCfg.signup_path;
-  const resp = await fetch(url, {
-    method: 'POST',
-    body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(30000),
-  });
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const name = error?.name ?? '';
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new Error(`signup POST timed out after ${FETCH_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  }
   if (resp.status >= 400) throw new Error(`signup POST ${authCfg.signup_path} returned HTTP ${resp.status}`);
   const raw = resp.headers.getSetCookie?.()[0] ?? resp.headers.get('set-cookie');
   if (!raw) throw new Error(`signup POST ${authCfg.signup_path} returned no Set-Cookie header`);
@@ -365,6 +426,7 @@ export async function main(argv) {
         report: { type: 'string' },
         'auth-cookie': { type: 'string' },
         'auth-signup': { type: 'boolean' },
+        'timeout-ms': { type: 'string' },
       },
       strict: true,
     }));
@@ -376,6 +438,14 @@ export async function main(argv) {
   if (Boolean(args.contract) === Boolean(args.spec)) {
     console.error(USAGE);
     return 2;
+  }
+  if (args['timeout-ms'] !== undefined) {
+    const n = Number(args['timeout-ms']);
+    if (!Number.isInteger(n) || n < 1000 || n > 300000) {
+      console.error('--timeout-ms must be an integer from 1000 to 300000');
+      return 2;
+    }
+    FETCH_TIMEOUT_MS = n;
   }
 
   // A consumer whose protocol this runner does not cover points `conformance.command` at its own
@@ -577,7 +647,8 @@ export async function main(argv) {
       entry.failures = failures;
     } else {
       const n = pyLen(pyGet(ep, 'required', {}));
-      console.log(`  PASS  ${label} — ${n} required field(s) present + well-typed`);
+      const statusNote = args.sample ? '' : ` (HTTP ${expectStatus(ep)})`;
+      console.log(`  PASS  ${label}${statusNote} — ${n} required field(s) present + well-typed`);
     }
     results.push(entry);
   }

@@ -21,6 +21,10 @@
 //     node .grok/tools/context_for.mjs {FEATURE} --print    # emit the assembled context pack
 //     node .grok/tools/context_for.mjs {FEATURE} --write    # write the pack to contracts/{FEATURE}/_context-pack.md
 //     node .grok/tools/context_for.mjs --tags a,b --stat    # ad-hoc: select by explicit tags
+//     node .grok/tools/context_for.mjs --discovery [--stat|--print|--write] [--budget-kb N]
+//         # GATE I pack (system-5c): invariant floor + open planning sections; closed history and
+//         # over-budget sections are elided IN PLACE with markers; --write →
+//         # contracts/_discovery-pack.md
 // Feature tags come from the BRIEF's optional `Context tags:` line + its Invariant-watch keys; `--tags`
 // overrides. Node builtins only.
 //
@@ -161,8 +165,136 @@ export function featureTags(feature, explicit) {
   return tags;
 }
 
+// --- Discovery mode (system-5c) -----------------------------------------------------------------
+//
+// GATE I runs before any BRIEF exists, so tag sharding cannot help it — but its reading problem is
+// structural, not semantic: the planning surface is mostly CLOSED history (shipped rows, resolved
+// threads, graduated decisions) that discovery never needs in full. A measured consumer's surface
+// was ~517KB, its conductor booted at ~132k tokens, and the growth is linear with no natural stop.
+// The discovery pack keeps the context file's invariant floor plus every OPEN section of the
+// planning files, and ELIDES closed-marked section bodies behind an explicit in-place marker — the
+// reader always sees what was skipped and can pull the full file or memory_query it. A hard byte
+// budget (Aider-style: budget-first, not size-blind) bounds the pack even when everything is open;
+// budget elision is also marked in place. Nothing is ever silently dropped.
+
+const DISCOVERY_FILES = Object.freeze(['BACKLOG.md', 'OPEN_THREADS.md', 'DECISION_LEDGER.md']);
+const DISCOVERY_DEFAULT_BUDGET_KB = 200;
+// Conservative: elide only when the heading itself says the section is history. Ambiguity stays.
+const CLOSED_HEADING_RE = /~~|\b(closed|shipped|resolved|superseded|archived?|retired|removed|done|killed)\b/i;
+
+function elisionMarker(fileLabel, section, reason) {
+  const body = section.lines.length - 1;
+  return [
+    section.heading,
+    `> [discovery: ${body} lines elided — ${reason}; read ${fileLabel} for the full section, or memory_query]`,
+  ];
+}
+
+export function buildDiscoveryPack({ contextText, planningTexts, budgetBytes }) {
+  const out = [];
+  const report = [];
+
+  // 1. Context file: preamble + always-load sections (the invariant floor) — never elided.
+  const [preamble, sections] = parseSections(contextText);
+  out.push(...preamble);
+  let floorKept = 0;
+  for (const s of sections) {
+    if (s.always) {
+      out.push(...s.lines);
+      floorKept += 1;
+    }
+  }
+  report.push({ file: '(context file)', kept: floorKept, elided: sections.length - floorKept });
+
+  // 2. Planning files: open sections in full; closed-marked section bodies elided in place.
+  const openSections = []; // budget-elision candidates, largest-first
+  for (const { label, text } of planningTexts) {
+    const [pre, secs] = parseSections(text);
+    out.push(...pre);
+    let kept = 0;
+    let elided = 0;
+    for (const s of secs) {
+      if (CLOSED_HEADING_RE.test(s.heading)) {
+        out.push(...elisionMarker(label, s, 'closed history'));
+        elided += 1;
+      } else {
+        const at = out.length;
+        out.push(...s.lines);
+        openSections.push({ label, section: s, at });
+        kept += 1;
+      }
+    }
+    report.push({ file: label, kept, elided });
+  }
+
+  // 3. Hard budget: if still over, elide the LARGEST open planning sections until it fits.
+  //    (The invariant floor is never budget-elided — sharding must not drop a rule.)
+  let bytes = Buffer.byteLength(out.join('\n'), 'utf8');
+  let budgetElided = 0;
+  if (bytes > budgetBytes) {
+    openSections.sort((a, b) => b.section.lines.length - a.section.lines.length);
+    for (const cand of openSections) {
+      if (bytes <= budgetBytes) break;
+      const marker = elisionMarker(cand.label, cand.section, 'over the discovery byte budget');
+      out.splice(cand.at, cand.section.lines.length, ...marker);
+      budgetElided += 1;
+      // Recompute positions cheaply: splice shifts later indices; re-derive from scratch.
+      for (const other of openSections) {
+        if (other.at > cand.at) other.at -= cand.section.lines.length - marker.length;
+      }
+      bytes = Buffer.byteLength(out.join('\n'), 'utf8');
+    }
+  }
+  return { lines: out, bytes, report, budgetElided };
+}
+
+function discoveryMain(args) {
+  const doPrint = args.includes('--print');
+  const doWrite = args.includes('--write');
+  let budgetKb = DISCOVERY_DEFAULT_BUDGET_KB;
+  if (args.includes('--budget-kb')) {
+    const raw = Number(args[args.indexOf('--budget-kb') + 1]);
+    if (Number.isFinite(raw) && raw > 0) budgetKb = raw;
+  }
+
+  const planningTexts = [];
+  for (const name of DISCOVERY_FILES) {
+    const p = path.join(STATE_ROOT, 'context', name);
+    if (!fs.existsSync(p)) continue; // absent planning file is a young project, not an error
+    planningTexts.push({ label: `context/${name}`, text: readText(p) });
+  }
+  const pack = buildDiscoveryPack({
+    contextText: fs.existsSync(CONTEXT) ? readText(CONTEXT) : '',
+    planningTexts,
+    budgetBytes: budgetKb * 1024,
+  });
+
+  if (doWrite) {
+    fs.mkdirSync(CONTRACTS, { recursive: true });
+    const dest = path.join(CONTRACTS, '_discovery-pack.md');
+    fs.writeFileSync(dest, `${pack.lines.join('\n')}\n`, 'utf8');
+    console.log(
+      `context_for — wrote ${path.relative(ROOT, dest)} (${pack.lines.length} lines, ${Math.round(pack.bytes / 1024)}KB` +
+      `${pack.budgetElided ? `, ${pack.budgetElided} section(s) budget-elided` : ''})`,
+    );
+    return 0;
+  }
+  if (doPrint) {
+    console.log(pack.lines.join('\n'));
+    return 0;
+  }
+  console.log(`context_for — discovery pack (budget ${budgetKb}KB)`);
+  for (const r of pack.report) {
+    console.log(`  ${r.file.padEnd(28)} kept ${String(r.kept).padStart(3)} section(s), elided ${r.elided}`);
+  }
+  console.log(`\n  pack: ${pack.lines.length} lines, ${Math.round(pack.bytes / 1024)}KB` +
+    `${pack.budgetElided ? ` (${pack.budgetElided} section(s) budget-elided)` : ''}`);
+  return 0;
+}
+
 export function main(argv) {
   const args = argv.slice(1);
+  if (args.includes('--discovery')) return discoveryMain(args);
   const doPrint = args.includes('--print');
   const doWrite = args.includes('--write');
   let explicit = null;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // design_system_ready.mjs — model-free preflight for living design-canon onboarding.
 //
-// Answers: "is this project ready for `design/DESIGN_SYSTEM_METHOD.md` (living project design canon) (codify|propose|no-UI)?" without inventing
+// Answers: "is this project ready for design/DESIGN_SYSTEM_METHOD.md (living project design canon) (codify|propose|no-UI)?" without inventing
 // brand taste. Exit 0 when ready; exit 1 when blocked; exit 2 on usage errors.
 //
 // Usage:
@@ -171,7 +171,7 @@ export function main(argv = process.argv) {
   if (result.ready && result.mode === 'no-ui') {
     console.log('  OK for backend-only; do not invent a design system.');
   } else if (result.ready) {
-    console.log(`  OK to run `design/DESIGN_SYSTEM_METHOD.md` (living project design canon) (or design/DESIGN_SYSTEM_METHOD.md) in ${result.mode} mode.`);
+    console.log(`  OK to run design/DESIGN_SYSTEM_METHOD.md (living project design canon) (or design/DESIGN_SYSTEM_METHOD.md) in ${result.mode} mode.`);
   } else {
     console.log('  Fill project.json + PROJECT_CONTEXT §1–§2 (or set frontend: null), then re-run.');
   }

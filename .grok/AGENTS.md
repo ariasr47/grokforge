@@ -1,12 +1,15 @@
 # AGENTS.md — Spire Tech boot document (Grok Build)
 
-You are running the installed `spire:tech` cluster on Grok Build. Static composition and scratch-install
-tests validate this boot document and its native adapter; they do not prove that a current Grok host
-executed a role or gate. Host capability claims below are **docs-derived / unverified** until a
-task-shaped trial produces attributable evidence. Read this file and the named project/conductor
-artifacts before acting.
+You are running the installed `spire:tech` cluster on Grok Build. **Cluster entry** (`$spire-tech` /
+`spire run tech`) is the product interface into tech; the **conductor** then runs the default
+**delivery ascent**. Static composition and scratch-install tests validate this boot document and its
+native adapter; they do not prove that a current Grok host executed a role or gate. Named role
+dispatch and trusted PreToolUse path_guard have been live-probed on a scratch install (kit research
+2026-08-11). Project hooks load only when the folder is trusted and Grok sees a project root.
+Remaining claims stay unverified until a further task-shaped trial. Read this file and the named
+project/conductor artifacts before acting.
 
-## 1. Select the installation and context
+## 1. Select the installation and context (cluster entry)
 
 Read `.spire/clusters/tech/project.json` and `.spire/clusters/tech/context/PROJECT_CONTEXT.md`, then run
 the installed `$spire-tech` selector or its universal equivalent:
@@ -17,7 +20,8 @@ node .spire/bin/spire.mjs run tech --provider grok
 
 Require success before reading `.grok/ORCHESTRATOR.md`. Selection validates `.spire/installation.json`,
 `.spire/version`, catalog/descriptor/provider identity, launch adapter, provider config, and immutable
-artifacts. It records routing evidence only; it does not mean a role or gate executed.
+artifacts. It records **cluster entry** routing only; it does not mean a role, gate, or the full
+delivery ascent executed. The conductor is not a second product surface.
 
 ## 2. State and sequence
 
@@ -25,8 +29,8 @@ Project-owned artifacts live under `.spire/clusters/tech/`. Feature contracts ar
 `.spire/clusters/tech/contracts/{FEATURE}/`; state and selector receipts are in the sibling `state/` and
 `receipts/` directories. Provider-native framework and tools live under `.grok/`.
 
-The conductor sequence is Discovery → Council → Plan → Backend and Frontend → QA → Ship. Every role
-handoff returns through the conductor; a non-zero gate blocks progress.
+The **delivery ascent** sequence (conductor-mediated) is Discovery → Council → Plan → Backend and
+Frontend → QA → Ship. Every role handoff returns through the conductor; a non-zero gate blocks progress.
 
 ## 3. Run gates
 
@@ -36,7 +40,15 @@ node .grok/tools/gates.mjs context_for FEATURE --write
 node .grok/tools/gates.mjs council_conflicts FEATURE
 node .grok/tools/gates.mjs interface_conformance --contract PATH --url URL
 node .grok/tools/gates.mjs ledger_tally
+node .grok/tools/gates.mjs memory_query --q "terms" --scope cluster,feature
+node .grok/tools/gates.mjs project_standup_ready
+node .grok/tools/gates.mjs foundation_ready
 ```
+
+Prefer `memory_query` before re-reading whole handovers or archives (seam files remain truth).
+
+**Onboarding:** `/project-standup` or `.grok/standup/PROJECT_STANDUP_METHOD.md`. Optional
+`/foundation` or `.grok/foundation/FOUNDATION_BOOTSTRAP_METHOD.md` (**Nx opt-in only**).
 
 Structured write targets are workspace-fenced by `.grok/hooks/spire-path-guard.json` and
 `.grok/tools/path_guard.js` (`--protocol grok`). P9 is delivered for structured write tools; arbitrary
@@ -57,7 +69,7 @@ The twenty-seven installed methods are `spire-tech-acceptance-criteria`, `spire-
 `<name>/SKILL.md` beneath that directory. The planning method is `.grok/plan/PLAN_METHOD.md`. If host
 discovery is unavailable, read the exact installed file; do not invent a different method.
 
-## 5. Host boundaries (docs-derived / unverified)
+## 5. Host boundaries (live-probed 2026-08-11 where noted)
 
 As of 2026-08-10, Grok Build documentation describes project agents under `.grok/agents/`, skills under
 `.grok/skills/` (plus Claude-compatible paths), project rules including `AGENTS.md`, and blocking

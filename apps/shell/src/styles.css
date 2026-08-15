@@ -813,7 +813,9 @@ html[data-motion="calm"] .brand-mark {
   padding: 10px 16px;
   background: rgba(255, 122, 144, 0.08);
   border-bottom: 1px solid rgba(255, 122, 144, 0.28);
-  color: #ffb4c0;
+  /* GATE Z round 3 sibling sweep: hardcoded dark-only pink, same defect
+     class as .boot-msg.error — var(--danger) carries the themed pair. */
+  color: var(--danger);
   font-size: 13px;
 }
 
@@ -928,7 +930,9 @@ html[data-motion="calm"] .brand-mark {
 .msg.tool.fail {
   border-left-color: var(--danger);
   background: rgba(255, 122, 144, 0.06);
-  color: #ffb4c0;
+  /* GATE Z round 3 sibling sweep: same hardcoded-pink defect as
+     .boot-msg.error — themed token instead. */
+  color: var(--danger);
 }
 
 .recovery {
@@ -1015,7 +1019,11 @@ html[data-motion="calm"] .brand-mark {
 }
 
 .boot-msg.error {
-  color: #ffb4c0;
+  /* GATE Z round 3: was a hardcoded dark-only pink (#ffb4c0) with no
+     light-theme override, measuring 1.49:1 in light theme (AA needs 4.5:1).
+     var(--danger) carries a themed pair (dark #ff7a90 / light #c23b55) so it
+     inherits correctly in both themes, same fix class as .mode-switch. */
+  color: var(--danger);
 }
 
 .boot-hint {
@@ -1144,6 +1152,65 @@ html[data-motion="calm"] .brand-mark {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--accent);
+}
+
+/* desktop-self-host F3/F4: launch failure cards */
+.boot-body {
+  /* GATE Z round 3: var(--muted) measured 4.15:1 in dark (needs 4.5:1) — this
+     is the failure card's body copy, not a hint; --text-secondary is the
+     existing higher-contrast tier already used for body-weight text
+     elsewhere (line 253, 3681, 3944), themed for both dark and light. */
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.saved-history-line {
+  color: var(--text);
+  font-weight: 500;
+  margin: 0 0 14px;
+}
+
+.launch-details {
+  margin-top: 18px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.launch-details summary {
+  /* GATE Z round 3: var(--accent) teal at 11px measured 1.88:1 light /
+     2.85:1 dark on the rendered card (needs 4.5:1) — the accent hue itself
+     is too close in luminance to the boot-card's own accent-tinted glass in
+     both themes, not just the light one. var(--text) is the card's
+     established high-contrast token (already used for .launch-details dd);
+     weight + size bumped so the disclosure stays visually distinct from the
+     surrounding --muted labels without depending on hue for contrast. */
+  cursor: pointer;
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.launch-details dl {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  font-family: var(--mono);
+}
+
+.launch-details dt {
+  color: var(--muted);
+}
+
+.launch-details dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-all;
 }
 
 a {
@@ -2432,7 +2499,9 @@ textarea:focus:not(:focus-visible) {
 }
 .diff-line.minus {
   background: rgba(255, 122, 144, 0.08);
-  color: #ffb4c0;
+  /* GATE Z round 3 sibling sweep: same hardcoded-pink defect as
+     .boot-msg.error — themed token instead. */
+  color: var(--danger);
 }
 .diff-line.hunk {
   color: var(--accent2);
@@ -2598,7 +2667,9 @@ textarea:focus:not(:focus-visible) {
 }
 .toast-error {
   border-color: rgba(255, 122, 144, 0.35);
-  color: #ffb4c0;
+  /* GATE Z round 3 sibling sweep: same hardcoded-pink defect as
+     .boot-msg.error — themed token instead. */
+  color: var(--danger);
 }
 .toast-x {
   margin-left: auto;
@@ -2684,6 +2755,16 @@ html[data-theme="light"] body {
 html[data-theme="light"] .topbar,
 html[data-theme="light"] .composer-wrap {
   background: rgba(255, 255, 255, 0.82);
+}
+/* GATE Z round 2: .mode-switch kept the dark void glass fill under light
+   theme while its idle label switched to the light --muted color, measuring
+   1.27:1 (AA needs 4.5:1). Give it the same light glass surface already
+   established for its sibling topbar/composer-wrap controls, and let its
+   border use the themed --border-strong token instead of a hardcoded
+   dark-only cyan value, so it inherits correctly in both themes. */
+html[data-theme="light"] .mode-switch {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: var(--border-strong);
 }
 html[data-theme="light"] .md-code-wrap,
 html[data-theme="light"] .tool-row-body,
@@ -2922,6 +3003,12 @@ html[data-density="compact"] .run-footer {
   border-radius: 999px;
   cursor: pointer;
 }
+.mode-seg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .mode-seg.active {
   background: rgba(125, 255, 232, 0.12);
   color: var(--text);
@@ -2930,6 +3017,21 @@ html[data-density="compact"] .run-footer {
 }
 .mode-seg:disabled {
   opacity: 0.5;
+}
+/* Active state must not be colour-only (SPEC §4): a small filled mark. */
+.mode-seg-mark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+.mode-switch-applying {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  padding: 0 6px;
+  align-self: center;
 }
 .effort-control {
   display: flex;
@@ -2951,6 +3053,10 @@ html[data-density="compact"] .run-footer {
   flex-wrap: wrap;
 }
 .effort-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
@@ -2965,6 +3071,14 @@ html[data-density="compact"] .run-footer {
   border-color: rgba(125, 255, 232, 0.4);
   background: rgba(125, 255, 232, 0.12);
   box-shadow: 0 0 12px rgba(125, 255, 232, 0.12);
+}
+/* Active state must not be colour-only (SPEC §4): a small filled mark. */
+.effort-chip-mark {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
 }
 .effort-fallback {
   font-size: 10px;

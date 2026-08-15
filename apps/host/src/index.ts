@@ -25,6 +25,13 @@ import {
   testConnector,
 } from "./connectors.js";
 import { channelMeta, defaultPort } from "./channel.js";
+import {
+  isJsonContentType,
+  isOriginAllowed,
+  requestHasBody,
+} from "./request-lockdown.js";
+import { hasPriorConversations } from "./shell-history.js";
+import { APP_VERSION } from "./build-version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = defaultPort();
@@ -32,19 +39,48 @@ const CHANNEL = channelMeta();
 const session = new AgentSession();
 hydrateConnectorEnv();
 
+/**
+ * Never sends the `*` wildcard — GATE Z lockdown (SPEC §8, INTERFACE_CONTRACT.md "Request
+ * lockdown"). Cross-origin CORS headers for an *allowed* origin are set once, early in the
+ * request handler below (`res.setHeader`), before any route runs; `res.writeHead()` here only
+ * adds `Content-Type` and merges with whatever was already set via `setHeader`.
+ */
 function sendJson(
   res: http.ServerResponse,
   status: number,
   body: unknown,
 ): void {
   const data = JSON.stringify(body);
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  });
+  res.writeHead(status, { "Content-Type": "application/json" });
   res.end(data);
+}
+
+/**
+ * The single origin-aware builder for every state object the engine emits
+ * (INTERFACE_CONTRACT.md "Which surfaces carry it", property 4; SPEC.md §2.8 property 4 / §9.13).
+ * `priorConversations` is per-requester (D1), so it is stamped here from the caller's own `Origin`
+ * rather than baked into `AgentSession.getState()`, which has no requester. Every HTTP response and
+ * every WS `state` frame that carries a state object MUST route through this function — that is what
+ * makes "any state object carries the field" true by construction instead of by a list of call sites
+ * an eighth endpoint (or a second per-requester field) could silently miss. A future response that
+ * hand-assembles a state-shaped body without calling this sits outside the guarantee (the named
+ * residual, SPEC.md §9.13) — the standing obligation is that such a response is named in
+ * INTERFACE_CONTRACT.md.
+ */
+function stampState<T extends object>(
+  state: T,
+  origin: string | string[] | null | undefined,
+): T & { priorConversations: boolean } {
+  return { ...state, priorConversations: hasPriorConversations(origin) };
+}
+
+/** HTTP convenience wrapper around `stampState` — sends 200 with the stamped body. */
+function sendState<T extends object>(
+  res: http.ServerResponse,
+  origin: string | string[] | null | undefined,
+  state: T,
+): void {
+  sendJson(res, 200, stampState(state, origin));
 }
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024; // 4 MiB
@@ -67,13 +103,50 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
   const method = req.method || "GET";
 
+  // --- GATE Z request lockdown (SPEC §8 / INTERFACE_CONTRACT.md "Request lockdown") ---------
+  // Origin allowlist: refuses BOTH the preflight and the actual request, on every route (AC13,
+  // AC14). No Origin header at all (loopback CLI, the conformance runner) is allowed. Runs before
+  // any route logic, any body read, and any CORS header is set — a foreign origin gets nothing.
+  const origin = req.headers.origin;
+  if (!isOriginAllowed(origin)) {
+    // Every refusal is logged at warn level (SPEC §2.7 rule 6) — the operator's only signal that
+    // the wrong build (or a mis-generated allowlist) shipped, since the browser side of a 403 with
+    // no Access-Control-Allow-Origin is an opaque rejection indistinguishable from connection-refused.
+    log("warn", "origin refused", {
+      origin: Array.isArray(origin) ? origin.join(", ") : (origin ?? ""),
+      route: url.pathname,
+      method,
+    });
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "origin not allowed" }));
+    return;
+  }
+  // Reflect the exact allowed origin (never "*") so a legitimate cross-origin shell can still read
+  // the response; a request with no Origin header gets no CORS header at all (not needed).
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+
   if (method === "OPTIONS") {
+    // Allow-side preflight (SPEC §2.7 / AC-S1). The packaged WebView treats the loopback host as
+    // cross-site and preflights `content-type`; without these headers the real request never fires
+    // at all — a TOTAL connect failure, not a degraded one. ACAO/Vary were already set above for an
+    // allowed origin; never "*" (AC23).
     res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "600",
     });
     res.end();
+    return;
+  }
+
+  // JSON-only bodies (AC15): refused before any route reads/parses the body, so no state can move.
+  // A bodyless POST (/api/cancel) is unaffected.
+  if (requestHasBody(req.headers) && !isJsonContentType(req.headers["content-type"])) {
+    res.writeHead(415, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "content-type must be application/json" }));
     return;
   }
 
@@ -82,7 +155,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ok: true,
         service: "grokforge-host",
-        version: "0.3.1",
+        version: APP_VERSION,
         channel: CHANNEL.channel,
         channelLabel: CHANNEL.label,
         port: PORT,
@@ -94,7 +167,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (method === "GET" && url.pathname === "/api/state") {
-      sendJson(res, 200, session.getState());
+      // priorConversations is PER-REQUESTER (INTERFACE_CONTRACT.md), stamped by the shared builder
+      // below at the HTTP edge — AgentSession.getState() has no requester. An absent Origin (the
+      // native health probe, the conformance runner) always reads false.
+      sendState(res, origin, session.getState());
       return;
     }
 
@@ -105,7 +181,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const state = await session.openWorkspace(body.path);
-      sendJson(res, 200, state);
+      sendState(res, origin, state);
       return;
     }
 
@@ -402,9 +478,9 @@ const server = http.createServer(async (req, res) => {
             rest.effort !== undefined ||
             rest.mode !== undefined
           ) {
-            sendJson(res, 200, session.updateSettings(rest));
+            sendState(res, origin, session.updateSettings(rest));
           } else {
-            sendJson(res, 200, state);
+            sendState(res, origin, state);
           }
         } catch (e) {
           sendJson(res, 400, {
@@ -414,7 +490,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const state = session.updateSettings(body);
-      sendJson(res, 200, state);
+      sendState(res, origin, state);
       return;
     }
 
@@ -491,21 +567,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const state = await session.setMode(body.mode);
-      sendJson(res, 200, state);
-      return;
-    }
-
-    /** Warm agent for a mode without switching the live UI mode (hover prefetch). */
-    if (method === "POST" && url.pathname === "/api/prefetch-mode") {
-      const body = JSON.parse((await readBody(req)) || "{}") as {
-        mode?: "chat" | "code";
-      };
-      if (body.mode !== "chat" && body.mode !== "code") {
-        sendJson(res, 400, { error: "mode must be chat or code" });
-        return;
-      }
-      const result = await session.prefetchMode(body.mode);
-      sendJson(res, 200, result);
+      sendState(res, origin, state);
       return;
     }
 
@@ -516,7 +578,7 @@ const server = http.createServer(async (req, res) => {
       try {
         if (!body.effort) throw new Error("effort required");
         const state = session.setEffort(body.effort);
-        sendJson(res, 200, state);
+        sendState(res, origin, state);
       } catch (e) {
         sendJson(res, 400, {
           error: e instanceof Error ? e.message : String(e),
@@ -533,7 +595,7 @@ const server = http.createServer(async (req, res) => {
         const state = await session.setChatRoot(
           body.path === undefined ? null : body.path,
         );
-        sendJson(res, 200, state);
+        sendState(res, origin, state);
       } catch (e) {
         sendJson(res, 400, {
           error: e instanceof Error ? e.message : String(e),
@@ -558,6 +620,7 @@ const server = http.createServer(async (req, res) => {
       try {
         await session.prompt(body.text.trim(), body.effort, {
           history: Array.isArray(body.history) ? body.history.slice(-40) : undefined,
+          originKey: typeof origin === "string" ? origin : null,
         });
         sendJson(res, 200, { ok: true });
       } catch (e) {
@@ -576,7 +639,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === "POST" && url.pathname === "/api/restart") {
       const state = await session.restartAgent();
-      sendJson(res, 200, state);
+      sendState(res, origin, state);
       return;
     }
 
@@ -600,7 +663,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === "POST" && url.pathname === "/api/oauth/logout") {
       const state = session.logoutOAuth();
-      sendJson(res, 200, state);
+      sendState(res, origin, state);
       return;
     }
 
@@ -681,15 +744,49 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+// GATE Z lockdown applies to the /ws upgrade too (INTERFACE_CONTRACT.md "Request lockdown" table):
+// same origin allowlist, no Origin header still allowed (loopback tooling).
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  verifyClient: (info, callback) => {
+    const wsOriginHeader = info.req.headers.origin;
+    if (!isOriginAllowed(wsOriginHeader)) {
+      log("warn", "origin refused", {
+        origin: Array.isArray(wsOriginHeader) ? wsOriginHeader.join(", ") : (wsOriginHeader ?? ""),
+        route: "/ws",
+        method: "UPGRADE",
+      });
+      callback(false, 403, "origin not allowed");
+      return;
+    }
+    callback(true);
+  },
+});
 
 function wsSend(ws: WebSocket, obj: unknown): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-wss.on("connection", (ws) => {
-  wsSend(ws, { type: "state", state: session.getState() });
+wss.on("connection", (ws, req) => {
+  // priorConversations is per-requester (D1); capture this connection's Origin once and stamp
+  // every `state` frame with it via the same `stampState` builder the HTTP routes use, so the
+  // shell's WS-driven state reads never diverge from the HTTP read (a field present on HTTP and
+  // missing on WS would flicker the not-found state on the first WS push after boot).
+  const wsOrigin = typeof req.headers.origin === "string" ? req.headers.origin : null;
+  wsSend(ws, {
+    type: "state",
+    state: stampState(session.getState(), wsOrigin),
+  });
   const off = session.on((event) => {
+    if ((event as { type?: string }).type === "state") {
+      const e = event as { type: "state"; state: unknown };
+      wsSend(ws, {
+        type: "state",
+        state: stampState(e.state as Record<string, unknown>, wsOrigin),
+      });
+      return;
+    }
     wsSend(ws, event);
   });
 
@@ -717,7 +814,7 @@ wss.on("connection", (ws) => {
       try {
         switch (msg.type) {
           case "get_state":
-            wsSend(ws, { type: "state", state: session.getState() });
+            wsSend(ws, { type: "state", state: stampState(session.getState(), wsOrigin) });
             break;
           case "open_workspace":
             if (!msg.path) throw new Error("path required");
@@ -725,7 +822,7 @@ wss.on("connection", (ws) => {
             break;
           case "prompt":
             if (!msg.text) throw new Error("text required");
-            await session.prompt(msg.text);
+            await session.prompt(msg.text, undefined, { originKey: wsOrigin });
             break;
           case "cancel":
             await session.cancel();

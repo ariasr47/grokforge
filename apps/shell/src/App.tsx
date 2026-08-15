@@ -4,14 +4,25 @@ import {
   ensureDesktopHost,
   HostSocket,
   isTauri,
+  localBuildIdentity,
+  mergeState,
   pickFolderNative,
   pollHostHealth,
   restartDesktopHost,
+  type DesktopHostStatus,
   type EffortLevel,
   type ProductMode,
   type PublicState,
   type ServerEvent,
 } from "./api";
+import {
+  DIAGNOSTICS_REVEAL_MS,
+  INITIAL_PHASE_LINE,
+  SLOW_START_LINE,
+  SLOW_START_MS,
+  phaseLine,
+} from "./launchState";
+import { LaunchFailureCard, canRetryEngine } from "./LaunchFailureCard";
 import { ModeSwitch } from "./ModeSwitch";
 import { EffortControl } from "./EffortControl";
 import {
@@ -38,6 +49,7 @@ import {
   deleteSession,
   ensureActiveSession,
   flushSessions,
+  hasAnyStoredHistory,
   isExpanded,
   listPinnedWorkspaces,
   listSessions,
@@ -116,9 +128,48 @@ function statusChip(state: PublicState | null): {
 export function App() {
   const tauri = isTauri();
   const [boot, setBoot] = useState<BootPhase>("booting");
-  const [bootMsg, setBootMsg] = useState("Starting Forge…");
+  const [bootMsg, setBootMsg] = useState(INITIAL_PHASE_LINE);
+  // F2/F3 — the launcher's own value (INTERFACE_CONTRACT.md), driving the
+  // failure-card mapping (F3) and the `Details` disclosure (AC-U18).
+  const [launchStatus, setLaunchStatus] = useState<DesktopHostStatus | null>(
+    null,
+  );
+  const [slowStart, setSlowStart] = useState(false);
+  const [diagRevealed, setDiagRevealed] = useState(false);
+  const slowStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diagTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // F6 — bounded recovery attempts (mirrors the launcher's own 3-attempt
+  // bound, SPEC §2.6/§5). Reset to 0 on any successful recovery.
+  const recoveryAttemptsRef = useRef(0);
+  const TERMINAL_ATTEMPTS = 3;
+  // F5 — consecutive failed 4s health polls while the app is ready. Chip
+  // reacts after 1 (subtle); the engine-stopped chrome (band/banner/composer
+  // reason) only appears after 2 (AC-U10 — a single blip must not flash it).
+  const [healthFailStreak, setHealthFailStreak] = useState(0);
+  const healthFailStreakRef = useRef(0);
   const [view, setView] = useState<View>("chat");
   const [state, setState] = useState<PublicState | null>(null);
+  // SPEC §2.8 property 4 / INTERFACE_CONTRACT.md (GATE Q N-8) — the ONLY
+  // place a state-bearing engine response is allowed to update `state`.
+  // Every caller below (GET /api/state, the WS `state` frame, every
+  // state-returning POST) must route through this rather than the raw
+  // state setter directly, so a response that omits a per-requester field
+  // (concretely, `priorConversations`) can never unset a value already
+  // held — see `mergeState` in api.ts for the merge rule itself. A new
+  // call site that bypasses this and updates state directly is caught by
+  // the structural test in App.ac12g.test.tsx, not by convention alone.
+  const applyState = useCallback((payload: PublicState) => {
+    setState((prev) => mergeState(prev, payload));
+  }, []);
+  // GATE Z round 3 (AC25) — `GET /api/health`'s `version`/`channel`/
+  // `channelLabel` (INTERFACE_CONTRACT.md §6, promised for "diagnostics
+  // export, AC25/AC26") rendered somewhere a non-developer can find and read
+  // aloud, not only inside the diagnostics file.
+  const [buildInfo, setBuildInfo] = useState<{
+    version?: string;
+    channel?: string;
+    channelLabel?: string;
+  } | null>(null);
   const [hostOk, setHostOk] = useState(false);
   const [wsOk, setWsOk] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -402,6 +453,15 @@ export function App() {
     [classifyRecovery],
   );
 
+  // F8 — AC5 (operator ruling 2026-08-14): the single subscription sign-in
+  // start path, shared verbatim by the Settings panel's `Sign in with Grok`
+  // button and the signed-out gate's primary action. Its pending/device-code
+  // surface is the existing ActionDock OAuth pending box (driven by the
+  // `oauth_pending` server event) — no new pattern, no second path.
+  const startGrokSignIn = useCallback(() => {
+    void api.oauthStart().catch((e) => reportError(String(e), { source: "oauth" }));
+  }, [reportError]);
+
   const exportSessionDiagnostics = useCallback(async () => {
     setExportStatus("Exporting…");
     // Chat transcripts live under partitionKey, not FS workspace path
@@ -411,6 +471,22 @@ export function App() {
         ? partitionKey("chat", state?.chatRoot)
         : state?.workspace ?? pathInput ?? "__no_workspace__";
     const session = sessionId ? loadSession(partition, sessionId) : null;
+    // F10 (AC-U18) — the launcher's raw fields, verbatim, regardless of
+    // whether the export itself succeeds through a healthy engine.
+    // N-2/N-3 (QA GATE Q) — start from the local build identity (no
+    // network, can't be a foreign engine's answer) so the exported file
+    // always carries a `### Build` section; refine with the engine's own
+    // `GET /api/health` only when that succeeds against a port the
+    // launcher actually published (see `hostPort()`'s N-3 note).
+    let health: { version?: string; channel?: string; channelLabel?: string } | null =
+      await localBuildIdentity();
+    try {
+      const h = await api.health();
+      health = { version: h.version, channel: h.channel, channelLabel: h.channelLabel };
+    } catch {
+      /* engine down — diagnostics stays offered anyway (AC-U13); keep the
+       * local build identity set above. */
+    }
     const clientBundle = buildSessionMarkdown({
       state,
       sessionId,
@@ -419,37 +495,43 @@ export function App() {
       errorBanner,
       recentErrors: recentErrorsRef.current,
       bootMsg: boot === "error" ? bootMsg : null,
+      launch: launchStatus,
+      health,
     });
     try {
       const result = await api.exportDiagnostics({
         markdown: clientBundle,
         openFolder: true,
       });
+      // F10 — report the path the exporter actually returned, never a
+      // hard-coded location.
       downloadDiagnostics(suggestDiagnosticsFilename(), result.markdown);
       setExportStatus(`Saved: ${result.path}`);
       setConnTest(`Diagnostics saved · ${result.path}`);
       void api.openLogs().catch(() => undefined);
     } catch (e) {
-      // Offline fallback: still download what the UI has.
+      // Engine down (AC-U13): diagnostics stays offered. Fall back to a
+      // browser/WebView download and report THAT location, not a guess.
       const fallback = [
         "# Forge — session diagnostics (client-only)",
         "",
         `Exported: ${new Date().toISOString()}`,
         "",
-        "Host was unreachable; this file has the UI session only.",
+        "Forge's engine was unreachable; this file has the UI session only.",
         "",
         clientBundle,
       ].join("\n");
-      downloadDiagnostics(suggestDiagnosticsFilename(), fallback);
+      const filename = suggestDiagnosticsFilename();
+      downloadDiagnostics(filename, fallback);
       const detail = e instanceof Error ? e.message : String(e);
-      setExportStatus(`Downloaded client-only (host failed: ${detail})`);
+      setExportStatus(`Downloaded to your browser's Downloads folder as ${filename}`);
       setConnTest(`Client-only export · ${detail}`);
     }
-  }, [sessionId, state, pathInput, errorBanner, boot, bootMsg]);
+  }, [sessionId, state, pathInput, errorBanner, boot, bootMsg, launchStatus]);
 
   const onServerEvent = useCallback((ev: ServerEvent) => {
     if (ev.type === "state") {
-      setState(ev.state);
+      applyState(ev.state);
       setModelDraft(ev.state.model);
       if (typeof ev.state.shellAllowlist === "boolean") {
         setShellAllowlist(ev.state.shellAllowlist);
@@ -880,32 +962,79 @@ export function App() {
     }
   }, [reportError, toast]);
 
+  const clearBootTimers = useCallback(() => {
+    if (slowStartTimerRef.current) clearTimeout(slowStartTimerRef.current);
+    if (diagTimerRef.current) clearTimeout(diagTimerRef.current);
+    slowStartTimerRef.current = null;
+    diagTimerRef.current = null;
+  }, []);
+
+  useEffect(() => clearBootTimers, [clearBootTimers]);
+
+  /** N-2/N-3 (QA GATE Q pass 1c, AC-S8) — `Details`/diagnostics build
+   *  identity must be populated in exactly the states where `GET
+   *  /api/health` cannot be trusted: a full-screen failure card means the
+   *  engine (by definition) is not answering — or, before the N-3 fix, that
+   *  something answering isn't actually this install's engine. Set the
+   *  local build identity (no network, sourced from the running executable
+   *  and compile-time constants — see `localBuildIdentity()`)
+   *  unconditionally first, so `buildInfo` is never null in the one state
+   *  the row is about; then refine with the engine's own `/api/health` when
+   *  that succeeds (only possible against a port the launcher actually
+   *  published, per `hostPort()`'s N-3 note) since that is ground truth
+   *  when reachable. */
+  const refreshBuildInfo = useCallback(async () => {
+    setBuildInfo(await localBuildIdentity());
+    try {
+      const h = await api.health();
+      setBuildInfo({ version: h.version, channel: h.channel, channelLabel: h.channelLabel });
+    } catch {
+      /* engine unreachable — keep the local build identity set above */
+    }
+  }, []);
+
+  /** F2 — initial boot only: unconditionally shows the spinner card (there is
+   *  nothing to preserve yet) and terminates in "ready" or "error". */
   const bootApp = useCallback(async () => {
     setBoot("booting");
-    setBootMsg(
-      tauri ? "Starting Forge…" : "Connecting to local assistant…",
-    );
-    let status = await ensureDesktopHost();
-    if (status.ok) setBootMsg("Almost ready…");
-    else {
-      setBootMsg("Starting local agent host…");
-      status = await ensureDesktopHost();
-    }
-    const ok = await pollHostHealth(status.ok ? 20 : 60, 150);
+    setBootMsg(INITIAL_PHASE_LINE);
+    setSlowStart(false);
+    setDiagRevealed(false);
+    clearBootTimers();
+    slowStartTimerRef.current = setTimeout(() => setSlowStart(true), SLOW_START_MS);
+    diagTimerRef.current = setTimeout(() => setDiagRevealed(true), DIAGNOSTICS_REVEAL_MS);
+
+    const status = await ensureDesktopHost();
+    setLaunchStatus(status);
+    setBootMsg((prev) => phaseLine(status, prev));
+
+    // A launcher-reported failure already carries a named reason (F3); a
+    // long shell-side retry loop here would only delay the failure card
+    // without changing the outcome (AC4 — never indefinite). A launcher
+    // success gets more attempts since the shell's own health probe is the
+    // belt-and-suspenders check that the answer is real.
+    const ok = await pollHostHealth(status.ok ? 20 : 6, 150);
+    clearBootTimers();
+    // N-2 — unconditional: a failed boot still gets a shot at the build
+    // identity (see refreshBuildInfo above), which is what feeds the
+    // LaunchFailureCard `Details` disclosure below.
+    await refreshBuildInfo();
     if (!ok) {
+      // F6's bound counts RECOVERY attempts (explicit "Try again" clicks via
+      // retryHost), not this initial boot — "three failing restart_host
+      // calls" (PLAN F6) is the bound, so recoveryAttemptsRef starts at 0
+      // here regardless of outcome.
       setBoot("error");
-      setBootMsg(
-        tauri
-          ? "Couldn’t start the local host. Click Retry — or check %USERPROFILE%\\.grokforge\\logs\\"
-          : "Host offline. Run npm run start (or npm run desktop), then Retry.",
-      );
       setHostOk(false);
       return;
     }
+    recoveryAttemptsRef.current = 0;
     setHostOk(true);
+    setHealthFailStreak(0);
+    healthFailStreakRef.current = 0;
     try {
       const s = await api.state();
-      setState(s);
+      applyState(s);
       setModelDraft(s.model);
       if (s.workspace) {
         setPathInput(s.workspace);
@@ -919,11 +1048,12 @@ export function App() {
       /* optional */
     }
     setBoot("ready");
-  }, [tauri]);
+  }, [clearBootTimers, refreshBuildInfo]);
 
   useEffect(() => {
     void bootApp();
-  }, [bootApp]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (boot !== "ready") return;
@@ -931,6 +1061,8 @@ export function App() {
       onStatus: (c) => {
         setWsOk(c);
         if (c) {
+          healthFailStreakRef.current = 0;
+          setHealthFailStreak(0);
           setHostOk(true);
           return;
         }
@@ -950,11 +1082,25 @@ export function App() {
     });
     sock.on(onServerEvent);
     sock.connect();
+    // F5 — debounced engine-death detection (AC-U10): the chip may react
+    // after a single failed poll, but the band/banner/composer-disabled
+    // chrome (all gated on `hostOk`) only flips after TWO consecutive fails,
+    // so one blip never flashes scary copy. Recovery (any single success)
+    // clears both immediately.
     const healthTimer = setInterval(() => {
       void api
         .health()
-        .then(() => setHostOk(true))
-        .catch(() => setHostOk(false));
+        .then(() => {
+          healthFailStreakRef.current = 0;
+          setHealthFailStreak(0);
+          setHostOk(true);
+        })
+        .catch(() => {
+          healthFailStreakRef.current += 1;
+          const streak = healthFailStreakRef.current;
+          setHealthFailStreak(streak);
+          if (streak >= 2) setHostOk(false);
+        });
     }, 4000);
     return () => {
       clearInterval(healthTimer);
@@ -975,6 +1121,12 @@ export function App() {
     if (state?.workspace && hostOk) void refreshFiles();
   }, [state?.workspace, hostOk, refreshFiles]);
 
+  // AC-U5 — with `owned: false` no restart/reconnect affordance renders
+  // anywhere (dev-shell-only state; unreachable in a packaged prod build).
+  const engineRetryAllowed = useMemo(
+    () => canRetryEngine(launchStatus ?? { owned: true }),
+    [launchStatus],
+  );
   const chip = useMemo(() => statusChip(state), [state]);
   const busy = Boolean(state?.busy);
   busyRef.current = busy;
@@ -995,10 +1147,23 @@ export function App() {
       ),
     [productMode, state?.chatRoot, state?.workspace],
   );
+  // Chat sandbox path stays hidden until the user explicitly binds a folder
+  // (SPEC §4); null here means "default sandbox, nothing to show".
+  const chatRootLabel = useMemo(
+    () =>
+      state?.chatRoot?.includes("chat-sandbox")
+        ? null
+        : state?.workspaceName || state?.chatRoot?.split(/[/\\]/).pop() || null,
+    [state?.chatRoot, state?.workspaceName],
+  );
 
   const switchMode = useCallback(
     async (mode: ProductMode) => {
-      if (mode === productMode && !modeSwitching) return;
+      // Always available (SPEC §4): not blocked by busy/streaming or a pending
+      // permission — only guard true reentrancy (a switch already in flight)
+      // and a no-op click on the already-active mode.
+      if (modeSwitching) return;
+      if (mode === productMode) return;
       setModeSwitching(true);
       try {
         if (busy) await api.cancel().catch(() => undefined);
@@ -1016,7 +1181,7 @@ export function App() {
           flushSessions();
         }
         const s = await api.setMode(mode);
-        setState(s);
+        applyState(s);
         setPrefs((p) =>
           patchPrefs({
             lastMode: mode,
@@ -1058,11 +1223,41 @@ export function App() {
     ],
   );
 
+  // Chat needs no "New chat" ceremony to be safe (AC2/AC3): a session must
+  // back the transcript as soon as Chat's root is known, the same guarantee
+  // Code already gets from openWorkspace. Without this, a virgin profile's
+  // first turn is never backed by a session record — sessionId stays null,
+  // switchMode's persist-before-flip guard (`if (sessionId)`) is a no-op,
+  // and the conversation is silently dropped on a mid-stream mode switch or
+  // lost on reload. `ensureActiveSession` is idempotent (reuses the
+  // partition's existing active session when one exists), so this only
+  // creates a fresh session the first time a given partition has none —
+  // it never overwrites an in-progress transcript that already has a
+  // sessionId. Code is untouched: it stays gated behind an explicit
+  // workspace open (SPEC §4 "open workspace" empty state), so it never
+  // reaches a state where a turn can be sent without a session.
+  useEffect(() => {
+    if (boot !== "ready") return;
+    if (productMode !== "chat") return;
+    if (sessionId) return;
+    const active = ensureActiveSession(sessionPartition, null);
+    setSessionId(active.id);
+    setSessionList(listSessions(sessionPartition));
+    setMessages(
+      active.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        toolMeta: m.toolMeta,
+      })),
+    );
+  }, [boot, productMode, sessionId, sessionPartition]);
+
   const setEffortUi = useCallback(
     async (effort: EffortLevel) => {
       try {
         const s = await api.setEffort(effort);
-        setState(s);
+        applyState(s);
         setPrefs((p) => patchPrefs({ ...p, effort }));
       } catch (e) {
         reportError(e instanceof Error ? e.message : String(e));
@@ -1072,7 +1267,7 @@ export function App() {
   );
 
   const sendDisabledReason = useMemo(() => {
-    if (!connected) return "Host offline — reconnect first";
+    if (!connected) return "Engine offline — try again to send";
     if (productMode === "code" && !state?.workspace)
       return "Open a project folder first";
     if (!state?.hasApiKey) return "Sign in or add an API key in Settings";
@@ -1089,12 +1284,71 @@ export function App() {
     [messages, diffQueue],
   );
 
+  /**
+   * F5/F6 — the single "Try again" recovery path, used by both the boot
+   * failure card (F3/F4) and the mid-session engine-death band (F5).
+   *
+   * - Mid-session (boot === "ready"): NEVER shows the spinner card — that
+   *   would hide the transcript, which AC16/AC-U6 forbid. A failed attempt
+   *   just leaves the debounced band up, UNLESS this is the terminal
+   *   (3rd consecutive) attempt, which forces the full failure card (AC18).
+   * - From the failure card (boot === "error"): shows the spinner while
+   *   retrying, UNLESS bounded recovery is already exhausted, in which case
+   *   it retries silently with no spinner at all (AC18 — "not a repeating or
+   *   indefinite spinner").
+   */
   const retryHost = useCallback(async () => {
-    setBootMsg("Reconnecting…");
-    setBoot("booting");
-    await restartDesktopHost();
-    await bootApp();
-  }, [bootApp]);
+    const attemptNumber = recoveryAttemptsRef.current + 1;
+    const terminalAttempt = attemptNumber >= TERMINAL_ATTEMPTS;
+    const cameFromFailureCard = boot === "error";
+    const showSpinner = cameFromFailureCard && !terminalAttempt;
+
+    if (showSpinner) {
+      setBoot("booting");
+      setBootMsg(INITIAL_PHASE_LINE);
+      setSlowStart(false);
+      setDiagRevealed(false);
+      clearBootTimers();
+      slowStartTimerRef.current = setTimeout(() => setSlowStart(true), SLOW_START_MS);
+      diagTimerRef.current = setTimeout(() => setDiagRevealed(true), DIAGNOSTICS_REVEAL_MS);
+    }
+
+    const status = await restartDesktopHost();
+    setLaunchStatus(status);
+    if (showSpinner) setBootMsg((prev) => phaseLine(status, prev));
+
+    const healthy = await pollHostHealth(status.ok ? 20 : 6, 150);
+    clearBootTimers();
+    // N-2 — same best-effort refresh as bootApp: a retry that ends back on
+    // the failure card (terminal AC18 state, or a re-failed retry from the
+    // card itself) still updates the build identity Details renders.
+    await refreshBuildInfo();
+
+    if (healthy) {
+      recoveryAttemptsRef.current = 0;
+      setHostOk(true);
+      setHealthFailStreak(0);
+      healthFailStreakRef.current = 0;
+      if (boot !== "ready") {
+        try {
+          const s = await api.state();
+          applyState(s);
+          setModelDraft(s.model);
+          if (typeof s.shellAllowlist === "boolean") setShellAllowlist(s.shellAllowlist);
+        } catch {
+          /* optional */
+        }
+        setBoot("ready");
+      }
+      return;
+    }
+
+    recoveryAttemptsRef.current = attemptNumber;
+    setHostOk(false);
+    if (terminalAttempt || cameFromFailureCard) {
+      setBoot("error");
+    }
+  }, [boot, clearBootTimers, refreshBuildInfo]);
 
   const openPath = useCallback(async (p: string) => {
     const trimmed = p.trim();
@@ -1140,7 +1394,7 @@ export function App() {
     toast.push(`Opening ${trimmed.split(/[/\\]/).pop()}…`, "info");
     try {
       const s = await api.openWorkspace(trimmed);
-      setState(s);
+      applyState(s);
       const ws = s.workspace || trimmed;
       setPathInput(ws);
       let branch: string | null = null;
@@ -1384,7 +1638,7 @@ export function App() {
     if (!native) return;
     try {
       const s = await api.setChatRoot(native);
-      setState(s);
+      applyState(s);
       const key = partitionKey("chat", s.chatRoot);
       const active = ensureActiveSession(key, null);
       setSessionId(active.id);
@@ -1406,7 +1660,7 @@ export function App() {
   const clearChatFolder = useCallback(async () => {
     try {
       const s = await api.setChatRoot(null);
-      setState(s);
+      applyState(s);
       const key = partitionKey("chat", s.chatRoot);
       const active = ensureActiveSession(key, null);
       setSessionId(active.id);
@@ -1600,6 +1854,11 @@ export function App() {
     ) => {
       const text = raw.trim();
       if (!text || busyRef.current || !connected) return;
+      // F8 / AC6 — before any credential is stored, no message is sent and
+      // no unlabeled provider error appears; the composer's disabled-reason
+      // chip is the only signal, so a bypass via Enter (which does not read
+      // the disabled attribute) must be refused here too.
+      if (!state?.hasApiKey) return;
       const mode = state?.mode === "code" ? "code" : "chat";
       if (mode === "code" && !state?.workspace) {
         reportError("Open a project folder first — use Open folder…", {
@@ -1913,7 +2172,7 @@ export function App() {
         model: modelDraft,
         shellAllowlist,
       });
-      setState(s);
+      applyState(s);
       setApiKeyDraft("");
       setErrorBanner(null);
       setRecovery(null);
@@ -1989,7 +2248,7 @@ export function App() {
       },
       {
         id: "reconnect",
-        label: "Reconnect host",
+        label: "Reconnect engine",
         run: () => void retryHost(),
       },
       {
@@ -2000,7 +2259,7 @@ export function App() {
         run: () => {
           const next = !shellAllowlist;
           setShellAllowlist(next);
-          void api.settings({ shellAllowlist: next }).then(setState);
+          void api.settings({ shellAllowlist: next }).then(applyState);
         },
       },
       {
@@ -2164,7 +2423,9 @@ export function App() {
         run: () => void openPath(r.path),
       });
     }
-    return acts;
+    // AC-U5 — with `owned: false` no restart/reconnect affordance renders
+    // anywhere, including the command palette's own "Reconnect engine" entry.
+    return engineRetryAllowed ? acts : acts.filter((a) => a.id !== "reconnect");
   }, [
     browseFolder,
     shellAllowlist,
@@ -2172,6 +2433,7 @@ export function App() {
     state?.recent,
     openPath,
     retryHost,
+    engineRetryAllowed,
     newSession,
     exportSessionDiagnostics,
     exportCurrentChat,
@@ -2190,12 +2452,43 @@ export function App() {
     messages,
   ]);
 
+  // F7 (AC12b, AC12f; SPEC §4 flow 5, §2.8 property 3, GATE Q finding N-6) —
+  // priorConversations is scoped to this shell's WHOLE conversation store
+  // (the single `grokforge.sessions.v2` key, every mode and every folder
+  // together), never to one mode's or one folder's slice, so the guard here
+  // must be weighed at that same whole-store granularity. Checking only the
+  // active partition (as before) satisfies the not-found conditions on the
+  // very first open of *any* mode or folder that hasn't been used yet, even
+  // while real history survives elsewhere — the false alarm behind N-6.
+  // hasAnyStoredHistory() already scans every partition for this reason
+  // (also used at boot === "error" / F4 time) and is reused here so both
+  // directions of AC12f hold: nothing lost ⇒ no alarm, and an emptied whole
+  // store ⇒ the alarm still renders in whichever mode the app opens.
+  const showConversationsNotFound =
+    boot === "ready" &&
+    hostOk &&
+    messages.length === 0 &&
+    !hasAnyStoredHistory() &&
+    state?.priorConversations === true;
+
+  // The first-run welcome inherits the same correction: it must not welcome
+  // a shell that already holds conversations elsewhere in its store just
+  // because the mode/folder on screen happens to be new (AC12f — "renders
+  // that surface's ordinary empty state", not the not-found copy and not
+  // the welcome). Without this, fixing showConversationsNotFound above would
+  // simply swap the false "not found" alarm for a false "Welcome to Forge".
   const showOnboarding =
+    !showConversationsNotFound &&
+    !hasAnyStoredHistory() &&
     !isOnboardingDone(firstRun, productMode) &&
     view === "chat" &&
     messages.length === 0;
 
   if (boot === "booting") {
+    // F2 — AC-U1: brand + one phase line + spinner. Never a transcript, an
+    // empty state, or a blank surface. AC-U2: only the ~8s slow-start line
+    // and the ~20s diagnostics reveal are time-driven; every other line
+    // comes straight from the launcher's own phase (`phaseLine`).
     return (
       <div className="boot-screen">
         <div className="boot-card">
@@ -2203,8 +2496,17 @@ export function App() {
             <BrandMark className="brand-mark brand-mark-lg" />
             <span className="brand-word">Forge</span>
           </div>
-          <p className="boot-msg">{bootMsg}</p>
+          <p className="boot-msg">{slowStart ? SLOW_START_LINE : bootMsg}</p>
           <div className="boot-spinner" aria-hidden />
+          {diagRevealed && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void exportSessionDiagnostics()}
+            >
+              Save troubleshooting file
+            </button>
+          )}
           <p className="boot-hint">
             Agent shell · Grok first · Chat & Code
             {channelBadge() ? ` · ${channelBadge()}` : ""}
@@ -2215,36 +2517,29 @@ export function App() {
   }
 
   if (boot === "error") {
+    // F3/F4 — one of the six failure cards (SPEC §5), plus the
+    // conversations-are-saved line when any partition holds stored history
+    // (AC-U6/AC-U7 — never a last-known value rendered as current).
     return (
-      <div className="boot-screen">
-        <div className="boot-card">
-          <div className="brand">
-            <BrandMark className="brand-mark brand-mark-lg" />
-            <span className="brand-word">Forge</span>
-          </div>
-          <p className="boot-msg error">{bootMsg}</p>
-          <div className="row" style={{ justifyContent: "center", gap: 10 }}>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => void retryHost()}
-            >
-              Retry connection
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void exportSessionDiagnostics()}
-            >
-              Export diagnostics
-            </button>
-          </div>
-          {exportStatus && <p className="boot-hint">{exportStatus}</p>}
-          <p className="boot-hint">
-            Logs: %USERPROFILE%\.grokforge\logs\
-          </p>
-        </div>
-      </div>
+      <LaunchFailureCard
+        status={
+          launchStatus ?? {
+            ok: false,
+            phase: "failed",
+            owned: true,
+            port: null,
+            pid: null,
+            reason: "unknown",
+            osError: null,
+            message: bootMsg,
+          }
+        }
+        hasStoredHistory={hasAnyStoredHistory()}
+        onRetry={() => void retryHost()}
+        onSaveDiagnostics={() => void exportSessionDiagnostics()}
+        diagnosticsStatus={exportStatus}
+        buildInfo={buildInfo}
+      />
     );
   }
 
@@ -2266,7 +2561,7 @@ export function App() {
         >
           <strong>{channelBadge()}</strong>
           <span>
-            Non-production build · host :{hostPort()} · data{" "}
+            Non-production build · host :{hostPort() ?? "?"} · data{" "}
             <code>
               ~/.grokforge{appChannel() === "dev" ? "-dev" : ""}
             </code>
@@ -2284,7 +2579,7 @@ export function App() {
         </div>
         <ModeSwitch
           mode={productMode}
-          busy={busy || modeSwitching}
+          applying={modeSwitching}
           onChange={(m) => void switchMode(m)}
         />
         <div className="workspace-label" title={state?.workspace ?? ""}>
@@ -2315,7 +2610,7 @@ export function App() {
         {channelBadge() && (
           <span
             className={`chip channel-badge channel-${channelBadge()?.toLowerCase()}`}
-            title={`${channelBadge()} channel · host :${hostPort()} · data ~/.grokforge${appChannel() === "dev" ? "-dev" : ""} (isolated from Prod)`}
+            title={`${channelBadge()} channel · host :${hostPort() ?? "?"} · data ~/.grokforge${appChannel() === "dev" ? "-dev" : ""} (isolated from Prod)`}
           >
             {channelBadge()}
           </span>
@@ -2331,10 +2626,10 @@ export function App() {
           </span>
         )}
         <span
-          className={`chip ${hostOk ? "api" : "signed-out"}`}
-          title={wsOk ? "WebSocket connected" : "WebSocket reconnecting…"}
+          className={`chip ${hostOk && healthFailStreak === 0 ? "api" : "signed-out"}`}
+          title={wsOk ? "WebSocket connected" : "Reconnecting…"}
         >
-          {hostOk ? (tauri ? "Desktop · live" : "Host · live") : "Host offline"}
+          {healthFailStreak >= 1 ? "Engine · reconnecting" : "Engine · live"}
         </span>
         <button
           type="button"
@@ -2344,7 +2639,7 @@ export function App() {
         >
           ⌘K
         </button>
-        {!hostOk && (
+        {!hostOk && engineRetryAllowed && (
           <button type="button" className="btn" onClick={() => void retryHost()}>
             Reconnect
           </button>
@@ -2361,11 +2656,18 @@ export function App() {
       {!hostOk && (
         <div className="banner-error" role="alert">
           <div>
-            <strong>Disconnected</strong> — the local agent host stopped responding.
+            <strong>Forge's engine stopped.</strong> Your conversation is saved.
+            {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
           </div>
-          <button type="button" className="btn primary" onClick={() => void retryHost()}>
-            Reconnect
-          </button>
+          {engineRetryAllowed && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void retryHost()}
+            >
+              Try again
+            </button>
+          )}
         </div>
       )}
 
@@ -2386,13 +2688,13 @@ export function App() {
                   Sign in / API key
                 </button>
               )}
-              {recovery === "reconnect" && (
+              {recovery === "reconnect" && engineRetryAllowed && (
                 <button
                   type="button"
                   className="btn primary"
                   onClick={() => void retryHost()}
                 >
-                  Reconnect host
+                  Reconnect engine
                 </button>
               )}
               {recovery === "workspace" && (
@@ -2447,13 +2749,7 @@ export function App() {
           <Sidebar
             mode={productMode}
             chatSessions={chatSessions}
-            chatRootLabel={
-              state?.chatRoot?.includes("chat-sandbox")
-                ? null
-                : state?.workspaceName ||
-                  state?.chatRoot?.split(/[/\\]/).pop() ||
-                  null
-            }
+            chatRootLabel={chatRootLabel}
             showChatFiles={prefs.showChatFiles}
             showSubagents={prefs.showSubagents}
             onNewChat={() => newSession(sessionPartition)}
@@ -2496,8 +2792,11 @@ export function App() {
                 </p>
                 <div className="callout">
                   {tauri
-                    ? "Desktop Forge — host managed automatically."
+                    ? "Desktop Forge — the engine starts automatically."
                     : "Browser UI — prefer npm run desktop for the native window."}
+                  <br />
+                  Version: <code>{buildInfo?.version || "—"}</code>
+                  {buildInfo?.channelLabel ? ` (${buildInfo.channelLabel})` : ""}
                   <br />
                   Logs:{" "}
                   <code>{state?.logHint || "%USERPROFILE%\\.grokforge\\logs"}</code>
@@ -2506,9 +2805,7 @@ export function App() {
                   <button
                     type="button"
                     className="btn primary"
-                    onClick={() =>
-                      void api.oauthStart().catch((e) => reportError(String(e), { source: "oauth" }))
-                    }
+                    onClick={startGrokSignIn}
                   >
                     Sign in with Grok
                   </button>
@@ -2518,19 +2815,21 @@ export function App() {
                     onClick={() =>
                       void api
                         .oauthLogout()
-                        .then(setState)
+                        .then(applyState)
                         .catch((e) => reportError(String(e), { source: "oauth" }))
                     }
                   >
                     Sign out
                   </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => void restartDesktopHost().then(() => bootApp())}
-                  >
-                    Restart host
-                  </button>
+                  {engineRetryAllowed && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void restartDesktopHost().then(() => bootApp())}
+                    >
+                      Restart engine
+                    </button>
+                  )}
                 </div>
                 {oauth && (
                   <div className="oauth-box">
@@ -2601,7 +2900,7 @@ export function App() {
                     onChange={(e) => {
                       void api
                         .settings({ agentId: e.target.value })
-                        .then(setState)
+                        .then(applyState)
                         .catch((err) =>
                           reportError(
                             err instanceof Error ? err.message : String(err),
@@ -2840,7 +3139,7 @@ export function App() {
                     type="button"
                     className="btn ghost"
                     onClick={() =>
-                      void api.settings({ clearKey: true }).then(setState)
+                      void api.settings({ clearKey: true }).then(applyState)
                     }
                   >
                     Clear saved key
@@ -2853,7 +3152,10 @@ export function App() {
               {prefs.density !== "compact" && (
                 <OverviewStrip
                   overview={overview}
-                  workspaceName={state?.workspaceName ?? null}
+                  workspaceName={
+                    productMode === "chat" ? chatRootLabel : (state?.workspaceName ?? null)
+                  }
+                  mode={productMode}
                 />
               )}
               <RunStatusBar
@@ -2886,7 +3188,13 @@ export function App() {
               )}
 
               <div className="transcript" tabIndex={-1} ref={transcriptRef}>
-                {showOnboarding ? (
+                {showConversationsNotFound ? (
+                  <EmptyStates
+                    kind="conversations-not-found"
+                    onSaveDiagnostics={() => void exportSessionDiagnostics()}
+                    onStartNewConversation={() => newSession()}
+                  />
+                ) : showOnboarding ? (
                   <Onboarding
                     firstRun={firstRun}
                     hasWorkspace={Boolean(state?.workspace)}
@@ -2916,6 +3224,7 @@ export function App() {
                     productMode={productMode}
                     onOpenFolder={() => void browseFolder()}
                     onSettings={() => setView("settings")}
+                    onSignIn={startGrokSignIn}
                     onSamplePrompt={(text) => {
                       setDraft(text);
                       setTimeout(() => composerRef.current?.focus(), 0);
@@ -2924,20 +3233,26 @@ export function App() {
                 ) : messages.length === 0 && !hostOk ? (
                   <EmptyStates
                     kind="host-offline"
-                    onReconnect={() => void retryHost()}
+                    onReconnect={
+                      engineRetryAllowed ? () => void retryHost() : undefined
+                    }
                   />
                 ) : (
                   <>
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
-                        Host offline — transcript preserved. Reconnect to continue.
-                        <button
-                          type="button"
-                          className="btn primary"
-                          onClick={() => void retryHost()}
-                        >
-                          Reconnect
-                        </button>
+                        <strong>Forge's engine stopped.</strong> Your conversation is
+                        saved.
+                        {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
+                        {engineRetryAllowed && (
+                          <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => void retryHost()}
+                          >
+                            Try again
+                          </button>
+                        )}
                       </div>
                     )}
                     <MessageList

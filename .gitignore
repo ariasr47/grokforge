@@ -21,6 +21,18 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 
+# desktop-self-host: generated per-channel allowlist (SPEC §2.7 rule 4).
+# Absent by default so a skipped copy fails the build instead of shipping the dev list.
+apps/host/src/allowed-origins.ts
+
+# desktop-self-host: generated app-version module (SPEC §1, AC25/AC26).
+# Absent by default so a skipped generation fails the build instead of shipping a stale version.
+apps/host/src/build-version.ts
+
+# desktop-self-host: staged bundle resources (produced by scripts/bundle-host.mjs
+# and scripts/fetch-node-runtime.mjs; never committed — node.exe is a vendor binary)
+apps/shell/src-tauri/resources/
+
 # Local agent / session tooling (keep skills if project-owned under .grok/skills)
 .claude/
 .codex/

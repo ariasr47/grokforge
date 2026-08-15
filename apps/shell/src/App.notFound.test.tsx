@@ -1,0 +1,230 @@
+// F7 — priorConversations: not-found state instead of the first-run welcome
+// (AC12b, SPEC §4 flow 5). This row is a shell-REACTION row (SPEC §7) — it
+// proves the shell reacts correctly to the signal, not that the engine
+// produces it (that's AC12d/AC12e, review-only, out of this lane's reach).
+import { after, afterEach, before, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { cleanup, render, screen } from "@testing-library/react";
+import { App } from "./App";
+import { createFakeHost, FakeWebSocket } from "./testFakeHost";
+import { createSession, saveSessionMessages, reloadSessionsFromDisk } from "./sessions";
+
+let originalFetch: typeof fetch;
+let originalWebSocket: typeof WebSocket;
+
+before(() => {
+  originalFetch = globalThis.fetch;
+  originalWebSocket = globalThis.WebSocket;
+});
+
+after(() => {
+  globalThis.fetch = originalFetch;
+  globalThis.WebSocket = originalWebSocket;
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+function resetBrowserState(): void {
+  localStorage.clear();
+  localStorage.setItem(
+    "grokforge.firstRun",
+    JSON.stringify({
+      dismissed: true,
+      openedFolder: true,
+      signedIn: true,
+      sentMessage: true,
+      pickedMode: true,
+      seenAt: new Date().toISOString(),
+    }),
+  );
+  reloadSessionsFromDisk({ byWorkspace: {}, activeId: {}, pinned: [], expanded: [] });
+  FakeWebSocket.reset();
+}
+
+describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
+  it("priorConversations:true + empty partition -> the not-found state, never the welcome", async () => {
+    resetBrowserState();
+    const host = createFakeHost({
+      mode: "chat",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+  });
+
+  it("priorConversations:false + empty partition -> the first-run welcome (genuine first run)", async () => {
+    resetBrowserState();
+    localStorage.removeItem("grokforge.firstRun"); // genuine first run: no dismissal record
+    reloadSessionsFromDisk({ byWorkspace: {}, activeId: {}, pinned: [], expanded: [] });
+    const host = createFakeHost({
+      mode: "chat",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: false,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Welcome to Forge"));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+  });
+
+  it("priorConversations:true but the partition already has messages -> renders the transcript, not the not-found state", async () => {
+    resetBrowserState();
+    const partition = "chat:__sandbox__";
+    const s = createSession(partition, "Earlier chat");
+    saveSessionMessages(partition, s.id, [
+      { id: "u1", role: "user", content: "already have history" },
+    ]);
+    const host = createFakeHost({
+      mode: "chat",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText(/already have history/));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+  });
+
+  it("priorConversations:false and the partition already has messages -> renders the transcript", async () => {
+    resetBrowserState();
+    const partition = "chat:__sandbox__";
+    const s = createSession(partition, "Earlier chat");
+    saveSessionMessages(partition, s.id, [
+      { id: "u1", role: "user", content: "already have history too" },
+    ]);
+    const host = createFakeHost({
+      mode: "chat",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: false,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText(/already have history too/));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+  });
+});
+
+// GATE Q finding N-6 (2026-08-14) — INTERFACE_CONTRACT.md `priorConversations`
+// property 3, SPEC §2.8 property 3, §4 flow 5, AC12f. The signal is scoped to
+// this shell's WHOLE conversation store (every mode, every folder, one
+// `grokforge.sessions.v2` key); the guard must be weighed at that same
+// granularity, never against the mode/folder slice on screen. Both halves of
+// AC12f are exercised here, in the exact journey the finding names: a shell
+// with Chat history opening Code for the first time.
+describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
+  it("Chat history exists + Code opened for the first time -> Code's ordinary empty state, never the not-found alarm", async () => {
+    resetBrowserState();
+    const chatPartition = "chat:__sandbox__";
+    const s = createSession(chatPartition, "Earlier chat");
+    saveSessionMessages(chatPartition, s.id, [
+      { id: "u1", role: "user", content: "chat history lives here" },
+    ]);
+    // Code's own partition ("__no_workspace__") has never been touched —
+    // this is the exact granularity mismatch N-6 named: per-mode slice empty,
+    // whole store non-empty.
+    const host = createFakeHost({
+      mode: "code",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Open a project"));
+    assert.equal(
+      screen.queryByText("Forge didn't find your earlier conversations."),
+      null,
+    );
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+  });
+
+  it("Chat history exists + onboarding undismissed + Code opened for the first time -> ordinary empty state, never the welcome", async () => {
+    resetBrowserState();
+    // Unlike resetBrowserState()'s default (onboarding dismissed), this
+    // exercises the first-run welcome directly: signed in and has sent a
+    // message before (in Chat), but never opened a folder in Code — the
+    // per-mode onboarding gate (`isOnboardingDone`) would, on its own,
+    // welcome this experienced user back into Code as if new.
+    localStorage.setItem(
+      "grokforge.firstRun",
+      JSON.stringify({
+        dismissed: false,
+        openedFolder: false,
+        signedIn: true,
+        sentMessage: true,
+        pickedMode: true,
+        seenAt: new Date().toISOString(),
+      }),
+    );
+    const chatPartition = "chat:__sandbox__";
+    const s = createSession(chatPartition, "Earlier chat");
+    saveSessionMessages(chatPartition, s.id, [
+      { id: "u1", role: "user", content: "chat history lives here" },
+    ]);
+    const host = createFakeHost({
+      mode: "code",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Open a project"));
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(
+      screen.queryByText("Forge didn't find your earlier conversations."),
+      null,
+    );
+  });
+
+  it("whole store emptied -> the not-found alarm still renders, even in a mode that never held conversations", async () => {
+    resetBrowserState();
+    // The store is fully empty (resetBrowserState's reloadSessionsFromDisk
+    // call), and Code's own partition never held anything either — the
+    // opposite failure mode from the two tests above: widening the guard to
+    // the whole store must not hide a real loss (AC12f, second half; §9.12
+    // rejects narrowing the signal for exactly this reason).
+    const host = createFakeHost({
+      mode: "code",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Open a project"), null);
+  });
+});

@@ -68,6 +68,16 @@ const AC_HEADING_RE = /^##\s*\d*\.?\s*Acceptance criteria/im;
 // ```JSON fence matches on both sides.
 const CONFORMANCE_RE = /##\s*Conformance spec[\s\S]*?```json\s*([\s\S]*?)```/i;
 const COUNCIL_ROLES = Object.freeze(['architect', 'pm', 'ux']);
+
+// M10 artifact budgets (advisory). Sized from a measured over-length feature (SPEC 108KB,
+// PLAN 138KB, council positions 15-30KB) versus what its decisions actually needed; a budget is a
+// prompt to compress, never a gate — WARN only.
+const ARTIFACT_BUDGET_BYTES = Object.freeze({
+  'SPEC.md': 40 * 1024,
+  'PLAN.md': 50 * 1024,
+  'QA_REPORT.md': 40 * 1024,
+});
+const COUNCIL_FILE_BUDGET_BYTES = 15 * 1024;
 const COUNCIL_FOLDING_RE = /<!--\s*spire:council-folding:v1\s*\r?\n([\s\S]*?)\r?\n-->/g;
 const COUNCIL_RESOLUTION_RE = /<!--\s*spire:council-resolution:v1\s+([a-f0-9]{64})\s+(folded|open)\s*-->/g;
 const R2_JSON_RE = /^```json\s*\r?\n([\s\S]*?)\r?\n```\s*$/;
@@ -303,7 +313,7 @@ export function lintFeature(folder, f) {
           : 'UNSET or missing Status: SET';
         f.err(`${name}/${SPEC_FILE}`,
           `UI-touching feature requires project design canon Status: SET `
-          + `(${DESIGN_SYSTEM_REL} is ${state}) — run `design/DESIGN_SYSTEM_METHOD.md` (living project design canon) or follow `
+          + `(${DESIGN_SYSTEM_REL} is ${state}) — run design/DESIGN_SYSTEM_METHOD.md (living project design canon) or follow `
           + 'design/DESIGN_SYSTEM_METHOD.md; put NO_UI_CHANGE in the SPEC body for backend-only features');
       }
     }
@@ -331,6 +341,33 @@ export function lintFeature(folder, f) {
             "'## Conformance spec' block is not valid JSON (invalid JSON)");
         }
       }
+    }
+  }
+
+  // M10 — artifact size budgets. WARN, never ERROR: length is the author's judgment call, but it
+  // is a judgment every downstream reader pays for — the SPEC seeds both build lanes and QA, the
+  // PLAN seeds the lanes, and each council position is read by two later rounds. A measured feature
+  // shipped 622KB of contract artifacts (its PLAN alone outweighed the whole orchestrator prose),
+  // and its build lane ran deep enough to drop spec-copy fidelity. The remedy is the compressor
+  // discipline that already binds these files: decisions, not deliberation.
+  for (const [fname, budget] of Object.entries(ARTIFACT_BUDGET_BYTES)) {
+    const fpath = path.join(folder, fname);
+    if (!fs.existsSync(fpath)) continue;
+    const size = fs.statSync(fpath).size;
+    if (size <= budget) continue;
+    f.warn(`${name}/${fname}`,
+      `${Math.round(size / 1024)}KB exceeds the ${Math.round(budget / 1024)}KB artifact budget — every `
+      + 'downstream reader re-attends this on every turn; compress to decisions (see COMPRESSOR_PROMPTS.md)');
+  }
+  const councilDir = path.join(folder, 'council');
+  if (fs.existsSync(councilDir)) {
+    for (const entry of fs.readdirSync(councilDir).sort()) {
+      if (!/^R[123]-.*\.md$/.test(entry)) continue;
+      const size = fs.statSync(path.join(councilDir, entry)).size;
+      if (size <= COUNCIL_FILE_BUDGET_BYTES) continue;
+      f.warn(`${name}/council/${entry}`,
+        `${Math.round(size / 1024)}KB exceeds the ${Math.round(COUNCIL_FILE_BUDGET_BYTES / 1024)}KB council `
+        + 'budget — later rounds read every position in full; state positions, not transcripts');
     }
   }
 

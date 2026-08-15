@@ -139,6 +139,7 @@ Read these files for full context, then implement the backend, acting as a backe
 - .spire/clusters/tech/contracts/{FEATURE}/_context-pack.md                 (your slice of the standing ground truth — the always-load invariant floor + this feature's tagged sections. Regenerate it now, unconditionally, even if it already exists: `node .grok/tools/gates.mjs context_for {FEATURE} --write`, then read the file it names — it can be stale, since GATE M/V skip the council round that writes it and `PROJECT_CONTEXT.md` can change after GATE C)
 - .spire/clusters/tech/contracts/{FEATURE}/INTERFACE_CONTRACT.md            (the single source of integration truth)
 - .spire/clusters/tech/contracts/{FEATURE}/SPEC.md                          (§2 architecture + §7 testing strategy — your server work)
+- .spire/clusters/tech/contracts/{FEATURE}/RESUME.md                        (ONLY if present with `**Resume status:** ACTIVE` — a prior lane hit its session budget and checkpointed; continue from exactly where it stopped instead of redoing done work)
 
 Follow the lane boundaries, interface-binding rule, debugging/TDD method, and required conformance-
 receipt exit discipline in your agent definition. Apply them to the feature-specific inputs above;
@@ -151,6 +152,7 @@ Read these files for full context, then implement the frontend, acting as a fron
 - .spire/clusters/tech/contracts/{FEATURE}/_context-pack.md                 (your slice of the standing ground truth — the always-load invariant floor + this feature's tagged sections. Regenerate it now, unconditionally, even if it already exists: `node .grok/tools/gates.mjs context_for {FEATURE} --write`, then read the file it names — it can be stale, since GATE M/V skip the council round that writes it and `PROJECT_CONTEXT.md` can change after GATE C)
 - .spire/clusters/tech/contracts/{FEATURE}/INTERFACE_CONTRACT.md            (the single source of integration truth)
 - .spire/clusters/tech/contracts/{FEATURE}/SPEC.md                          (§4 — component states, copy, design direction; your UI work)
+- .spire/clusters/tech/contracts/{FEATURE}/RESUME.md                        (ONLY if present with `**Resume status:** ACTIVE` — a prior lane hit its session budget and checkpointed; continue from exactly where it stopped instead of redoing done work)
 
 Follow the lane boundaries, interface-binding rule, required unit/component/flow-integration test
 floor, degraded-state behavior, and visual-verification exit discipline in your agent definition.

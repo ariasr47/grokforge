@@ -25,10 +25,16 @@ import {
   type DeviceStart,
 } from "./oauth.js";
 import { ensureChatRoot } from "./chat-root.js";
-import { isEffort, resolveEffort, type Effort } from "./effort.js";
+import {
+  isEffort,
+  modelFallbackChain,
+  resolveEffort,
+  type Effort,
+} from "./effort.js";
 import { getAgent, listAgents, resolveAgentSpawn } from "./agents.js";
 import { audit } from "./audit.js";
 import { clampEffort, loadPolicy } from "./policy.js";
+import { recordCompletedConversation } from "./shell-history.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -72,7 +78,9 @@ export type BusEvent =
       verification_uri: string;
       verification_uri_complete?: string;
     }
-  | { type: "oauth_complete"; ok: boolean; message?: string };
+  | { type: "oauth_complete"; ok: boolean; message?: string }
+  /** AC8 fallback-chain notice: the effort/model actually applied differed from the request. */
+  | { type: "effort_applied"; selected: EffortLevel; applied: EffortLevel; model: string };
 
 export type Listener = (event: BusEvent) => void;
 
@@ -110,16 +118,28 @@ export class AgentSession {
   private oauthAbort: AbortController | null = null;
   private appliedEffort: EffortLevel | null = null;
   private appliedModel: string | null = null;
+  /**
+   * The `Origin` header of the request that started the in-flight prompt run (SPEC §2.8 / D1,
+   * INTERFACE_CONTRACT.md `priorConversations`). Recorded against `shells.json` only when the run
+   * reaches `done` — an `error` run does not count as a completed conversation.
+   */
+  private pendingPromptOrigin: string | null = null;
   /** Serialize restarts so concurrent mode switches don't null the client mid-start. */
   private restartChain: Promise<PublicState> | null = null;
-  /** Background agent for the other mode (hover prefetch). */
-  private warm: {
-    mode: ProductMode;
-    client: StdioAcpClient;
-    sessionId: string;
-    workspace: string;
+  /**
+   * AC8 model-id fallback chain (SPEC §5 "Effort/model fallback"): tracks the in-flight prompt's
+   * remaining model candidates so a rejected model can be retried with the next one instead of
+   * dead-ending the turn. Cleared on every new prompt, cancel and restart.
+   */
+  private pendingFallback: {
+    text: string;
+    history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+    models: string[];
+    attemptIdx: number;
+    reasoningEffort?: "low" | "medium" | "high";
+    selected: Effort;
+    suppressNextDone: boolean;
   } | null = null;
-  private warmInflight: Promise<void> | null = null;
 
   constructor() {
     this.cfg = loadConfig();
@@ -244,37 +264,6 @@ export class AgentSession {
       }
     }
 
-    // Promote prefetched warm agent if it matches target mode
-    if (
-      this.warm &&
-      this.warm.mode === next &&
-      this.warm.client &&
-      this.warm.sessionId
-    ) {
-      const old = this.client;
-      this.client = this.warm.client;
-      this.sessionId = this.warm.sessionId;
-      this.workspace = this.warm.workspace;
-      this.warm = null;
-      this.cfg.mode = next;
-      saveConfig(this.cfg);
-      if (old) {
-        try {
-          await old.dispose();
-        } catch {
-          /* ignore */
-        }
-      }
-      this.bindClientEvents(this.client);
-      log("info", "mode set via warm agent", {
-        mode: next,
-        workspace: this.workspace,
-      });
-      audit("mode_set", { mode: next, via: "warm" });
-      this.broadcastState();
-      return this.getState();
-    }
-
     this.cfg.mode = next;
     saveConfig(this.cfg);
     audit("mode_set", { mode: next, via: "restart" });
@@ -292,129 +281,6 @@ export class AgentSession {
     return this.getState();
   }
 
-  /** Prefetch agent for the other mode (hover). Does not change live mode. */
-  async prefetchMode(mode: ProductMode): Promise<{
-    ok: boolean;
-    ready: boolean;
-    mode: ProductMode;
-  }> {
-    const target = mode === "code" ? "code" : "chat";
-    this.cfg = loadConfig();
-    if (this.cfg.mode === target && this.client && this.sessionId) {
-      return { ok: true, ready: true, mode: target };
-    }
-    if (this.warm?.mode === target && this.warm.sessionId) {
-      return { ok: true, ready: true, mode: target };
-    }
-    if (this.warmInflight) {
-      await this.warmInflight;
-      return {
-        ok: true,
-        ready: Boolean(this.warm?.mode === target),
-        mode: target,
-      };
-    }
-
-    let workspace: string | null = null;
-    if (target === "chat") {
-      workspace = ensureChatRoot(this.cfg.chatRoot);
-    } else if (this.cfg.lastWorkspace && fs.existsSync(this.cfg.lastWorkspace)) {
-      workspace = this.cfg.lastWorkspace;
-    }
-    if (!workspace) {
-      return { ok: true, ready: false, mode: target };
-    }
-
-    this.warmInflight = (async () => {
-      try {
-        if (this.warm) {
-          try {
-            await this.warm.client.dispose();
-          } catch {
-            /* ignore */
-          }
-          this.warm = null;
-        }
-        const { token } = await resolveApiKeyAsync(this.cfg);
-        const { command, args } = this.agentEntry();
-        const client = new StdioAcpClient({
-          workspaceRoot: workspace!,
-          command,
-          args,
-          env: {
-            XAI_API_KEY: token ?? "",
-            XAI_MODEL: this.cfg.model,
-            GROKFORGE_MODE: target,
-            GROKFORGE_SHELL_ALLOWLIST:
-              this.cfg.shellAllowlist === false ? "0" : "1",
-          },
-        });
-        // Warm agents ignore UI events (no bind to live emit)
-        client.onEvent(() => undefined);
-        await client.initialize();
-        const sessionId = await client.newSession();
-        this.warm = {
-          mode: target,
-          client,
-          sessionId,
-          workspace: workspace!,
-        };
-        log("info", "warm agent ready", { mode: target, workspace });
-      } catch (e) {
-        log("warn", "warm agent failed", {
-          mode: target,
-          message: e instanceof Error ? e.message : String(e),
-        });
-        this.warm = null;
-      } finally {
-        this.warmInflight = null;
-      }
-    })();
-
-    await this.warmInflight;
-    return {
-      ok: true,
-      ready: Boolean(this.warm?.mode === target),
-      mode: target,
-    };
-  }
-
-  private bindClientEvents(client: StdioAcpClient): void {
-    const toolNames = new Map<string, string>();
-    const gen = client;
-    client.onEvent((ev) => {
-      if (this.client !== gen) return;
-      if (ev.type === "tool_request") {
-        toolNames.set(ev.id, ev.name);
-      }
-      if (ev.type === "tool_result" && !ev.ok) {
-        log("warn", "tool failed", {
-          id: ev.id,
-          name: toolNames.get(ev.id) || "tool",
-          ...summarizeToolOutput(ev.output),
-        });
-      }
-      if (ev.type === "done" || ev.type === "error") {
-        this.setBusy(false);
-        if (ev.type === "error" && ev.code === "agent_exited") {
-          if (this.client === gen) {
-            this.client = null;
-            this.sessionId = null;
-          }
-        }
-        this.broadcastState();
-      }
-      if (ev.type === "error") {
-        log("error", "agent error", {
-          code: ev.code,
-          message: ev.message,
-          detail: ev.detail,
-        });
-      }
-      this.emit(ev);
-    });
-  }
-
   setEffort(effort: Effort): PublicState {
     if (!isEffort(effort)) throw new Error("invalid effort");
     this.cfg = loadConfig();
@@ -430,6 +296,11 @@ export class AgentSession {
     if (pathIn == null || pathIn === "") {
       this.cfg.chatRoot = null;
     } else {
+      // AC16 / C3: relative paths are refused, never resolved against the host process CWD.
+      // chatRoot is left untouched (cfg not mutated before this check).
+      if (!path.isAbsolute(pathIn)) {
+        throw new Error("chat root path must be absolute");
+      }
       const resolved = path.resolve(pathIn);
       const st = await fsPromises.stat(resolved);
       if (!st.isDirectory()) throw new Error("Path is not a directory");
@@ -510,15 +381,12 @@ export class AgentSession {
   async restartAgent(): Promise<PublicState> {
     // Chain concurrent restarts so setMode + prompt don't race dispose vs newSession
     const run = async (): Promise<PublicState> => {
-      // Drop warm agent — about to start a live one for current mode
-      if (this.warm) {
-        try {
-          await this.warm.client.dispose();
-        } catch {
-          /* ignore */
-        }
-        this.warm = null;
-      }
+      // A restart always clears any in-flight fallback retry — it belongs to the client about to
+      // be disposed, not the next one. Same for a stale prompt-origin attribution (D1): the
+      // in-flight run's completion events are about to be dropped by the disposed client, so no
+      // `done` will ever arrive to record it — clear it rather than leak it onto the next prompt.
+      this.pendingFallback = null;
+      this.pendingPromptOrigin = null;
       if (this.client) {
         const prev = this.client;
         this.client = null;
@@ -606,17 +474,58 @@ export class AgentSession {
           });
           if (ev.level !== "warn") return;
         }
-        if (ev.type === "done" || ev.type === "error") {
-          this.setBusy(false);
-          if (ev.type === "error" && ev.code === "agent_exited") {
-            if (this.client === gen) {
-              this.client = null;
-              this.sessionId = null;
-            }
-          }
-          this.broadcastState();
-        }
+        // AC8 model-id fallback chain (SPEC §5): a rejected model gets retried with the next
+        // candidate instead of dead-ending the turn. Only api_error 400/404 is eligible — auth,
+        // rate-limit and upstream errors would not be fixed by a different model id, and retrying
+        // them would just mask the real failure. Swallows this failed attempt's error AND its
+        // paired `done reason:"error"` (grok-acp always emits both) so the UI never sees the
+        // intermediate dead end.
         if (ev.type === "error") {
+          const pf = this.pendingFallback;
+          const canFallback =
+            pf !== null &&
+            ev.code === "api_error" &&
+            (ev.status === 400 || ev.status === 404) &&
+            pf.attemptIdx < pf.models.length - 1;
+          if (canFallback && pf) {
+            const failedModel = pf.models[pf.attemptIdx];
+            pf.attemptIdx += 1;
+            const nextModel = pf.models[pf.attemptIdx];
+            pf.suppressNextDone = true;
+            log("warn", "model rejected — retrying with fallback model", {
+              failedModel,
+              nextModel,
+              status: ev.status,
+              detail: ev.detail,
+              sessionId: this.sessionId,
+            });
+            this.appliedModel = nextModel;
+            this.broadcastState();
+            const retryClient = this.client;
+            const retrySessionId = this.sessionId;
+            if (retryClient && retrySessionId) {
+              retryClient
+                .prompt(retrySessionId, pf.text, {
+                  model: nextModel,
+                  reasoning_effort: pf.reasoningEffort,
+                  history: pf.history,
+                })
+                .catch((e2) => {
+                  this.pendingFallback = null;
+                  this.setBusy(false);
+                  const message = e2 instanceof Error ? e2.message : String(e2);
+                  log("error", "fallback prompt failed", { message, sessionId: this.sessionId });
+                  this.emit({ type: "error", code: "prompt_failed", message });
+                  this.emit({ type: "done", reason: "error" });
+                  this.broadcastState();
+                });
+            } else {
+              this.pendingFallback = null;
+              this.setBusy(false);
+              this.broadcastState();
+            }
+            return; // do not forward — a retry is already in flight
+          }
           log("error", "agent error", {
             code: ev.code,
             message: ev.message,
@@ -624,6 +533,41 @@ export class AgentSession {
             status: ev.status,
             sessionId: this.sessionId,
           });
+        }
+        if (ev.type === "done" && this.pendingFallback?.suppressNextDone) {
+          // Tail of the failed attempt just superseded by a fallback retry — swallow it too.
+          this.pendingFallback.suppressNextDone = false;
+          return;
+        }
+        if (ev.type === "done" || ev.type === "error") {
+          if (ev.type === "done" && ev.reason === "stop" && this.pendingFallback) {
+            const pf = this.pendingFallback;
+            if (pf.attemptIdx > 0) {
+              // A fallback actually happened for this turn — publish the truth (AC8).
+              this.emit({
+                type: "effort_applied",
+                selected: pf.selected,
+                applied: pf.selected,
+                model: pf.models[pf.attemptIdx],
+              });
+            }
+          }
+          this.pendingFallback = null;
+          this.setBusy(false);
+          if (ev.type === "error" && ev.code === "agent_exited") {
+            if (this.client === gen) {
+              this.client = null;
+              this.sessionId = null;
+            }
+          }
+          // priorConversations (SPEC §2.8 / D1): a run reaching `done` — other than one that
+          // itself carries reason "error" — is a completed conversation, attributed to the
+          // Origin that started it. An `error` event or a `done reason:"error"` does not count.
+          if (ev.type === "done" && ev.reason !== "error" && this.pendingPromptOrigin) {
+            recordCompletedConversation(this.pendingPromptOrigin);
+          }
+          this.pendingPromptOrigin = null;
+          this.broadcastState();
         }
         if (ev.type === "done") {
           log("debug", "agent done", {
@@ -698,6 +642,8 @@ export class AgentSession {
     effortOverride?: Effort,
     opts?: {
       history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+      /** The request's `Origin` header (D1) — null for an absent/empty Origin (never recorded). */
+      originKey?: string | null;
     },
   ): Promise<void> {
     if (this.busy) {
@@ -710,7 +656,13 @@ export class AgentSession {
     } else if (!this.workspace) {
       throw new Error("Open a workspace first");
     }
+    // D1 ordering (F-2): set the attribution AFTER ensureAgent()/restartAgent(), never before.
+    // A cold client's restartAgent() unconditionally nulls pendingPromptOrigin (it belongs to
+    // whatever run was in flight against the client being disposed) — set here, this line
+    // survives that reset instead of racing behind it, so the *first* prompt after every
+    // engine/agent start is still attributed to its Origin.
     await this.ensureAgent();
+    this.pendingPromptOrigin = opts?.originKey ?? null;
     if (!this.client || !this.sessionId) throw new Error("Agent not connected");
 
     const rawSelected = isEffort(effortOverride)
@@ -721,11 +673,20 @@ export class AgentSession {
     const policy = loadPolicy();
     const selected = clampEffort(rawSelected, policy.maxEffort);
     const binding = resolveEffort(selected, this.cfg.model);
+    // AC8 model-id fallback chain: binding.model leads; the rest are the fallback candidates a
+    // rejected model retries through (see the `client.onEvent` handler in restartAgent()).
+    const modelsChain = modelFallbackChain(binding);
     this.appliedEffort = binding.selected;
-    this.appliedModel = binding.model;
-    if (binding.reasoning_effort && selected !== "auto") {
-      // appliedEffort stays selected; UI uses appliedModel for honesty
-    }
+    this.appliedModel = modelsChain[0];
+    this.pendingFallback = {
+      text,
+      history: opts?.history,
+      models: modelsChain,
+      attemptIdx: 0,
+      reasoningEffort: binding.reasoning_effort,
+      selected,
+      suppressNextDone: false,
+    };
 
     this.setBusy(true);
     this.broadcastState();
@@ -736,24 +697,26 @@ export class AgentSession {
       workspace: this.workspace,
       mode,
       effort: selected,
-      model: binding.model,
+      model: modelsChain[0],
+      fallbackModels: modelsChain.slice(1),
       reasoning_effort: binding.reasoning_effort,
       historyTurns: opts?.history?.length ?? 0,
     });
     audit("prompt", {
       mode,
       effort: selected,
-      model: binding.model,
+      model: modelsChain[0],
       len: text.length,
       agentId: this.cfg.agentId,
     });
     try {
       await this.client.prompt(this.sessionId, text, {
-        model: binding.model,
+        model: modelsChain[0],
         reasoning_effort: binding.reasoning_effort,
         history: opts?.history,
       });
     } catch (e) {
+      this.pendingFallback = null;
       this.setBusy(false);
       this.broadcastState();
       const message = e instanceof Error ? e.message : String(e);
@@ -799,6 +762,7 @@ export class AgentSession {
 
   async cancel(): Promise<void> {
     log("info", "cancel requested");
+    this.pendingFallback = null;
     if (this.client) {
       try {
         await this.client.cancel();

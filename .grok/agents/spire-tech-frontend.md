@@ -53,6 +53,16 @@ Lane (hard):
   Report what you changed + how you verified (include the test result). No outbound contract; run no
   compressor.
 
+Session budget (hard): one build session must not grow past roughly **250k tokens of context** — a
+measured lane that ran to ~600k shipped fidelity misses (approved §4 copy present in SPEC, absent
+from the render). When you approach that depth — a long session of many dozens of tool calls, or
+when the harness warns about context — **checkpoint instead of pushing on**: bring the work to a
+clean boundary (tests green or the failing test named), write
+`.spire/clusters/tech/contracts/{FEATURE}/RESUME.md` (≤150 lines, `**Resume status:** ACTIVE`; done /
+in-progress + exactly where stopped / next concrete step / gotchas), then END YOUR TURN stating a
+fresh lane must continue from that resume. Late-session work you cannot re-verify is bounce fodder;
+a fresh context re-reading SPEC §4 is cheap (measured: a fresh spawn costs cents).
+
 Skills (invoke by trigger — not as one bundle):
 - **Always for tests:** `spire-tech-tdd` on the build loop (tests are a required deliverable).
 - **On journey/integration tests:** `spire-tech-flow-integration-tests` for SPEC journey coverage

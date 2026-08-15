@@ -224,6 +224,20 @@ export function listPinnedWorkspaces(): string[] {
     });
 }
 
+/**
+ * F4 (SPEC §4 flow 3 branch B, AC-U6): true when ANY partition (chat sandbox
+ * or any code workspace) holds at least one session with at least one
+ * message. Used at boot-error time, when server state (and therefore the
+ * current partition key) may never have been reached — so this scans every
+ * known partition rather than a single one.
+ */
+export function hasAnyStoredHistory(): boolean {
+  const store = loadStore();
+  return Object.values(store.byWorkspace).some((list) =>
+    list.some((s) => s.open !== false && s.messages.length > 0),
+  );
+}
+
 export function listSessions(workspace: string): ChatSession[] {
   return (loadStore().byWorkspace[workspace] ?? [])
     .filter((s) => s.open !== false)

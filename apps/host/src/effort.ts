@@ -50,3 +50,17 @@ export function resolveEffort(
 export function isEffort(v: unknown): v is Effort {
   return v === "auto" || v === "fast" || v === "expert" || v === "heavy";
 }
+
+/**
+ * Ordered model-id fallback chain for a resolved effort binding (AC8 / SPEC §5 "Effort/model
+ * fallback"). `binding.model` leads (the resolved choice for the selected effort); the rest are
+ * the other known-good host constants, so a rejected model id (e.g. a bad `config.model` reached
+ * through `auto`/`expert`) still has somewhere real to fall through to. De-duplicated, order
+ * preserved, empty/undefined entries dropped.
+ */
+export function modelFallbackChain(binding: EffortBinding): string[] {
+  const candidates = [binding.model, FAST_MODELS[0], HEAVY_MODELS[0]]
+    .map((m) => (typeof m === "string" ? m.trim() : ""))
+    .filter(Boolean);
+  return [...new Set(candidates)];
+}

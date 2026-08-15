@@ -3,7 +3,7 @@
  * Build Tauri installer for a channel.
  * Usage: node scripts/tauri-build.mjs --channel=prod|dev
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,27 @@ const channelEnv = {
   GROKFORGE_PORT: hostPort,
   VITE_GROKFORGE_CHANNEL: channel,
   VITE_GROKFORGE_PORT: hostPort,
+  // D3: compile-time channel constant baked into the Rust launcher via option_env! — never a
+  // runtime std::env::var read, so GROKFORGE_CHANNEL on the shipped binary can never move the
+  // data root, port or allowlist (AC-S8).
+  GROKFORGE_BUILD_CHANNEL: channel,
 };
+
+function step(label, args) {
+  console.log(`[tauri-build] ${label}`);
+  execFileSync(process.execPath, args, { cwd: root, stdio: "inherit", env: channelEnv });
+}
+
+// Ordered packaging pipeline (SPEC §2.1, §2.2, §2.7 rule 4/5). Aborts on the first non-zero exit —
+// execFileSync throws, which propagates past this module's top level and exits non-zero.
+step("generate per-channel allowlist", [path.join(root, "scripts", "gen-allowed-origins.mjs"), `--channel=${channel}`]);
+// AC25/AC26: the packaged host's /api/health version must equal the app version this same build
+// stamps into the installer. bundle-host.mjs invokes esbuild directly (not `npm run build`, whose
+// prebuild hook would otherwise cover this), so the generation step is explicit here.
+step("generate build version", [path.join(root, "scripts", "gen-build-version.mjs")]);
+step("fetch + verify node runtime", [path.join(root, "scripts", "fetch-node-runtime.mjs")]);
+step("bundle host + agent", [path.join(root, "scripts", "bundle-host.mjs")]);
+step("assert staged bundle (AC-S4)", [path.join(root, "scripts", "assert-staged-bundle.mjs"), `--channel=${channel}`]);
 
 function findVsDevCmd() {
   const bases = [
@@ -78,6 +98,7 @@ set GROKFORGE_CHANNEL=${channel}\r
 set GROKFORGE_PORT=${hostPort}\r
 set VITE_GROKFORGE_CHANNEL=${channel}\r
 set VITE_GROKFORGE_PORT=${hostPort}\r
+set GROKFORGE_BUILD_CHANNEL=${channel}\r
 call "${vsdev}" -arch=x64 -host_arch=x64\r
 if errorlevel 1 exit /b 1\r
 cd /d "${shellDir}"\r

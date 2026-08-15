@@ -1,4 +1,4 @@
-import type { PublicState } from "./api";
+import type { DesktopHostStatus, PublicState } from "./api";
 
 export interface ChatMessageLike {
   id: string;
@@ -33,8 +33,38 @@ export function buildSessionMarkdown(opts: {
   errorBanner?: string | null;
   recentErrors?: string[];
   bootMsg?: string | null;
+  /** F10 (AC-U18) — the launcher's raw value, verbatim. Every failure card's
+   *  raw reason/osError/message belongs here even when the export succeeds
+   *  through a healthy engine, so a card seen once is never lost. */
+  launch?: DesktopHostStatus | null;
+  /** F10 (AC25/AC26/AC-S8's shell half) — from GET /api/health when reachable. */
+  health?: { version?: string; channel?: string; channelLabel?: string } | null;
 }): string {
-  const lines: string[] = [
+  const lines: string[] = [];
+  if (opts.launch) {
+    lines.push(
+      "### Launch",
+      "",
+      `- reason: ${opts.launch.reason ?? "—"}`,
+      `- osError: ${opts.launch.osError ?? "—"}`,
+      `- message: ${opts.launch.message || "—"}`,
+      `- phase: ${opts.launch.phase}`,
+      `- owned: ${String(opts.launch.owned)}`,
+      `- port: ${opts.launch.port ?? "—"}`,
+      `- pid: ${opts.launch.pid ?? "—"}`,
+      "",
+    );
+  }
+  if (opts.health) {
+    lines.push(
+      "### Build",
+      "",
+      `- version: ${opts.health.version ?? "—"}`,
+      `- channel: ${opts.health.channel ?? "—"} (${opts.health.channelLabel ?? "—"})`,
+      "",
+    );
+  }
+  lines.push(
     "### Session meta",
     "",
     `- Session id: ${opts.sessionId ?? "(none)"}`,
@@ -49,7 +79,7 @@ export function buildSessionMarkdown(opts: {
     `- Busy: ${opts.state?.busy ?? false}`,
     `- Host session: ${opts.state?.sessionId ?? "(none)"}`,
     "",
-  ];
+  );
 
   if (opts.errorBanner) {
     lines.push("### Current error banner", "", opts.errorBanner, "");

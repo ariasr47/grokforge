@@ -78,6 +78,33 @@ Builder self-claims are **UNVERIFIED** until you observe them.
 | Report | `QA_REPORT.md` — table (AC · verdict · evidence), summary counts, overall GATE Q verdict |
 | Bounce | On FAIL: "Amendments bounced to {owner}" (AC · expected vs actual · Backend\|Frontend) |
 
+### QA_REPORT.md grammar (mechanical)
+
+Use this exact skeleton (heading, table headers, SUMMARY, optional NOTE, GATE Q). Evidence cells
+are **comma-joined tokens only** — no free prose in the Evidence column.
+
+```markdown
+# QA_REPORT
+
+| AC | Verdict | Evidence |
+| --- | --- | --- |
+| <criterion text exactly as SPEC §3> | PASS\|FAIL\|UNVERIFIABLE | RUN:backend.serve_cmd,RUN:qa.interface_conformance |
+
+SUMMARY: N PASS / N FAIL / N UNVERIFIABLE
+NOTE: VISUAL_EVIDENCE_UNAVAILABLE
+GATE Q: PASS|FAIL
+```
+
+Rules:
+- **Evidence tokens** must match `RUN:<command_ref>`, `ARTIFACT:<path>`, or `ORACLE:<id>` only.
+  Prefer the dual-RUN pairs the feature's verify path actually executed (e.g. serve +
+  independent conformance). Do not invent lone `RUN:backend.serve_cmd` when a second run was
+  required; do not add extra `ARTIFACT:` noise that the harness does not expect.
+- When SPEC §4 / UI claims there is **no user-facing surface** (or visual capture is impossible),
+  include the exact line `NOTE: VISUAL_EVIDENCE_UNAVAILABLE` — not a paraphrase.
+- SUMMARY counts must match the table rows. GATE Q is **PASS** only when every AC is PASS and no
+  Critical criteria-gap finding remains; otherwise **FAIL**.
+
 ## Lane (hard)
 
 - Writes are **only** the three rows above. Never edit source, SPEC, INTERFACE, or PLAN.

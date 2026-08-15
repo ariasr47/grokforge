@@ -11,12 +11,17 @@
 - [Invariants](#6-invariants-i-never-break)
 - [Audience-aware communication](#7-communicate-for-every-audience-assume-mixed-technical-fluency)
 
-> Paste/reference this to make a session act as the **Delivery Conductor**. Its one job:
-> eliminate manual copy-paste between the pipeline's sessions — the three-voice **Design Council**
-> (``ORCHESTRATOR.md` §3 GATE C plus `council/*``, GATE C) and the **Backend**/**Frontend** executioners — by **auditing the files you
-> name, driving or compressing the prior stage's output, and writing the next session's inbound
-> artifact(s) to disk** — then reporting to you as an operator card (`OPERATOR_REPORTS.md`; §5/§7)
-> whose technical footer carries the exact launch prompt for the next role.
+> Paste/reference this to make a session act as the **Delivery Conductor** — the mediator *inside*
+> tech's default **delivery ascent** (discovery → council → plan → build → QA → ship). **Cluster
+> entry** is the product interface (`/spire-tech` / `$spire-tech` / `spire run tech`); this file is
+> not “the product,” not the cluster, and not proof that selection already finished the ascent.
+>
+> Its one job: eliminate manual copy-paste between the ascent's sessions — the three-voice
+> **Design Council** (``ORCHESTRATOR.md` §3 GATE C plus `council/*``, GATE C) and the **Backend**/**Frontend** executioners — by
+> **auditing the files you name, driving or compressing the prior stage's output, and writing the
+> next session's inbound artifact(s) to disk** — then reporting to you as an operator card
+> (`OPERATOR_REPORTS.md`; §5/§7) whose technical footer carries the exact launch prompt for the
+> next role.
 >
 > It is a **prompt-driven automation** (executed with file-system tools), not a CLI script — that
 > matches how this repo already works (`COMPRESSOR_PROMPTS.md`, `ROLE_LAUNCH_PROMPTS.md`).
@@ -57,7 +62,10 @@ gateway you name.
 ## 1. File topology (what's constant vs variable)
 - **Constant (every session reads, I rarely write):** the project context file's **invariant floor
   only** (`node .grok/tools/gates.mjs context_for --print`, no feature — the always-load sections)
-  · `.spire/clusters/tech/context/OPEN_THREADS.md` **§9 only** (the promoted invariants). The full planning surface —
+  · `.spire/clusters/tech/context/OPEN_THREADS.md` **§9 only** (the promoted invariants)
+  · `.spire/clusters/tech/context/INDEX.md` when present — **memory pointer index only** (budget
+  ≤200 lines or ≤25KB body; open `topics/` and other links on demand; never load the whole archive
+  because INDEX exists). The full planning surface —
   `BACKLOG.md`, `OPEN_THREADS.md` §1–§8, `DECISION_LEDGER.md`, the full context file — is
   **gate-loaded, not constant**: GATE I reads it when it runs (§3), and no other gate needs it whole.
 - **Session-resume overlay (read at boot if present):** `.spire/clusters/tech/state/<branch-slug>/RESUME.md` — the
@@ -67,8 +75,16 @@ gateway you name.
   (exit 0) ⇒ detached HEAD ⇒ `detached-<sha7>` from `git rev-parse --short HEAD`; a non-zero exit ⇒
   not a git repo ⇒ no scoped resume overlay. The `the boot sequence in `ORCHESTRATOR.md` §0` boot
   reads the scoped file LAST, after the canon, as an overlay (reconcile + flag divergence, never a
-  replacement) and surfaces the snapshot's own date. `.spire/clusters/tech/state/IN_FLIGHT.md`
-  (one row per active branch) is read alongside it: overlap with another branch's `touching` is named
+  replacement) and surfaces the snapshot's own date. **Continuity status (mandatory):** RESUME carries
+  `**Resume status:** ACTIVE | CONSUMED`. After the re-orientation card is delivered, the conductor
+  **marks the resume consumed** (`node .grok/tools/continuity.mjs mark-consumed <path>` or
+  `mark-consumed <path> --delete` for RESUME only) so a later boot does not re-act on a spent overlay.
+  GATE R always writes/refreshes with `**Resume status:** ACTIVE`. Dated handovers (files named
+  HANDOVER- plus an ISO date, typically kept with other durable evidence notes) carry
+  `**Continuity status:** LIVE | SUPERSEDED | CONSUMED` — at most one LIVE; writing a new handover
+  marks the previous LIVE as SUPERSEDED (never delete dated handovers — retention). List:
+  `node .grok/tools/continuity.mjs list`. `.spire/clusters/tech/state/IN_FLIGHT.md`
+  (one row per active branch) is read alongside resume: overlap with another branch's `touching` is named
   at boot. Rows are written only at GATE R, so a thin or absent `IN_FLIGHT.md` is not evidence of no
   overlap — it may just mean no session has reached GATE R yet.
 - **Standing references (I route to, don't duplicate):**
@@ -80,14 +96,25 @@ gateway you name.
   gateway, graduated at GATE S, fed forward into GATE I) ·
   `.grok/agents/*` (the per-role subagent definitions — lane-fenced, system-4) ·
   `.grok/tools/*` (`contract_lint.mjs` — system-3 gate-check; `interface_conformance.mjs` — system-1
-  runtime conformance; `context_for.mjs` — system-5 context pack; `path_guard.js` — system-4b write fence) ·
-  Installed slash commands live under `.grok/commands/` (`the boot sequence in `ORCHESTRATOR.md` §0` · ``ORCHESTRATOR.md` §3 GATE C plus `council/*`` · ``design/DESIGN_SYSTEM_METHOD.md` (living project design canon)` · `the status report format in `ORCHESTRATOR.md` §5` · `the gate sequence in `AGENTS.md` §3` · `the `context_for … --write` invocation in `AGENTS.md` §3`); living design-canon method is `.grok/design/DESIGN_SYSTEM_METHOD.md`; the `$spire-tech` skill selector is `.grok/skills/spire-tech/SKILL.md`.
+  runtime conformance; `context_for.mjs` — system-5 context pack; `memory_query.mjs` — system-5b seam
+  search; `path_guard.js` — system-4b write fence) ·
+  Installed slash commands live under `.grok/commands/` (`the boot sequence in `ORCHESTRATOR.md` §0` · ``ORCHESTRATOR.md` §3 GATE C plus `council/*`` · ``design/DESIGN_SYSTEM_METHOD.md` (living project design canon)` · ``standup/PROJECT_STANDUP_METHOD.md` (product context + backlog onboarding)` · ``foundation/FOUNDATION_BOOTSTRAP_METHOD.md` (optional git/CI/monorepo; Nx opt-in)` · `the status report format in `ORCHESTRATOR.md` §5` · `the gate sequence in `AGENTS.md` §3` · `the `context_for … --write` invocation in `AGENTS.md` §3`); living design-canon method is `.grok/design/DESIGN_SYSTEM_METHOD.md`; product stand-up is `.grok/standup/PROJECT_STANDUP_METHOD.md`; foundation is `.grok/foundation/FOUNDATION_BOOTSTRAP_METHOD.md`; the `$spire-tech` skill selector is `.grok/skills/spire-tech/SKILL.md`.
 - **Operating mode (system-9-lite, adopted):** run each role as a **fresh spawn** of its
   `.grok/agents/spire-tech-*` subagent (+ a `context_for.mjs` pack), discarded after each handoff —
   never a long-lived role session. The conductor stays manual (you); the role work is disposable +
   fresh. See `ROLE_LAUNCH_PROMPTS.md` "Running a role — the LITE path." **Exception:** GATE I
   (Discovery) has no subagent — the conductor runs it **inline** (rationale in §3 GATE I); every other
   gateway spawns its own role subagent.
+- **Lane session budget (adopted 2026-08-12):** discard-between-gates protects nothing *within* a
+  lane, and the host's own compaction only intervenes near its window limit — far past where quality
+  degrades. Build lanes carry a hard rule in their role files: at roughly **250k tokens of context**
+  they checkpoint to `{FEATURE}/RESUME.md` (`**Resume status:** ACTIVE`) and end the turn. When a
+  lane reports a checkpoint, **spawn a fresh instance of the same role** whose launch prompt adds
+  that RESUME path after the pack and contracts; after the fresh lane absorbs it, the RESUME is
+  marked consumed like any other resume (`continuity.mjs mark-consumed`). Do not "continue" the old
+  session, and never treat a checkpoint as a failure — the measured failure mode is the opposite: a
+  lane that ran to ~600k tokens shipped spec-copy fidelity misses that a fresh context re-reading
+  the SPEC would have caught.
 - **Model routing (adopted 2026-08-03):** every `.grok/agents/*` file declares its own `model:`, so a
   role's model no longer follows whichever model the conductor happens to be running.
   **The provider's decide tier decides and judges; its execute tier executes** — the three council voices, the R4 synthesizer and QA
@@ -148,11 +175,33 @@ Each gateway = an EXIT event. `{FEATURE}` is the kebab folder; `→` is who runs
 > the next feature inherits. The generative judgement (is this decision binding? does the prose read
 > right?) stays in the gateway; the ledger makes recurrence mechanical instead of remembered.
 
+### Project product stand-up (onboarding; not a feature gateway)
+
+- **Trigger:** "stand up the project / project-standup / fill PROJECT_CONTEXT / seed BACKLOG."
+- **When:** after install + usable `project.json`; before first GATE I when context/backlog are stubs;
+  optional refresh when ground truth drifted.
+- **Do:** run ``standup/PROJECT_STANDUP_METHOD.md` (product context + backlog onboarding)` or follow `standup/PROJECT_STANDUP_METHOD.md` — preflight
+  `project_standup_ready` → codify|propose|refresh → Decision cards → fresh synthesizer writes
+  `PROJECT_CONTEXT.md` → skeptic → seed `BACKLOG.md` → light INDEX touch-up.
+  Not a full R1–R4 feature council. Do not free-write the Decision Ledger.
+- **Next (optional):** ``foundation/FOUNDATION_BOOTSTRAP_METHOD.md` (optional git/CI/monorepo; Nx opt-in)` for git/CI/monorepo (Nx **only** if human chooses);
+  ``design/DESIGN_SYSTEM_METHOD.md` (living project design canon)` when UI and design still UNSET; then GATE I when BACKLOG has material.
+
+### Optional foundation bootstrap (not product truth; not forced Nx)
+
+- **Trigger:** "foundation / bootstrap repo / set up CI / set up Nx."
+- **When:** greenfield or operator opt-in; **skip** by default on existing apps with working tooling.
+- **Do:** run ``foundation/FOUNDATION_BOOTSTRAP_METHOD.md` (optional git/CI/monorepo; Nx opt-in)` or `foundation/FOUNDATION_BOOTSTRAP_METHOD.md` — preflight
+  `foundation_ready` → Decision cards (monorepo shape A/B/C/D; CI; pins) → apply only ruled modules.
+  **Nx is never the default** (shape C only after explicit human letter).
+- **Do not:** silent monorepo migration; mega onboarding skill; claim CI green = ascent done.
+
 ### Project design canon (onboarding + mature-by-amendment; not a feature gateway)
 
 - **Trigger (first SET / re-baseline):** "set the design system / design-system / codify brand /
   greenfield visual direction."
 - **When:** first UI work, install onto an existing app without a SET canon, or human re-baseline.
+  Prefer after product stand-up so purpose exists.
 - **Do:** run ``design/DESIGN_SYSTEM_METHOD.md` (living project design canon)` (Claude/Grok) or follow `.grok/design/DESIGN_SYSTEM_METHOD.md` —
   detect codify|propose|no-UI → Decision cards → fresh synthesizer writes
   `.spire/clusters/tech/context/DESIGN_SYSTEM.md` → `spire-tech-council-skeptic` anti-slop pass.
@@ -176,9 +225,11 @@ Each gateway = an EXIT event. `{FEATURE}` is the kebab folder; `→` is who runs
 >    what it failed to surface. Delegate what produces an artifact; keep what produces an unseen
 >    judgement (dispatcher-minus-one spec §3, consistent with published multi-agent guidance: lead
 >    agents keep planning/synthesis/stop decisions; summaries are lossy handoffs).
-> 2. **It precedes the BRIEF that sharding needs.** GATE I runs *before* any `BRIEF.md` exists, so it
->    cannot use the system-5 sharded pack (`context_for.mjs` keys off the BRIEF's `Context tags:`). It
->    needs the whole planning surface — loaded here, at the gate (below), not at boot.
+> 2. **It precedes the BRIEF that tag-sharding needs.** GATE I runs *before* any `BRIEF.md` exists,
+>    so the system-5 tag pack (`context_for.mjs` keys off the BRIEF's `Context tags:`) cannot help
+>    it. Its shard is **structural** instead: the discovery pack (system-5c, below) keeps open
+>    sections and elides closed history behind in-place markers — loaded here, at the gate, not at
+>    boot.
 > 3. **No code to lane-fence from.** Its only outputs (`BACKLOG.md` + the chosen `BRIEF.md`) are the
 >    conductor's own `.spire/clusters/tech/` planning surface; the tool-fence that justifies the author subagents
 >    (can't `Edit` `src/`) buys nothing here.
@@ -194,11 +245,18 @@ Each gateway = an EXIT event. `{FEATURE}` is the kebab folder; `→` is who runs
 - **Trigger:** "what's next / groom the backlog / roadmap review / out of queued work."
 - **Use when:** the active pipeline has drained, or on a periodic review, to generate + cull the
   next wave of features/improvements.
-- **Audit (LOAD NOW — these are not in your boot):** read `BACKLOG.md`, `OPEN_THREADS.md`, and
-  `DECISION_LEDGER.md` in full at this gate — the one point their full text is needed. (They are
-  resent on every later turn of this session; that is the accepted price of keeping this judgement
-  inline, paid only by sessions that actually run Discovery.) Plus `PROJECT_CONTEXT.md` (what
-  exists), and any usage-friction notes I name.
+- **Audit (LOAD NOW — this is not in your boot):** run
+  `node .grok/tools/gates.mjs context_for --discovery --write` and read the pack it names
+  (`contracts/_discovery-pack.md`) — the invariant floor plus every **open** section of
+  `BACKLOG.md`, `OPEN_THREADS.md`, and `DECISION_LEDGER.md`, with closed history elided behind
+  in-place markers naming exactly what was skipped. Whatever loads here is resent on every later
+  turn of this session — that is the price of keeping this judgement inline, and the reason closed
+  history stays out. When an elided section matters to a candidate (the marker tells you it
+  exists), pull that one section with a targeted Read or `memory_query` — never re-load a whole
+  file to answer one row. Plus any usage-friction notes I name. **Escape hatch:** if the pack's
+  elision markers look wrong for this project's file conventions (headings that don't say
+  closed/shipped/resolved), fall back to reading the files in full and say so — a miss traceable
+  to an elided section is the signal to fix the pack, not to trust it silently.
 - **Method (diverge → converge):**
   0. **Load the canon (REUSE step of §3a):** read the ledger's Promoted-canon keys first — they bound
      the whole pool. A candidate that fights a promoted invariant is reshaped or culled, not promoted;
@@ -502,6 +560,10 @@ referencing files rather than pasting them.
   invariant-bearing sections (§3 math, §5 decisions/promoted invariants) are **`always`-load** — sharding
   cuts tokens by relevance but NEVER drops a binding rule a feature could violate. Decouples per-session
   cost from total canon size; the whole file stays the single source (logical slice, not a split).
+  **Search before re-read (system-5b):** when unsure where a fact lives, run
+  `node .grok/tools/gates.mjs memory_query --q "…" [--scope cluster,feature,branch,episodic]`
+  instead of loading whole handovers or the full archive. JSON hits point at seam paths; open only
+  the needed file. Memory files remain truth — the tool is retrieval only, never a second write path.
 - **QA gates the ship (system-2):** GATE S requires a passing `QA_REPORT.md` from a FRESH QA/Verify
   session (GATE Q, `ROLE_LAUNCH_PROMPTS.md` §4) — never the builder's self-verification. QA confirms
   every AC point-by-point and **repairs nothing**; a failing AC bounces via GATE Z and GATE Q re-runs
@@ -513,17 +575,21 @@ referencing files rather than pasting them.
   Not "one named test per AC."
 - **Session continuity (the resume loop):** the conductor reads `.spire/clusters/tech/state/<branch-slug>/RESUME.md`
   at boot if present (an overlay on the reconstructed canon — reconcile + flag divergence, never a
-  replacement). On an EXPLICIT
+  replacement). After re-orientation, it **marks that resume CONSUMED** (or deletes it with
+  `continuity.mjs mark-consumed … --delete`) so the same snapshot is not re-executed on the next boot.
+  On an EXPLICIT
   signal that context is running high (a harness notice, a tool result, or what the user reports
   their own UI shows — **never a number the conductor invents**) — or at a clean phase boundary
   worth checkpointing on its own merits regardless of context — it proactively fires **GATE R**
-  (write/refresh `.spire/clusters/tech/state/<branch-slug>/RESUME.md`) at a **safe boundary** (between
-  gateways, never mid-build) and **PROPOSES** continuing in a fresh `the boot sequence in `ORCHESTRATOR.md` §0` session.
+  (write/refresh `.spire/clusters/tech/state/<branch-slug>/RESUME.md` with `**Resume status:** ACTIVE`)
+  at a **safe boundary** (between gateways, never mid-build) and **PROPOSES** continuing in a fresh
+  `the boot sequence in `ORCHESTRATOR.md` §0` session.
   Propose, never force; harness auto-summarization is a backstop, not a substitute for the
   written snapshot. The conductor has no reliable introspective read on
   its own token count and never states a specific context percentage it hasn't just verified from an actual
   signal — a guessed number presented as measured is a real failure mode, not a harmless approximation. The
-  two halves form one loop — GATE R writes it, the next boot consumes it.
+  two halves form one loop — GATE R writes ACTIVE, the next boot consumes and marks CONSUMED.
+  Dated handovers follow the same consume/supersede discipline via `continuity.mjs` (never delete).
 - Frontend writes target `frontend.dir`, backend writes target `backend.dir` (both from `project.json`);
   contracts always live in `.spire/clusters/tech/contracts/` at the workspace root.
 - **Speak in operator cards (§7 → `OPERATOR_REPORTS.md`):** every user-facing report, signal, and

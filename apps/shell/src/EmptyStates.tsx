@@ -1,11 +1,23 @@
 interface Props {
-  kind: "no-workspace" | "signed-out" | "ready" | "host-offline";
+  kind:
+    | "no-workspace"
+    | "signed-out"
+    | "ready"
+    | "host-offline"
+    | "conversations-not-found";
   /** ready-state copy differs for Chat vs Code */
   productMode?: "chat" | "code";
   onOpenFolder?: () => void;
   onSettings?: () => void;
+  /** F8/AC5 — direct sign-in affordance: starts the same subscription
+   * sign-in the Settings panel's "Sign in with Grok" button starts, from
+   * this state, with no Settings navigation first. */
+  onSignIn?: () => void;
   onReconnect?: () => void;
   onSamplePrompt?: (text: string) => void;
+  /** F7 (AC12b) — Save troubleshooting file / Start a new conversation. */
+  onSaveDiagnostics?: () => void;
+  onStartNewConversation?: () => void;
 }
 
 const CODE_SAMPLES = [
@@ -30,22 +42,58 @@ export function EmptyStates({
   productMode = "code",
   onOpenFolder,
   onSettings,
+  onSignIn,
   onReconnect,
   onSamplePrompt,
+  onSaveDiagnostics,
+  onStartNewConversation,
 }: Props) {
   if (kind === "host-offline") {
+    // SPEC §4 — "Forge's engine stopped" (replaces the withdrawn "Host
+    // offline" copy; the noun "host" is banned from rendered text, AC-U4).
     return (
       <div className="empty-state empty-card" role="status">
-        <h1>Host offline</h1>
+        <h1>Forge's engine stopped.</h1>
         <p>
-          The local agent process isn’t reachable. Reconnect to continue chatting
-          and using tools.
+          Your conversation is saved.
+          {onReconnect ? " Forge is trying to reconnect." : ""}
         </p>
         {onReconnect && (
           <button type="button" className="btn primary" onClick={onReconnect}>
-            Reconnect
+            Try again
           </button>
         )}
+      </div>
+    );
+  }
+
+  if (kind === "conversations-not-found") {
+    // F7 / AC12b. Wording constrained by SPEC §4: names no cause, does not
+    // claim the data is unrecoverable, does not show the welcome.
+    return (
+      <div className="empty-state empty-card" role="status">
+        <h1>Forge didn't find your earlier conversations.</h1>
+        <p>
+          Forge couldn't find conversations saved on this PC. New conversations
+          will be saved as usual. If you had conversations here before, save a
+          troubleshooting file and send it to whoever set Forge up.
+        </p>
+        <div className="row" style={{ justifyContent: "center", gap: 8 }}>
+          {onSaveDiagnostics && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={onSaveDiagnostics}
+            >
+              Save troubleshooting file
+            </button>
+          )}
+          {onStartNewConversation && (
+            <button type="button" className="btn" onClick={onStartNewConversation}>
+              Start a new conversation
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -68,16 +116,25 @@ export function EmptyStates({
   }
 
   if (kind === "signed-out") {
+    // SPEC §4 "Sign-in empty state" — operator ruling (2026-08-14, AC5):
+    // primary direct sign-in affordance, `Open Settings` demoted to
+    // secondary. Order is the content of the state (AC5 is checkable by
+    // looking): primary first, secondary below it, nothing else renders.
     return (
       <div className="empty-state empty-card" role="status">
-        <h1>Sign in to chat</h1>
+        <h1>Sign in to chat.</h1>
         <p>
-          Open Settings and sign in with Grok (or paste an API key as backup).
-          You only need to do this once.
+          Sign in with Grok to start. Forge remembers this on this PC. If
+          you'd rather use an API key, you can add one in Settings.
         </p>
         <div className="row" style={{ justifyContent: "center" }}>
+          {onSignIn && (
+            <button type="button" className="btn primary" onClick={onSignIn}>
+              Sign in with Grok
+            </button>
+          )}
           {onSettings && (
-            <button type="button" className="btn primary" onClick={onSettings}>
+            <button type="button" className="btn" onClick={onSettings}>
               Open Settings
             </button>
           )}
@@ -91,7 +148,7 @@ export function EmptyStates({
 
   return (
     <div className="empty-state empty-card" role="status">
-      <h1>{isChat ? "Presence ready" : "Code continuum"}</h1>
+      <h1>{isChat ? "Chat with Grok" : "Code continuum"}</h1>
       <p>
         {isChat ? (
           <>

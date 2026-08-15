@@ -15,8 +15,8 @@ cards, drive synthesizer and skeptic.
 1. Run the model-free preflight first:
    `node .grok/tools/gates.mjs design_system_ready`
    (or `node .grok/tools/design_system_ready.mjs`). Exit 0 and a mode are required. Exit 1 means
-   the project is still template/empty — fill `project.json` + `PROJECT_CONTEXT.md` §1–§2 (or set
-   `frontend: null`) and stop; do not invent brand taste.
+   the project is still template/empty — run ``standup/PROJECT_STANDUP_METHOD.md` (product context + backlog onboarding)` first (or fill `project.json` +
+   `PROJECT_CONTEXT.md` §1–§2 by hand), or set `frontend: null`; do not invent brand taste.
 2. Read `.spire/clusters/tech/project.json`.
 3. Ensure `.spire/clusters/tech/context/DESIGN_SYSTEM.md` exists (install scaffold). If missing, stop
    and say the kit scaffold is absent — reinstall or restore the template; do not invent a schema.
