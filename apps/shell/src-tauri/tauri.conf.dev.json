@@ -1,5 +1,6 @@
 {
   "productName": "Forge Dev",
+  "mainBinaryName": "grok-code-shell-dev",
   "identifier": "dev.grokforge.shell.dev",
   "build": {
     "devUrl": "http://localhost:5174"
