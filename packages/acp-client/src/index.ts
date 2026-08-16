@@ -4,6 +4,8 @@ export type {
   AgentSpawnConfig,
   AuthMode,
   PermissionDecision,
+  AcpOwnership,
+  PromptOptions,
   HostExecutionProfile,
   ToolRunEvent,
   ToolReasonCode,

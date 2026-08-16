@@ -6,7 +6,7 @@
  *
  * Not imported by any shipped code path — `src/**\/*.test.ts` only.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +20,10 @@ export interface StartedHost {
   baseUrl: string;
   proc: ChildProcess;
   homeDir: string;
+  dataDir: string;
   stop: () => Promise<void>;
+  stopProcess: () => Promise<void>;
+  diagnostics: () => {stdout:string;stderr:string;exitCode:number|null;signalCode:NodeJS.Signals|null};
 }
 
 export async function startHost(opts: {
@@ -28,11 +31,12 @@ export async function startHost(opts: {
   env?: Record<string, string>;
   unsetEnv?: string[];
   timeoutMs?: number;
+  homeDir?: string;
 }): Promise<StartedHost> {
   const port = opts.port;
   // Fully isolated fake home per boot — never touches the operator's real ~/.grokforge or
   // ~/.grokforge-dev (mirrors the isolation QA used for AC2's virgin-install run).
-  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "grokforge-host-test-"));
+  const homeDir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "grokforge-host-test-"));
 
   const proc = spawn(
     process.execPath,
@@ -45,6 +49,7 @@ export async function startHost(opts: {
         GROKFORGE_CHANNEL: "test",
         USERPROFILE: homeDir,
         HOME: homeDir,
+        GROKFORGE_DATA_DIR: path.join(homeDir, ".grokforge-test"),
         ...opts.env,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -74,7 +79,7 @@ export async function startHost(opts: {
     try {
       const res = await fetch(`${baseUrl}/api/health`);
       if (res.ok) {
-        return { port, baseUrl, proc, homeDir, stop: () => stopHost(proc, homeDir) };
+        return { port, baseUrl, proc, homeDir, dataDir: path.join(homeDir, ".grokforge-test"), stop: () => stopHost(proc, homeDir), stopProcess: () => stopProcess(proc), diagnostics: () => ({stdout,stderr,exitCode:proc.exitCode,signalCode:proc.signalCode}) };
       }
     } catch (e) {
       lastErr = e;
@@ -86,6 +91,18 @@ export async function startHost(opts: {
     `host did not become healthy on :${port} within timeout: ${String(lastErr)}\n` +
       `stdout: ${stdout.slice(0, 2000)}\nstderr: ${stderr.slice(0, 2000)}`,
   );
+}
+
+export function stopProcess(proc: ChildProcess): Promise<void> {
+  return new Promise(resolve => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+    let settled=false; const done=()=>{if(!settled){settled=true;resolve();}};
+    proc.once("exit", done);
+    if (process.platform === "win32" && proc.pid) {
+      execFile("taskkill", ["/PID", String(proc.pid), "/T", "/F"], () => done());
+    } else { try { proc.kill(); } catch { done(); } }
+    setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} done(); }, 3000);
+  });
 }
 
 function stopHost(proc: ChildProcess, homeDir: string): Promise<void> {

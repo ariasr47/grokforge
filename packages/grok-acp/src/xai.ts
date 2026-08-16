@@ -1,5 +1,6 @@
 import { toolDefinitionsFor } from "./tools.js";
 import type { ExecutionEnvironmentCapability } from "./executionCapability.js";
+import { INHERITED_DEFAULT_MODEL } from "@grokforge/model-catalog";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -22,7 +23,22 @@ export interface StreamHandlers {
   signal?: AbortSignal;
 }
 
-const DEFAULT_BASE = "https://api.x.ai/v1";
+const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
+async function readWithIdleDeadline<T>(reader: ReadableStreamDefaultReader<T>, signal: AbortSignal | undefined, idleTimeoutMs: number): Promise<ReadableStreamReadResult<T>> {
+  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) return reader.read();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([reader.read(), new Promise<ReadableStreamReadResult<T>>((_, reject) => {
+      timer = setTimeout(() => { const e = new Error("Provider transport produced no liveness before the idle deadline") as Error & { code?: string }; e.code = "provider_liveness_timeout"; reject(e); void reader.cancel("provider idle deadline").catch(() => undefined); }, idleTimeoutMs);
+      if (signal) { onAbort = () => { const e = new Error("The operation was aborted") as Error & { name: string }; e.name = "AbortError"; reject(e); }; if (signal.aborted) onAbort(); else signal.addEventListener("abort", onAbort, { once: true }); }
+    })]);
+  } finally { if (timer) clearTimeout(timer); if (signal && onAbort) signal.removeEventListener("abort", onAbort); }
+}
+
+// Production defaults to xAI; tests may inject a local HTTP provider without
+// changing the ACP protocol or mocking the provider logic itself.
+const DEFAULT_BASE = process.env.GROKFORGE_XAI_BASE || "https://api.x.ai/v1";
 
 export function mapApiError(status: number, body: string): Error & {
   status?: number;
@@ -66,8 +82,8 @@ export function getApiKey(): string | undefined {
   );
 }
 
-export function getModel(): string {
-  return process.env.XAI_MODEL?.trim() || process.env.GROK_MODEL?.trim() || "grok-4";
+export function getModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.XAI_MODEL?.trim() || env.GROK_MODEL?.trim() || INHERITED_DEFAULT_MODEL;
 }
 
 export type ChatCompletionResult = {
@@ -165,6 +181,7 @@ export async function streamChatCompletion(options: {
   onTextDelta?: (text: string) => void;
   onPhase?: (phase: "reasoning" | "writing" | "tools") => void;
   capability: ExecutionEnvironmentCapability;
+  idleTimeoutMs?: number;
 }): Promise<ChatCompletionResult> {
   const body: Record<string, unknown> = {
     model: options.model,
@@ -210,7 +227,7 @@ export async function streamChatCompletion(options: {
   >();
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readWithIdleDeadline(reader, options.signal, options.idleTimeoutMs ?? Number(process.env.GROKFORGE_PROVIDER_IDLE_MS ?? DEFAULT_IDLE_TIMEOUT_MS));
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split("\n");
@@ -285,6 +302,33 @@ export async function streamChatCompletion(options: {
     }
   }
 
+  // Providers occasionally close SSE without a trailing newline. Flush the
+  // decoder and consume that final frame exactly once instead of dropping it.
+  buffer += decoder.decode();
+  const tail = buffer.trim();
+  if (tail.startsWith("data:")) {
+    const data = tail.slice(5).trim();
+    if (data !== "[DONE]") {
+      try {
+        const json = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string|null; reasoning_content?: string|null; reasoning?: string|null; tool_calls?: ToolCallDelta[] }; finish_reason?: string|null }> };
+        const choice = json.choices?.[0];
+        if (choice?.finish_reason) finish_reason = choice.finish_reason;
+        const d = choice?.delta;
+        const think = d?.reasoning_content ?? d?.reasoning;
+        if (think) { reasoning += think; options.onThinkingDelta?.(think); }
+        if (d?.content) { content += d.content; options.onTextDelta?.(d.content); }
+        for (const tc of d?.tool_calls ?? []) {
+          const idx = typeof tc.index === "number" ? tc.index : 0;
+          const cur = toolMap.get(idx) ?? { id: "", name: "", arguments: "" };
+          if (tc.id) cur.id = tc.id;
+          if (tc.function?.name) cur.name += tc.function.name;
+          if (tc.function?.arguments) cur.arguments += tc.function.arguments;
+          toolMap.set(idx, cur);
+        }
+      } catch { /* malformed tail remains ignored */ }
+    }
+  }
+
   const tool_calls: ToolCall[] = [...toolMap.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, t]) => ({
@@ -312,6 +356,7 @@ export async function streamTextCompletion(options: {
   messages: ChatMessage[];
   handlers: StreamHandlers;
   reasoning_effort?: "low" | "medium" | "high";
+  idleTimeoutMs?: number;
 }): Promise<string> {
   const body: Record<string, unknown> = {
     model: options.model,
@@ -344,7 +389,7 @@ export async function streamTextCompletion(options: {
   let full = "";
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readWithIdleDeadline(reader, options.handlers.signal, options.idleTimeoutMs ?? Number(process.env.GROKFORGE_PROVIDER_IDLE_MS ?? DEFAULT_IDLE_TIMEOUT_MS));
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split("\n");
@@ -377,6 +422,23 @@ export async function streamTextCompletion(options: {
       } catch {
         /* ignore partial JSON */
       }
+    }
+  }
+  // Flush an unterminated final SSE line. Some providers close the response
+  // immediately after the JSON frame without writing the conventional newline;
+  // retaining it would silently drop the final answer/reasoning delta.
+  buffer += decoder.decode();
+  const tail = buffer.trim();
+  if (tail.startsWith("data:")) {
+    const data = tail.slice(5).trim();
+    if (data !== "[DONE]") {
+      try {
+        const json = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string; reasoning?: string } }> };
+        const d = json.choices?.[0]?.delta;
+        const think = d?.reasoning_content ?? d?.reasoning;
+        if (think) options.handlers.onThinkingDelta?.(think);
+        if (d?.content) { full += d.content; options.handlers.onTextDelta(d.content); }
+      } catch { /* malformed tail is ignored consistently with regular frames */ }
     }
   }
   return full;

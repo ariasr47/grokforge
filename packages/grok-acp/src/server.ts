@@ -21,6 +21,15 @@ import {
 } from "./xai.js";
 import { bindExecutionCapability, isHostExecutionProfile, type ExecutionEnvironmentCapability } from "./executionCapability.js";
 import { preflightShell } from "./shellPreflight.js";
+import { AuthorizationBroker } from "./authorization-broker.js";
+import { compileFixedInspection } from "./inspection-grammar.js";
+import { parseProtectedDelete } from "./protected-delete.js";
+import { EditJournal } from "./edit-journal.js";
+import { MutationCoordinator } from "./mutation-coordinator.js";
+import crypto from "node:crypto";
+import path from "node:path";
+import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 
 type JsonRpcId = number | string | null;
 
@@ -30,6 +39,14 @@ interface Incoming {
   method?: string;
   params?: Record<string, unknown>;
 }
+type RunOwner = { sessionId: string; runId: string; connectionGeneration: number };
+function fixedInspectionPath(inspection:{args:string[]}):string|undefined {
+  const args=inspection.args;
+  if(args[0]==="diff"){const i=args.indexOf("--");return i>=0?args[i+1]:undefined;}
+  if(args[0]==="--files")return args[1];
+  if(args[0]==="-n")return args[2];
+  return undefined;
+}
 
 export interface Session {
   id: string;
@@ -38,6 +55,7 @@ export interface Session {
   sessionWrite: boolean;
   sessionShell: boolean;
   capability: ExecutionEnvironmentCapability;
+  permissionMode?: "review" | "trusted_workspace" | "bypass_permissions";
 }
 
 /** Cap agent context growth during long dogfood sessions (system + recent turns). */
@@ -78,6 +96,23 @@ export class GrokAcpServer {
   private abort: AbortController | null = null;
   private cancelled = false;
   private capability: ExecutionEnvironmentCapability | null = null;
+  private activeRuns = new Map<string, { owner: RunOwner; abort: AbortController; cancelled: boolean }>();
+  private activeOwner: RunOwner | null = null;
+  private readonly authorization = new AuthorizationBroker();
+  private readonly completedToolCalls = new Map<string,{args:string;result:string}>();
+  private readonly mutation = new MutationCoordinator();
+  private readonly editJournal = new EditJournal(process.env.GROKFORGE_DATA_DIR ?? path.join(process.cwd(), ".grokforge-runtime"));
+  private async confinedTarget(target:string):Promise<boolean>{
+    if(!target||path.isAbsolute(target)||target.split(/[\\/]/).includes(".."))return false;
+    const root=await fs.realpath(this.workspaceRoot).catch(()=>null);if(!root)return false;
+    let candidate=path.resolve(root,target);let probe=candidate;
+    const within=(value:string)=>{const r=process.platform==="win32"?root.toLowerCase():root;const v=process.platform==="win32"?value.toLowerCase():value;return v===r||v.startsWith(r+path.sep)||v.startsWith(r+"/");};
+    while(true){
+      try { const real=await fs.realpath(probe); return within(real); }
+      catch(error){ const code=(error as NodeJS.ErrnoException).code;if(code!=="ENOENT"&&code!=="ENOTDIR")return false; }
+      const parent=path.dirname(probe);if(parent===probe)return false;probe=parent;
+    }
+  }
 
   start(): void {
     const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -99,8 +134,10 @@ export class GrokAcpServer {
     this.write({ jsonrpc: "2.0", id, error: { code, message } });
   }
 
-  private notify(method: string, params: unknown): void {
-    this.write({ jsonrpc: "2.0", method, params });
+  private notify(method: string, params: unknown, owner?: RunOwner): void {
+    const effectiveOwner = owner ?? this.activeOwner;
+    const owned = effectiveOwner ? { ...(params as Record<string, unknown>), ...effectiveOwner } : params;
+    this.write({ jsonrpc: "2.0", method, params: owned });
   }
 
   private async onLine(line: string): Promise<void> {
@@ -141,6 +178,7 @@ export class GrokAcpServer {
             sessionWrite: false,
             sessionShell: false,
             capability: this.capability,
+            permissionMode: "review",
           });
           this.respond(id ?? null, {
             sessionId,
@@ -156,6 +194,12 @@ export class GrokAcpServer {
             this.respondError(id ?? null, -32000, "Unknown session");
             break;
           }
+          const runId = typeof params?.runId === "string" ? params.runId : "";
+          const connectionGeneration = Number(params?.connectionGeneration);
+          if (!runId || !Number.isInteger(connectionGeneration) || connectionGeneration < 1) {
+            this.respondError(id ?? null, -32602, "Missing run ownership");
+            break;
+          }
           const model =
             typeof params?.model === "string" && params.model.trim()
               ? params.model.trim()
@@ -163,6 +207,8 @@ export class GrokAcpServer {
           const re = params?.reasoning_effort;
           const reasoning_effort =
             re === "low" || re === "medium" || re === "high" ? re : undefined;
+          const effectiveMode = String((params?.policy as {effectiveMode?:unknown} | undefined)?.effectiveMode ?? "review");
+          if (effectiveMode === "review" || effectiveMode === "trusted_workspace" || effectiveMode === "bypass_permissions") session.permissionMode = effectiveMode;
           // Seed prior UI history once if agent only has system message
           const hist = params?.history;
           if (Array.isArray(hist) && session.messages.length <= 1) {
@@ -184,12 +230,18 @@ export class GrokAcpServer {
           }
           // Respond immediately; run agent loop async
           this.respond(id ?? null, { ok: true, accepted: true });
-          void this.runPrompt(session, prompt, { model, reasoning_effort });
+          const owner = { sessionId, runId, connectionGeneration };
+          const controller = new AbortController();
+          this.activeRuns.set(sessionId, { owner, abort: controller, cancelled: false });
+          void this.runPrompt(session, prompt, { model, reasoning_effort, owner, signal: controller.signal }).finally(() => this.activeRuns.delete(sessionId));
           break;
         }
-        case "session/cancel":
-          this.cancelled = true;
-          this.abort?.abort();
+        case "session/cancel": {
+          const sessionId = String(params?.sessionId ?? "");
+          const current = this.activeRuns.get(sessionId);
+          if (!current || current.owner.runId !== params?.runId || current.owner.connectionGeneration !== Number(params?.connectionGeneration)) { this.respondError(id ?? null, -32004, "Run ownership mismatch"); break; }
+          current.cancelled = true;
+          current.abort.abort();
           for (const [, w] of this.permissionWaiters) {
             w.reject(new Error("cancelled"));
           }
@@ -201,6 +253,7 @@ export class GrokAcpServer {
           this.notify("done", { reason: "cancelled" });
           this.respond(id ?? null, { ok: true });
           break;
+        }
         case "permission/respond": {
           const pid = String(params?.id ?? "");
           const decision = String(params?.decision ?? "deny");
@@ -268,20 +321,21 @@ export class GrokAcpServer {
     id: string,
     kind: "write" | "shell",
     detail: string,
+    owner?: RunOwner,
   ): Promise<string> {
-    this.notify("permission_request", { id, kind, detail });
+    this.notify("permission_request", { id, kind, detail }, owner);
     return new Promise((resolve, reject) => {
       this.permissionWaiters.set(id, { resolve, reject });
     });
   }
 
-  private waitEdit(edit: PendingEdit): Promise<"accept" | "reject"> {
+  private waitEdit(edit: PendingEdit, owner?: RunOwner): Promise<"accept" | "reject"> {
     this.notify("file_edit", {
       id: edit.id,
       path: edit.path,
       diff: edit.diff,
       status: "proposed",
-    });
+    }, owner);
     return new Promise((resolve, reject) => {
       this.editWaiters.set(edit.id, { resolve, reject });
     });
@@ -293,10 +347,14 @@ export class GrokAcpServer {
     opts?: {
       model?: string;
       reasoning_effort?: "low" | "medium" | "high";
+      owner: RunOwner;
+      signal: AbortSignal;
     },
   ): Promise<void> {
     this.cancelled = false;
+    this.activeOwner = opts?.owner ?? null;
     this.abort = new AbortController();
+    if (opts?.signal) opts.signal.addEventListener("abort", () => this.abort?.abort(), { once: true });
     const apiKey = getApiKey();
     let model = opts?.model?.trim() || getModel();
     let reasoning_effort = opts?.reasoning_effort;
@@ -336,12 +394,15 @@ export class GrokAcpServer {
         // Track what we already streamed so we don't double-emit on assemble
         let streamedContent = false;
         let streamedThinking = false;
+        let emittedContent = "";
+        let emittedThinking = "";
 
-        const runOnce = async (effort?: "low" | "medium" | "high") => {
-          streamedContent = false;
-          streamedThinking = false;
+        const runOnce = async (effort?: "low" | "medium" | "high", recoveryPrefix?: { content: string; thinking: string }) => {
+          let recoveryContent = "";
+          let recoveryThinking = "";
+          let completed;
           try {
-              return await streamChatCompletion({
+              completed = await streamChatCompletion({
               apiKey,
               model,
               messages: session.messages,
@@ -350,7 +411,9 @@ export class GrokAcpServer {
                 reasoning_effort: effort,
               signal: this.abort?.signal,
               onThinkingDelta: (t) => {
+                if (recoveryPrefix) { recoveryThinking += t; return; }
                 streamedThinking = true;
+                emittedThinking += t;
                 this.notify("run_phase", {
                   phase: "reasoning",
                   detail: "Thinking…",
@@ -358,7 +421,9 @@ export class GrokAcpServer {
                 this.notify("thinking_delta", { text: t });
               },
               onTextDelta: (t) => {
+                if (recoveryPrefix) { recoveryContent += t; return; }
                 streamedContent = true;
+                emittedContent += t;
                 this.notify("run_phase", {
                   phase: "writing",
                   detail: "Writing answer…",
@@ -375,8 +440,9 @@ export class GrokAcpServer {
               },
             });
           } catch (streamErr) {
+            if ((streamErr as { code?: string }).code === "provider_liveness_timeout") throw streamErr;
             // Fall back to non-stream if provider rejects stream+tools
-            return chatCompletion({
+            completed = await chatCompletion({
               apiKey,
               model,
               messages: session.messages,
@@ -386,6 +452,28 @@ export class GrokAcpServer {
               signal: this.abort?.signal,
             });
           }
+          if (recoveryPrefix) {
+            const recoveredContent = completed.content ?? recoveryContent;
+            const recoveredThinking = completed.reasoning_content ?? recoveryThinking;
+            if (!recoveredContent.startsWith(recoveryPrefix.content) || !recoveredThinking.startsWith(recoveryPrefix.thinking)) {
+              throw Object.assign(new Error("Provider recovery diverged from already-visible output"), { code: "provider_liveness_timeout" });
+            }
+            const thinkingSuffix = recoveredThinking.slice(recoveryPrefix.thinking.length);
+            const contentSuffix = recoveredContent.slice(recoveryPrefix.content.length);
+            if (thinkingSuffix) {
+              streamedThinking = true;
+              emittedThinking += thinkingSuffix;
+              this.notify("run_phase", { phase: "reasoning", detail: "Thinking…" });
+              this.notify("thinking_delta", { text: thinkingSuffix });
+            }
+            if (contentSuffix) {
+              streamedContent = true;
+              emittedContent += contentSuffix;
+              this.notify("run_phase", { phase: "writing", detail: "Writing answer…" });
+              this.notify("text_delta", { text: contentSuffix });
+            }
+          }
+          return completed;
         };
 
         let result;
@@ -393,6 +481,16 @@ export class GrokAcpServer {
           result = await runOnce(reasoning_effort);
         } catch (err) {
           const e = err as Error & { status?: number; message?: string };
+          if ((e as Error & { code?: string }).code === "provider_liveness_timeout") {
+            const recoveryKey = `grokforge-recovery-${turns}`;
+            if (turns <= 2) {
+              this.notify("run_phase", { phase: "waiting_model", detail: `Recovering provider transport (${recoveryKey})…` });
+              result = await runOnce(reasoning_effort, emittedContent || emittedThinking ? { content: emittedContent, thinking: emittedThinking } : undefined);
+            } else throw err;
+          }
+          if (result) {
+            // bounded same-run recovery succeeded; continue with the original turn
+          } else {
           const msg = e.message || "";
           if (
             !strippedEffort &&
@@ -404,6 +502,7 @@ export class GrokAcpServer {
             result = await runOnce(undefined);
           } else {
             throw err;
+          }
           }
         }
 
@@ -487,19 +586,16 @@ export class GrokAcpServer {
             streamedContent = true;
           }
           session.messages.push({ role: "assistant", content: finalText });
-        } else if (result.reasoning_content?.trim()) {
-          const fromThink = result.reasoning_content.trim();
-          // Promote reasoning to visible answer when model omitted content
-          if (!streamedContent) {
-            this.notify("text_delta", { text: fromThink });
-            streamedContent = true;
-          }
-          session.messages.push({ role: "assistant", content: fromThink });
         } else if (!streamedContent) {
-          const fallback =
-            "I finished processing but produced no text. Please try again (Retry), or switch effort (e.g. Expert).";
-          this.notify("text_delta", { text: fallback });
-          session.messages.push({ role: "assistant", content: fallback });
+          // Reasoning is never an answer. A missing final is an explicit retryable
+          // failure; the host finalizer owns the terminal outcome.
+          this.notify("error", {
+            code: "missing_final_answer",
+            message: "No final answer was produced.",
+            retryable: true,
+          });
+          this.notify("done", { reason: "missing_final_answer" });
+          return;
         }
         break;
       }
@@ -522,13 +618,17 @@ export class GrokAcpServer {
         status: e.status,
       });
       this.notify("done", { reason: "error" });
+    } finally {
+      this.activeOwner = null;
     }
   }
 
   private async handleToolCall(
     session: Session,
     call: ToolCall,
+    ownerOverride?: RunOwner,
   ): Promise<string> {
+    const executionOwner = ownerOverride ?? this.activeOwner ?? undefined;
     const name = call.function.name as ToolName;
     let args: Record<string, unknown> = {};
     try {
@@ -536,32 +636,55 @@ export class GrokAcpServer {
     } catch {
       args = {};
     }
+    const normalizedArgs = JSON.stringify(args); const ownerKey=`${executionOwner?.sessionId??session.id}:${executionOwner?.runId??"direct"}:${call.id}`; const priorCall = this.completedToolCalls.get(ownerKey);
+    if (priorCall) { if (priorCall.args !== normalizedArgs) return JSON.stringify({error:"tool_call_id_reused_with_different_arguments"}); return priorCall.result; }
 
     const capability = session.capability;
-    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true });
-    this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true });
+    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, recovery: extra.recovery ?? null }, executionOwner);
+    this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
 
     const perm = toolPermissionKind(name);
+    const command = name === "run_shell" ? String(args.command ?? "") : "";
+    const inspection = name === "run_shell" ? compileFixedInspection(command) : null;
+    const inspectionPath = inspection ? fixedInspectionPath(inspection) : undefined;
+    const confined = perm === "shell" ? (inspectionPath ? await this.confinedTarget(inspectionPath) : true) : await this.confinedTarget(String(args.path ?? ""));
+    const authorization = this.authorization.authorize(
+      perm === "read" ? { kind: "read", path: String(args.path ?? "") } :
+        perm === "shell" && inspection ? { kind: "inspection", path: String(args.path ?? "") } :
+        perm === "shell" ? { kind: "shell" } : { kind: "text_edit", regularText: (typeof args.content === "string" ? !args.content.includes("\0") : typeof args.patch === "string" && !args.patch.includes("\0")), exists: true },
+      { mode: session.permissionMode ?? "review", confined, inspection: inspection ? command : undefined },
+    );
+    if (authorization.decision === "refuse") {
+      const msg = JSON.stringify({ error: authorization.reason ?? "Tool refused" });
+      emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: authorization.reason === "outside_workspace" ? "outside_workspace" : "authorization_refused", reason: authorization.reason ?? "Tool refused", automaticEligibility: authorization.automaticEligibility });
+      return msg;
+    }
 
     try {
       if (perm === "read") {
-        const out = await executeReadTool(this.workspaceRoot, name, args);
-        emitTerminal(out, true);
-        return out;
+        const out = await executeReadTool(this.workspaceRoot, name, args, session.permissionMode === "bypass_permissions");
+        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility });
+        this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
 
       if (perm === "shell") {
+        if (parseProtectedDelete(command, this.workspaceRoot)) {
+          const msg = JSON.stringify({ execution: "not_executed", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target" });
+          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target" });
+          return msg;
+        }
         const preflight = await preflightShell(capability, String(args.command ?? ""));
         if (preflight.disposition === "reject") {
           const msg = JSON.stringify({ execution: "not_executed", reasonCode: preflight.reasonCode, command: preflight.command, reason: preflight.reason, shellDisplayName: preflight.shellDisplayName });
           emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason });
           return msg;
         }
-        if (!session.sessionShell) {
+        if (!session.sessionShell && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
           const decision = await this.waitPermission(
             call.id,
             "shell",
             `Run: ${String(args.command ?? "")}`,
+            executionOwner,
           );
           if (decision === "allow_session") session.sessionShell = true;
           if (decision === "deny" || decision === "cancelled") {
@@ -570,13 +693,30 @@ export class GrokAcpServer {
             return msg;
           }
         }
-        const enforceAllowlist = process.env.GROKFORGE_SHELL_ALLOWLIST !== "0";
-        const out = await runShell(
-          capability,
-          String(args.command ?? ""),
-          Number(args.timeout_ms ?? 60_000),
-          { enforceAllowlist },
-        );
+        const enforceAllowlist = session.permissionMode !== "bypass_permissions" && process.env.GROKFORGE_SHELL_ALLOWLIST !== "0";
+        if (inspection && authorization.decision === "auto") {
+          if (inspectionPath && session.permissionMode !== "bypass_permissions" && !(await this.confinedTarget(inspectionPath))) {
+            const msg = JSON.stringify({error:"outside_workspace"});
+            emitTerminal(msg,false,{execution:"not_executed",status:"rejected",reasonCode:"outside_workspace",reason:"outside_workspace",automaticEligibility:"not_eligible"});
+            return msg;
+          }
+          const fixed = await new Promise<string>((resolve) => { const child=spawn(inspection.executable, inspection.args, {cwd:this.workspaceRoot,windowsHide:true}); let stdout="",stderr=""; child.stdout?.on("data",d=>{stdout+=d.toString();if(stdout.length>12000)stdout=stdout.slice(0,12000);}); child.stderr?.on("data",d=>{stderr+=d.toString();if(stderr.length>4000)stderr=stderr.slice(0,4000);}); child.on("close",code=>resolve(JSON.stringify({stdout,stderr,exit_code:code}))); child.on("error",e=>resolve(JSON.stringify({error:e.message,exit_code:null}))); });
+          const fixedParsed=JSON.parse(fixed) as {exit_code?:number|null;error?:string}; const fixedOk=!fixedParsed.error&&(fixedParsed.exit_code===0||fixedParsed.exit_code===null); emitTerminal(fixed, fixedOk, { automaticEligibility: authorization.automaticEligibility }); this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:fixed}); return fixed;
+        }
+        // Generic shell is a workspace writer boundary: hold the same
+        // cross-process lease used by structured edits for the duration of the
+        // process. Read-only structured tools do not acquire this lease and
+        // therefore remain available in another session.
+        const shellLease = await this.mutation.acquire(this.workspaceRoot, call.id);
+        let out: string;
+        try {
+          out = await runShell(
+            capability,
+            String(args.command ?? ""),
+            Number(args.timeout_ms ?? 60_000),
+            { enforceAllowlist },
+          );
+        } finally { shellLease.release(); }
         let ok = true;
         try {
           const parsed = JSON.parse(out) as {
@@ -591,16 +731,17 @@ export class GrokAcpServer {
         } catch {
           /* keep ok */
         }
-        emitTerminal(out, ok);
-        return out;
+        emitTerminal(out, ok, { automaticEligibility: authorization.automaticEligibility, autoApplied: session.permissionMode === "bypass_permissions" });
+        this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
 
       // write
-      if (!session.sessionWrite) {
+      if (!session.sessionWrite && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
         const decision = await this.waitPermission(
           call.id,
           "write",
           `Write: ${String(args.path ?? "")}`,
+          executionOwner,
         );
         if (decision === "allow_session") session.sessionWrite = true;
         if (decision === "deny") {
@@ -616,25 +757,40 @@ export class GrokAcpServer {
         name as "write_file" | "apply_patch",
         args,
         editId,
+        session.permissionMode === "bypass_permissions",
       );
       session.pendingEdits.set(editId, edit);
-      const action = await this.waitEdit(edit);
+      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" ? "accept" : await this.waitEdit(edit, executionOwner);
       if (action === "accept") {
-        await applyPendingEdit(edit);
+        const lease = await this.mutation.acquire(this.workspaceRoot, call.id);
+        try {
+          // The edit was prepared before the cross-process lease was granted.
+          // Re-read under the lease and reject a stale base rather than letting
+          // a later session silently overwrite an overlapping mutation.
+          const current = await fs.readFile(edit.absolutePath, "utf8").catch((e:any) => e?.code === "ENOENT" ? null : Promise.reject(e));
+          const currentHash = this.mutation.baseHash(current);
+          const expectedHash = this.mutation.baseHash(edit.previous);
+          if (currentHash !== expectedHash) throw Object.assign(new Error("edit conflict"), { code: "edit_conflict" });
+          const afterHash = crypto.createHash("sha256").update(edit.next).digest("hex");
+          await this.editJournal.prepare({ editId: edit.id, workspace: this.workspaceRoot, target: edit.absolutePath, before: edit.previous, beforeHash: edit.previous === null ? null : crypto.createHash("sha256").update(edit.previous).digest("hex"), afterHash, diff: edit.diff, runId: executionOwner?.runId ?? `direct-${session.id}`, invocationId: call.id, policy: session.permissionMode ?? "review" });
+          await applyPendingEdit(edit);
+          await this.editJournal.markApplied(edit.id);
+        } finally { lease.release(); }
         session.pendingEdits.delete(editId);
         this.notify("file_edit", {
           id: edit.id,
           path: edit.path,
           diff: edit.diff,
           status: "accepted",
-        });
+        }, executionOwner);
         const out = JSON.stringify({
           ok: true,
           path: edit.path,
           status: "accepted",
         });
-        emitTerminal(out, true);
-        return out;
+        const automaticallyApplied = session.permissionMode === "bypass_permissions" || authorization.decision === "auto";
+        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility, autoApplied: automaticallyApplied, editId: edit.id, diff: edit.diff, recovery: { kind: "guarded_revert", available: true, status: "available" } });
+        this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
       session.pendingEdits.delete(editId);
       this.notify("file_edit", {
@@ -642,7 +798,7 @@ export class GrokAcpServer {
         path: edit.path,
         diff: edit.diff,
         status: "rejected",
-      });
+      }, executionOwner);
       const out = JSON.stringify({
         ok: false,
         path: edit.path,
@@ -659,7 +815,7 @@ export class GrokAcpServer {
   }
 
   /** Backend test seam: executes the same production tool path used by prompt turns. */
-  async executeTool(session: Session, call: ToolCall): Promise<string> {
-    return this.handleToolCall(session, call);
+  async executeTool(session: Session, call: ToolCall, owner?: RunOwner): Promise<string> {
+    return this.handleToolCall(session, call, owner);
   }
 }

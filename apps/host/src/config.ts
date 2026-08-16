@@ -8,6 +8,7 @@ import {
   getValidAccessToken,
   loadOAuthTokens,
 } from "./oauth.js";
+import { migrateModelSelection, type ModelSelectionProvenance } from "@grokforge/model-catalog";
 
 export type ProductMode = "chat" | "code";
 export type EffortLevel = "auto" | "fast" | "expert" | "heavy";
@@ -15,6 +16,8 @@ export type EffortLevel = "auto" | "fast" | "expert" | "heavy";
 export interface HostConfig {
   apiKey: string;
   model: string;
+  modelSelectionProvenance: ModelSelectionProvenance;
+  modelMigrationVersion: number;
   recent: Array<{ name: string; path: string; openedAt: number }>;
   lastWorkspace: string | null;
   /** Enforce shell command allowlist (default true). */
@@ -44,7 +47,9 @@ type SharedConfig = Omit<HostConfig, keyof WorkspaceScoped>;
 
 const SHARED_DEFAULT: SharedConfig = {
   apiKey: "",
-  model: "grok-4",
+  model: "grok-4.6",
+  modelSelectionProvenance: "inherited",
+  modelMigrationVersion: 1,
   shellAllowlist: true,
   mode: "chat",
   effort: "auto",
@@ -120,9 +125,12 @@ function loadSharedConfig(): SharedConfig {
     const raw = fs.readFileSync(configPath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<HostConfig>;
     const mode = parsed.mode === "chat" || parsed.mode === "code" ? parsed.mode : SHARED_DEFAULT.mode;
-    return {
+    const migrated = migrateModelSelection(parsed);
+    const result = {
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : SHARED_DEFAULT.apiKey,
-      model: typeof parsed.model === "string" && parsed.model ? parsed.model : SHARED_DEFAULT.model,
+      model: migrated.model,
+      modelSelectionProvenance: migrated.provenance,
+      modelMigrationVersion: migrated.migrationVersion,
       shellAllowlist:
         typeof parsed.shellAllowlist === "boolean" ? parsed.shellAllowlist : SHARED_DEFAULT.shellAllowlist,
       mode,
@@ -131,6 +139,16 @@ function loadSharedConfig(): SharedConfig {
       agentId:
         typeof parsed.agentId === "string" && parsed.agentId ? parsed.agentId : SHARED_DEFAULT.agentId,
     };
+    if (migrated.changed) {
+      try {
+        const target = configPath();
+        const tmp = `${target}.${process.pid}.tmp`;
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(tmp, JSON.stringify(result, null, 2), "utf8");
+        fs.renameSync(tmp, target);
+      } catch { /* retain usable in-memory migration; next load retries */ }
+    }
+    return result;
   } catch {
     return { ...SHARED_DEFAULT };
   }
@@ -149,6 +167,8 @@ export function saveConfig(cfg: HostConfig, identity: string = installIdentity()
   const shared: SharedConfig = {
     apiKey: cfg.apiKey,
     model: cfg.model,
+    modelSelectionProvenance: cfg.modelSelectionProvenance,
+    modelMigrationVersion: cfg.modelMigrationVersion,
     shellAllowlist: cfg.shellAllowlist,
     mode: cfg.mode,
     effort: cfg.effort,
@@ -157,7 +177,10 @@ export function saveConfig(cfg: HostConfig, identity: string = installIdentity()
   };
   const dir = path.dirname(configPath());
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(configPath(), JSON.stringify(shared, null, 2), "utf8");
+  const target = configPath();
+  const tmp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(shared, null, 2), "utf8");
+  fs.renameSync(tmp, target);
 
   saveWorkspaceScoped(identity, {
     recent: cfg.recent,

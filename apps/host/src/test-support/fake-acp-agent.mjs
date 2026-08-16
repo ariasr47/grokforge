@@ -10,8 +10,10 @@
  * FAKE_AGENT_FAIL_MODEL) or a `text_delta` + `done reason:"stop"` pair otherwise.
  */
 import { createInterface } from "node:readline";
+import fs from "node:fs";
 
 const FAIL_MODEL = process.env.FAKE_AGENT_FAIL_MODEL || "";
+const FIXTURE = process.env.GROKFORGE_FIXTURE || "";
 
 function write(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -44,6 +46,63 @@ rl.on("line", (line) => {
       write({ jsonrpc: "2.0", id, result: { ok: true, accepted: true } });
       const model = params && typeof params.model === "string" ? params.model : "";
       setTimeout(() => {
+        if (FIXTURE === "reasoning-only") {
+          write({ jsonrpc: "2.0", method: "thinking_delta", params: { text: "internal reasoning only" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "delayed-final") {
+          write({ jsonrpc: "2.0", method: "thinking_delta", params: { text: "reasoning" } });
+          setTimeout(() => {
+            write({ jsonrpc: "2.0", method: "text_delta", params: { text: "delayed final answer" } });
+            write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          }, 250);
+          return;
+        }
+        if (FIXTURE === "long-run") {
+          let ticks = 0;
+          const timer = setInterval(() => {
+            ticks += 1;
+            write({ jsonrpc: "2.0", method: "run_phase", params: { phase: "reasoning", detail: `heartbeat-${ticks}` } });
+            if (ticks >= 4) { clearInterval(timer); write({ jsonrpc: "2.0", method: "text_delta", params: { text: "long run complete" } }); write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } }); }
+          }, 150);
+          return;
+        }
+        if (FIXTURE === "orphan-content") {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "received before restart" } });
+          return;
+        }
+        if (FIXTURE === "cancel-content") {
+          write({ jsonrpc: "2.0", method: "thinking_delta", params: { text: "reasoning before cancel" } });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "answer before cancel" } });
+          return;
+        }
+        if (FIXTURE === "late-events") {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "settled answer" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          setTimeout(() => {
+            write({ jsonrpc: "2.0", method: "thinking_delta", params: { text: "late reasoning" } });
+            write({ jsonrpc: "2.0", method: "text_delta", params: { text: "late answer" } });
+            write({ jsonrpc: "2.0", method: "tool_run", params: { activityId: "late-tool", toolCallId: "late-tool", lifecycle: "terminal", execution: "executed", status: "succeeded", name: "write_file", output: "late" } });
+            write({ jsonrpc: "2.0", method: "permission_request", params: { id: "late-perm", kind: "shell", detail: "late" } });
+            write({ jsonrpc: "2.0", method: "file_edit", params: { id: "late-edit", status: "proposed", path: "late.txt" } });
+            write({ jsonrpc: "2.0", method: "error", params: { code: "late_error", message: "late" } });
+            write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          }, 100);
+          return;
+        }
+        if (FIXTURE === "provider-silence") {
+          write({ jsonrpc: "2.0", method: "run_phase", params: { phase: "reasoning", detail: "Provider connected" } });
+          write({ jsonrpc: "2.0", method: "run_phase", params: { phase: "waiting_model", detail: "Recovering provider transport…" } });
+          const releasePath = process.env.GROKFORGE_FIXTURE_RELEASE;
+          const release = () => {
+            write({ jsonrpc: "2.0", method: "error", params: { code: "provider_liveness_timeout", message: "provider silent" } });
+            write({ jsonrpc: "2.0", method: "done", params: { reason: "error" } });
+          };
+          if (!releasePath) { release(); return; }
+          const wait = setInterval(() => { if (fs.existsSync(releasePath)) { clearInterval(wait); release(); } }, 5);
+          return;
+        }
         if (FAIL_MODEL && model === FAIL_MODEL) {
           write({
             jsonrpc: "2.0",
@@ -65,6 +124,7 @@ rl.on("line", (line) => {
     }
     case "session/cancel":
       write({ jsonrpc: "2.0", id, result: { ok: true } });
+      write({ jsonrpc: "2.0", method: "done", params: { reason: "cancelled" } });
       break;
     case "dispose":
       write({ jsonrpc: "2.0", id, result: { ok: true } });

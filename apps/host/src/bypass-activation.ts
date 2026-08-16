@@ -1,0 +1,7 @@
+import crypto from "node:crypto";
+export type ActivationPayload={sessionId:string;desktopProcessId:number;hostProcessId:number;nonce:string;expiresAt:number;issuedAt:number};
+export class BypassActivation {private used=new Set<string>();constructor(private readonly secret:string){}
+ get available(){return this.secret.length > 0}
+ issue(p:Omit<ActivationPayload,"nonce"|"issuedAt">){if(!this.available) throw new Error("bypass activation unavailable");const payload={...p,nonce:crypto.randomBytes(16).toString("base64url"),issuedAt:Date.now()};const body=Buffer.from(JSON.stringify(payload)).toString("base64url");const sig=crypto.createHmac("sha256",this.secret).update(body).digest("base64url");return `${body}.${sig}`}
+  verify(token:string,sessionId:string,desktopProcessId?:number,hostProcessId?:number){try{if(!this.available)return false;const [body,sig] = token.split(".");if(!body||!sig)return false;const expected=crypto.createHmac("sha256",this.secret).update(body).digest("base64url");const actual=Buffer.from(sig), expectedBuf=Buffer.from(expected);if(actual.length!==expectedBuf.length||!crypto.timingSafeEqual(actual,expectedBuf))return false;const p=JSON.parse(Buffer.from(body,"base64url").toString()) as ActivationPayload;if(p.sessionId!==sessionId||this.used.has(p.nonce)||p.expiresAt<Date.now()||p.expiresAt>p.issuedAt+60000)return false;if(desktopProcessId!==undefined&&p.desktopProcessId!==desktopProcessId)return false;if(hostProcessId!==undefined&&p.hostProcessId!==hostProcessId)return false;this.used.add(p.nonce);return true}catch{return false}}
+}

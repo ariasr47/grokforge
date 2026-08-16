@@ -15,6 +15,7 @@ import {
 } from "./log.js";
 import { pickFolderNative } from "./pick-folder.js";
 import { listWorkspaceFiles } from "./workspace-files.js";
+import { resolveConfinedTarget } from "./workspace-confinement.js";
 import { spawn } from "node:child_process";
 import { resolveApiKeyAsync, loadConfig } from "./config.js";
 import { getGitBranch } from "./git.js";
@@ -24,7 +25,7 @@ import {
   setConnectorToken,
   testConnector,
 } from "./connectors.js";
-import { channelMeta, defaultPort } from "./channel.js";
+import { channelMeta, defaultPort, dataDir } from "./channel.js";
 import {
   isJsonContentType,
   isOriginAllowed,
@@ -32,11 +33,31 @@ import {
 } from "./request-lockdown.js";
 import { hasPriorConversations } from "./shell-history.js";
 import { APP_VERSION } from "./build-version.js";
+import { EditJournal } from "./edit-journal.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = defaultPort();
 const CHANNEL = channelMeta();
 const session = new AgentSession();
+// Stable shell session ids own independent AgentSession/ACP contexts. The legacy singleton
+// remains the default for routes that predate reliable-run ownership.
+const sessionRegistry = new Map<string, AgentSession>();
+const editJournal = new EditJournal(dataDir());
+const wsBindings = new Map<WebSocket, Map<string, () => void>>();
+function bindSocketSession(ws: WebSocket, sid: string): void {
+  const owner = sessionFor(sid, false); if (!owner) return;
+  const bindings = wsBindings.get(ws) ?? new Map<string,()=>void>();
+  if (bindings.has(sid)) return;
+  bindings.set(sid, owner.on((event) => wsSend(ws, event)));
+  wsBindings.set(ws, bindings);
+}
+function sessionFor(id: string | null | undefined, create = true): AgentSession | null {
+  if (!id) return session;
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(id)) return null;
+  let value = sessionRegistry.get(id);
+  if (!value && create) { value = new AgentSession(id); sessionRegistry.set(id, value); for (const ws of wsBindings.keys()) bindSocketSession(ws, id); }
+  return value ?? null;
+}
 hydrateConnectorEnv();
 
 /**
@@ -54,6 +75,7 @@ function sendJson(
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(data);
 }
+function sendContractError(res:http.ServerResponse,status:number,code:string,error:string,extra:Record<string,unknown>={}){sendJson(res,status,{error,code,retryable:false,runId:null,...extra});}
 
 /**
  * The single origin-aware builder for every state object the engine emits
@@ -70,8 +92,9 @@ function sendJson(
 function stampState<T extends object>(
   state: T,
   origin: string | string[] | null | undefined,
-): T & { priorConversations: boolean } {
-  return { ...state, priorConversations: hasPriorConversations(origin) };
+): T & { priorConversations: boolean; activeRunCount: number; busy: boolean } {
+  const activeRunCount = (session.getActiveRunId() ? 1 : 0) + [...sessionRegistry.values()].reduce((count, owner) => count + (owner.getActiveRunId() ? 1 : 0), 0);
+  return { ...state, priorConversations: hasPriorConversations(origin), activeRunCount, busy: activeRunCount > 0 };
 }
 
 /** HTTP convenience wrapper around `stampState` — sends 200 with the stamped body. */
@@ -170,8 +193,35 @@ const server = http.createServer(async (req, res) => {
       // priorConversations is PER-REQUESTER (INTERFACE_CONTRACT.md), stamped by the shared builder
       // below at the HTTP edge — AgentSession.getState() has no requester. An absent Origin (the
       // native health probe, the conformance runner) always reads false.
-      sendState(res, origin, session.getState());
+      const requested = url.searchParams.get("sessionId");
+      const owner = requested ? sessionFor(requested, false) : session;
+      if (requested && !owner) { sendContractError(res,404,"session_not_found","Session not found"); return; }
+      await owner!.awaitReady();
+      await owner!.refreshWorkspacePolicy();
+      sendState(res, origin, owner!.getState());
       return;
+    }
+
+    if (method === "GET" && url.pathname === "/api/workspace-policy") {
+      const workspace = url.searchParams.get("workspace");
+      if (!workspace || !path.isAbsolute(workspace)) { sendContractError(res,400,"invalid_workspace","Workspace must be an absolute directory"); return; }
+      try { sendJson(res,200,{policy:await session.getWorkspacePolicy(workspace)}); } catch { sendContractError(res,400,"invalid_workspace","Invalid workspace"); } return;
+    }
+    if (method === "POST" && url.pathname === "/api/workspace-policy") {
+      const body=JSON.parse((await readBody(req))||"{}") as {sessionId?:string;workspace?:string;mode?:"review"|"trusted_workspace"};
+      if (!body.sessionId || !body.workspace || !body.mode || !path.isAbsolute(body.workspace)) { sendContractError(res,400,"invalid_workspace","Invalid workspace or policy"); return; }
+      // Saving a workspace policy is a legitimate session-establishing mutation:
+      // a newly-created shell session must be able to choose Trusted before its
+      // first prompt. Read/cancel/replay routes remain non-creating.
+      const owner=sessionFor(body.sessionId,true); if (!owner) { sendContractError(res,404,"session_not_found","Session not found"); return; }
+      try { sendJson(res,200,{policy:await owner.saveWorkspacePolicy(body.workspace,body.mode)}); } catch(e) { const code=(e as any)?.code; sendContractError(res,code==="run_active"?409:400,code==="run_active"?"run_active":"invalid_policy",code==="run_active"?"Run is active":"Invalid policy",code==="run_active"?{activeRunId:owner.getActiveRunId()}:{}); } return;
+    }
+    if (method === "POST" && url.pathname === "/api/session-permission-mode") {
+      const body=JSON.parse((await readBody(req))||"{}") as {sessionId?:string;activationToken?:string;mode?:"workspace"|"bypass_permissions"};
+      if(body.mode==="bypass_permissions" && (!body.activationToken || !body.sessionId)) { sendContractError(res,403,"bypass_activation_invalid","Invalid activation token"); return; }
+      const owner=body.sessionId?sessionFor(body.sessionId,false):null;
+      if (!owner) { sendContractError(res, body.mode==="bypass_permissions"?403:404, body.mode==="bypass_permissions"?"bypass_activation_invalid":"session_not_found", body.mode==="bypass_permissions"?"Invalid activation token":"Session not found"); return; }
+      try { sendJson(res,200,await owner.setPermissionMode(body.mode ?? "workspace",body.activationToken)); } catch(e) { const code=(e as any)?.code??"invalid_policy"; sendContractError(res,code.startsWith("bypass_")?403:code==="run_active"?409:400,code,e instanceof Error?e.message:"Invalid permission mode",code==="run_active"?{activeRunId:owner.getActiveRunId()}:{}); } return;
     }
 
     if (method === "POST" && url.pathname === "/api/workspace") {
@@ -218,43 +268,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       try {
-        const root = path.resolve(st.workspace);
-        const target = path.resolve(root, rel);
-        const under = (abs: string) => {
-          const a =
-            process.platform === "win32" ? abs.toLowerCase() : abs;
-          const r =
-            process.platform === "win32" ? root.toLowerCase() : root;
-          return (
-            a === r ||
-            a.startsWith(r + path.sep) ||
-            a.startsWith(r + "/")
-          );
-        };
-        if (!under(target)) {
-          // Also allow absolute paths that stay under workspace
-          const abs = path.resolve(rel);
-          if (!under(abs)) {
-            sendJson(res, 400, { error: "path escapes workspace" });
-            return;
-          }
-          const text = await fs.promises.readFile(abs, "utf8");
-          sendJson(res, 200, {
-            path: abs,
-            content: text.slice(0, 120_000),
-            truncated: text.length > 120_000,
-          });
-          return;
-        }
-        const text = await fs.promises.readFile(target, "utf8");
+        const target = await resolveConfinedTarget({ workspace: st.workspace, target: rel, kind: "read" });
+        const verified = await target.recheck();
+        const text = await fs.promises.readFile(verified.canonicalPath, "utf8");
         sendJson(res, 200, {
-          path: target,
+          path: target.path,
           content: text.slice(0, 120_000),
           truncated: text.length > 120_000,
         });
       } catch (e) {
-        sendJson(res, 404, {
-          error: e instanceof Error ? e.message : String(e),
+        const message = e instanceof Error ? e.message : String(e);
+        sendJson(res, message === "outside_workspace" ? 400 : 404, {
+          error: message === "outside_workspace" ? "path escapes workspace" : message,
         });
       }
       return;
@@ -460,7 +485,10 @@ const server = http.createServer(async (req, res) => {
         apiKey?: string;
         model?: string;
         clearKey?: boolean;
-        shellAllowlist?: boolean;
+          shellAllowlist?: boolean;
+          sessionId?: string;
+          runId?: string;
+          cursors?: Array<{sessionId:string;runId:string;afterEventSeq:number}>;
         mode?: "chat" | "code";
         effort?: "auto" | "fast" | "expert" | "heavy";
         agentId?: string;
@@ -606,6 +634,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === "POST" && url.pathname === "/api/prompt") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
+        sessionId?: string;
         text?: string;
         effort?: "auto" | "fast" | "expert" | "heavy";
         history?: Array<{
@@ -614,26 +643,34 @@ const server = http.createServer(async (req, res) => {
         }>;
       };
       if (!body.text?.trim()) {
-        sendJson(res, 400, { error: "text required" });
+        sendContractError(res,400,"invalid_request","text required");
         return;
       }
+      const legacyPrompt = !body.sessionId;
+      const ownedSession = sessionFor(body.sessionId) || session;
+      if (body.sessionId && !ownedSession) { sendContractError(res,400,"invalid_request","invalid sessionId"); return; }
       try {
-        await session.prompt(body.text.trim(), body.effort, {
+        const run = await ownedSession.prompt(body.text.trim(), body.effort, {
           history: Array.isArray(body.history) ? body.history.slice(-40) : undefined,
           originKey: typeof origin === "string" ? origin : null,
+          clientSessionId: body.sessionId,
         });
-        sendJson(res, 200, { ok: true });
+        sendJson(res, legacyPrompt ? 200 : 202, legacyPrompt ? { ok: true } : { accepted: true, run });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        const busy = /busy/i.test(message);
-        sendJson(res, busy ? 409 : 400, { error: message });
+        const busy = (e as any)?.code === "run_active" || /busy/i.test(message);
+        sendContractError(res,busy?409:400,busy?"run_active":"invalid_request",message, busy ? { activeRunId: ownedSession.getActiveRunId() } : {});
       }
       return;
     }
 
     if (method === "POST" && url.pathname === "/api/cancel") {
-      await session.cancel();
-      sendJson(res, 200, { ok: true });
+      const body = JSON.parse((await readBody(req)) || "{}") as {sessionId?:string;runId?:string};
+      if (!body.sessionId || !body.runId) { await session.cancel(); sendJson(res, 200, { ok: true }); return; }
+      const ownedSession = sessionFor(body.sessionId, false);
+      if (!ownedSession) { sendContractError(res,404,"run_not_found","Run not found"); return; }
+      try { const run = await ownedSession.cancelRun(body.runId, body.sessionId); sendJson(res, 202, { accepted:true, run }); }
+      catch (e) { const code = e instanceof Error && (e as any).code === "run_terminal" ? "run_terminal" : "run_not_found"; sendContractError(res, code === "run_terminal" ? 409 : 404, code, e instanceof Error ? e.message : "Run not found"); }
       return;
     }
 
@@ -669,37 +706,63 @@ const server = http.createServer(async (req, res) => {
 
     if (method === "POST" && url.pathname === "/api/permission") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
-        id?: string;
+        id?: string; sessionId?:string; runId?:string; requestId?:string; invocationId?:string;
         decision?: PermissionDecision;
       };
-      if (!body.id || !body.decision) {
-        sendJson(res, 400, { error: "id and decision required" });
+      if (!body.sessionId || !body.runId || !body.requestId || !body.invocationId || !body.decision) {
+        sendContractError(res,400,"invalid_request","decision ownership fields required");
         return;
       }
+      const owner=sessionFor(body.sessionId,false) ?? (session.getState().session?.sessionId===body.sessionId?session:null); if(!owner){sendContractError(res,404,"run_not_found","Run not found");return;}
       try {
-        await session.permission(body.id, body.decision);
-        sendJson(res, 200, { ok: true });
-      } catch {
-        sendJson(res, 404, { error: "no pending permission" });
+        const run=owner.getRun(body.runId); if(!run || run.sessionId!==body.sessionId) throw Object.assign(new Error("no pending permission"),{code:"decision_not_found"});
+        const settled = await owner.permission(body.id ?? body.requestId, body.decision,{sessionId:run.sessionId,runId:body.runId,connectionGeneration:run.connectionGeneration}, body.invocationId);
+        sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"permission",status:settled,title:"Permission",detail:"",expiresAt:new Date().toISOString(),policy:run.policy} });
+      } catch (e) {
+        const code=(e as any)?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,"no pending permission");
       }
       return;
     }
 
     if (method === "POST" && url.pathname === "/api/diff") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
-        id?: string;
+        id?: string; sessionId?:string; runId?:string; requestId?:string; invocationId?:string; editId?:string;
         action?: "accept" | "reject";
       };
-      if (!body.id || !body.action) {
-        sendJson(res, 400, { error: "id and action required" });
+      if (!body.sessionId || !body.runId || !body.requestId || !body.invocationId || !body.editId || !body.action) {
+        sendContractError(res,400,"invalid_request","edit ownership fields required");
         return;
       }
+      const owner=sessionFor(body.sessionId,false) ?? (session.getState().session?.sessionId===body.sessionId?session:null); if(!owner){sendContractError(res,404,"run_not_found","Run not found");return;}
       try {
-        await session.diffAction(body.id, body.action);
-        sendJson(res, 200, { ok: true });
-      } catch {
-        sendJson(res, 404, { error: "no pending edit" });
+        const run=owner.getRun(body.runId); if(!run || run.sessionId!==body.sessionId) throw Object.assign(new Error("no pending edit"),{code:"decision_not_found"});
+        const settled = await owner.diffAction(body.editId, body.action,{sessionId:run.sessionId,runId:body.runId,connectionGeneration:run.connectionGeneration}, body.invocationId);
+        sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"diff",status:settled,title:"Edit",detail:"",expiresAt:new Date().toISOString(),policy:run.policy}, activity:{activityId:body.editId,invocationId:body.invocationId,name:"edit",lifecycle:"terminal",execution:"executed",status:body.action==="accept"?"succeeded":"rejected",input:null,output:null,error:null,diff:null,policy:run.policy,automaticEligibility:"not_eligible",autoApplied:false,editId:body.editId,recovery:null} });
+      } catch (e) {
+        const code=(e as any)?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,"no pending edit");
       }
+      return;
+    }
+
+    if (method === "GET" && url.pathname.startsWith("/api/runs/")) {
+      const runId = decodeURIComponent(url.pathname.slice("/api/runs/".length));
+      const sid = url.searchParams.get("sessionId"); const afterRaw = url.searchParams.get("after") ?? "0"; const after = Number(afterRaw);
+      if (!sid || !runId || !Number.isInteger(after) || after < 0) { sendContractError(res,400,"invalid_request","sessionId and valid after are required"); return; }
+      // Rehydrate a stable client session on first replay after host restart;
+      // the AgentSession constructor hydrates its durable journal before this
+      // route returns, allowing orphan terminalization to be observed before
+      // a new prompt is admitted.
+      const ownedSession = sessionFor(sid, true); if (!ownedSession) { sendContractError(res,404,"run_not_found","Run not found"); return; }
+      try { const result = await ownedSession.replayRun(runId, sid, after); sendJson(res,200,result); }
+      catch { sendContractError(res,404,"run_not_found","Run not found"); }
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/api/edit-recovery") {
+      const body=JSON.parse((await readBody(req))||"{}") as {sessionId?:string;runId?:string;editId?:string};
+      if(!body.sessionId||!body.runId||!body.editId){sendContractError(res,400,"invalid_request","recovery ownership fields required");return;}
+      const owner=sessionFor(body.sessionId,false); if(!owner||!owner.getRun(body.runId,body.sessionId)){sendContractError(res,404,"edit_not_found","Edit not found");return;}
+      try { const result=await editJournal.revert(body.editId,{runId:body.runId}); const activity={activityId:body.editId,invocationId:"",name:"edit",lifecycle:"terminal",execution:"executed",status:result.ok?"succeeded":"failed",input:null,output:null,error:result.ok?null:"Edit not reverted",diff:result.entry.diff,policy:owner.getRun(body.runId,body.sessionId)!.policy,automaticEligibility:"text_edit",autoApplied:true,editId:body.editId,recovery:{kind:"guarded_revert",available:true,status:result.ok?"reverted":"conflict"}}; if(!result.ok){sendContractError(res,409,"recovery_conflict","Edit not reverted",{activity});} else sendJson(res,200,{ok:true,activity}); } catch (e) { const code=(e as any)?.code; if(code==="recovery_not_owned"){sendContractError(res,409,"recovery_unavailable","Edit is not available for this run");} else sendContractError(res,404,"edit_not_found","Edit not found"); }
       return;
     }
 
@@ -774,21 +837,40 @@ wss.on("connection", (ws, req) => {
   // shell's WS-driven state reads never diverge from the HTTP read (a field present on HTTP and
   // missing on WS would flicker the not-found state on the first WS push after boot).
   const wsOrigin = typeof req.headers.origin === "string" ? req.headers.origin : null;
-  wsSend(ws, {
-    type: "state",
-    state: stampState(session.getState(), wsOrigin),
-  });
-  const off = session.on((event) => {
+  const wsUrl = new URL(req.url || "/ws", `http://127.0.0.1:${PORT}`);
+  const initialSessionId = wsUrl.searchParams.get("sessionId");
+  const initialOwner = initialSessionId ? sessionFor(initialSessionId, false) : session;
+  void (async () => {
+    const owner = initialOwner ?? session;
+    await owner.awaitReady();
+    await owner.refreshWorkspacePolicy();
+    wsSend(ws, {
+      schemaVersion: 1,
+      type: "state",
+      state: stampState(owner.getState(), wsOrigin),
+    });
+  })();
+  const subscriptions = new Map<string,()=>void>();
+  wsBindings.set(ws, subscriptions);
+  const subscribe = (sid:string|null|undefined) => {
+    const owner = sid ? sessionFor(sid, false) : session;
+    if (!owner) return;
+    const key = sid ?? "__legacy";
+    if (subscriptions.has(key)) return;
+    subscriptions.set(key, owner.on((event) => {
     if ((event as { type?: string }).type === "state") {
       const e = event as { type: "state"; state: unknown };
       wsSend(ws, {
+        schemaVersion: 1,
         type: "state",
         state: stampState(e.state as Record<string, unknown>, wsOrigin),
       });
       return;
     }
     wsSend(ws, event);
-  });
+    }));
+  };
+  subscribe(initialSessionId);
 
   ws.on("message", (data) => {
     void (async () => {
@@ -803,6 +885,13 @@ wss.on("connection", (ws, req) => {
         model?: string;
         clearKey?: boolean;
         shellAllowlist?: boolean;
+        sessionId?: string;
+        runId?: string;
+        requestId?: string;
+        invocationId?: string;
+        editId?: string;
+        connectionGeneration?: number;
+        cursors?: Array<{sessionId:string;runId:string;afterEventSeq:number}>;
       };
       try {
         msg = JSON.parse(String(data)) as typeof msg;
@@ -814,7 +903,7 @@ wss.on("connection", (ws, req) => {
       try {
         switch (msg.type) {
           case "get_state":
-            wsSend(ws, { type: "state", state: stampState(session.getState(), wsOrigin) });
+            wsSend(ws, { schemaVersion: 1, type: "state", state: stampState(session.getState(), wsOrigin) });
             break;
           case "open_workspace":
             if (!msg.path) throw new Error("path required");
@@ -822,21 +911,25 @@ wss.on("connection", (ws, req) => {
             break;
           case "prompt":
             if (!msg.text) throw new Error("text required");
-            await session.prompt(msg.text, undefined, { originKey: wsOrigin });
+            { const owned = sessionFor(msg.sessionId) || session; subscribe(msg.sessionId); await owned.prompt(msg.text, undefined, { originKey: wsOrigin, clientSessionId: msg.sessionId }); }
             break;
           case "cancel":
-            await session.cancel();
+            if (msg.sessionId && msg.runId) { const owned = sessionFor(msg.sessionId, false); if (!owned) throw new Error("run not found"); await owned.cancelRun(msg.runId, msg.sessionId); }
+            else await session.cancel();
+            break;
+          case "resume_runs":
+            for (const cursor of msg.cursors ?? []) { const owned = sessionFor(cursor.sessionId, false); if (!owned) continue; try { const replay = await owned.replayRun(cursor.runId, cursor.sessionId, cursor.afterEventSeq); for (const event of replay.events) wsSend(ws, event); } catch { /* stale cursor is isolated */ } }
             break;
           case "restart":
             await session.restartAgent();
             break;
           case "permission":
-            if (!msg.id || !msg.decision) throw new Error("id and decision required");
-            await session.permission(msg.id, msg.decision);
+            if (!msg.id || !msg.decision || !msg.sessionId || !msg.runId || !msg.requestId || !msg.invocationId || msg.connectionGeneration === undefined) throw Object.assign(new Error("owned permission fields required; use HTTP route"),{code:"ownership_required"});
+            { const owned=sessionFor(msg.sessionId,false); if(!owned) throw new Error("session not found"); await owned.permission(msg.id,msg.decision,{sessionId:msg.sessionId,runId:msg.runId,connectionGeneration:msg.connectionGeneration},msg.invocationId); }
             break;
           case "diff":
-            if (!msg.id || !msg.action) throw new Error("id and action required");
-            await session.diffAction(msg.id, msg.action);
+            if (!msg.id || !msg.action || !msg.sessionId || !msg.runId || !msg.requestId || !msg.invocationId || !msg.editId || msg.connectionGeneration === undefined) throw Object.assign(new Error("owned diff fields required; use HTTP route"),{code:"ownership_required"});
+            { const owned=sessionFor(msg.sessionId,false); if(!owned) throw new Error("session not found"); await owned.diffAction(msg.id,msg.action,{sessionId:msg.sessionId,runId:msg.runId,connectionGeneration:msg.connectionGeneration},msg.invocationId); }
             break;
           case "set_settings":
             session.updateSettings({
@@ -870,7 +963,7 @@ wss.on("connection", (ws, req) => {
     })();
   });
 
-  ws.on("close", () => off());
+  ws.on("close", () => { for (const off of subscriptions.values()) off(); wsBindings.delete(ws); });
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {
@@ -899,3 +992,14 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`WebSocket ws://127.0.0.1:${PORT}/ws`);
   console.log(`Log file ${logPath()}`);
 });
+
+let shuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return; shuttingDown = true;
+  log("info", "host shutting down", { signal });
+  await Promise.all([session, ...sessionRegistry.values()].map(s => s.shutdown().catch(() => undefined)));
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  process.exit(0);
+}
+process.once("SIGINT", () => { void gracefulShutdown("SIGINT"); });
+process.once("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });

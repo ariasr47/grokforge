@@ -36,6 +36,12 @@ import { audit } from "./audit.js";
 import { clampEffort, loadPolicy } from "./policy.js";
 import { recordCompletedConversation } from "./shell-history.js";
 import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./executionEnvironment.js";
+import { RunJournal } from "./run-journal.js";
+import { RunCoordinator } from "./run-coordinator.js";
+import type { RunEventEnvelope, RunSnapshot } from "./run-types.js";
+import { dataDir } from "./channel.js";
+import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
+import { BypassActivation } from "./bypass-activation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -72,6 +78,7 @@ function summarizeToolOutput(output: unknown): Record<string, unknown> {
 
 export type BusEvent =
   | AcpUiEvent
+  | RunEventEnvelope
   | { type: "state"; state: PublicState }
   | {
       type: "oauth_pending";
@@ -114,14 +121,20 @@ export interface PublicState {
   appliedModel: string | null;
   chatRoot: string | null;
   shellCapability: ShellCapabilityView;
+  modelSelectionProvenance: "inherited" | "explicit";
+  modelMigrationRule: "legacy_grok_4_to_grok_4_6" | null;
+  activeRunCount: number;
+  session: { sessionId:string; activeRunId:string|null; effectivePermissionMode:"review"|"trusted_workspace"|"bypass_permissions" } | null;
+  permissionPolicy: { status:"confirmed"; workspace:string; storedMode:"review"|"trusted_workspace"|null; effectiveMode:"review"|"trusted_workspace"; source:"default"|"saved"|"fallback"; revision:string; fallbackReason:"missing"|"invalid"|"unreadable"|null; savedForWorkspace:boolean };
+  bypassPermissions: { unlocked:boolean; available:boolean; activeForSession:boolean; blockedReason:"managed_disabled"|"local_attestation_required"|"unlock_required"|null; confirmationVersion:number|null };
 }
 
 export class AgentSession {
   private client: StdioAcpClient | null = null;
   private sessionId: string | null = null;
+  private stableClientSessionId: string | null = null;
   private workspace: string | null = null;
   private busy = false;
-  private busyWatchdog: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
   private cfg = loadConfig();
   private oauthAbort: AbortController | null = null;
@@ -133,6 +146,20 @@ export class AgentSession {
    * reaches `done` — an `error` run does not count as a completed conversation.
    */
   private pendingPromptOrigin: string | null = null;
+  private readonly runCoordinator = new RunCoordinator(new RunJournal(dataDir()), (event) => this.emit(event));
+  private readonly runHydration: Promise<void>;
+  private readonly workspacePolicies = new WorkspacePolicyStore(dataDir());
+  private policyView: WorkspacePolicyView | null = null;
+  private bypassActive = false;
+  private static readonly activation = new BypassActivation(process.env.GROKFORGE_BYPASS_SECRET ?? "");
+  private bypassView() {
+    const managedDisabled = process.env.GROKFORGE_MANAGED_BYPASS_DISABLED === "1" || process.env.GROKFORGE_BYPASS_DISABLED === "1";
+    const available = AgentSession.activation.available && !managedDisabled;
+    return { unlocked: false, available, activeForSession: this.bypassActive, blockedReason: managedDisabled ? "managed_disabled" as const : (available ? "unlock_required" as const : "local_attestation_required" as const), confirmationVersion: null };
+  }
+  private activeRunId: string | null = null;
+  private connectionGeneration = 0;
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:"permission"|"diff";status:"pending"|"accepted"|"declined"|"expired";expiresAt:number}>();
   /** Serialize restarts so concurrent mode switches don't null the client mid-start. */
   private restartChain: Promise<PublicState> | null = null;
   /**
@@ -150,8 +177,11 @@ export class AgentSession {
     suppressNextDone: boolean;
   } | null = null;
   private readonly executionEnvironment = resolveHostExecutionEnvironment({ platform: process.platform, environment: process.env });
+  private readonly ready: Promise<void>;
 
-  constructor() {
+  constructor(stableSessionId?: string) {
+    this.stableClientSessionId = stableSessionId ?? null;
+    this.runHydration = this.runCoordinator.hydrate(stableSessionId).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
     this.cfg = loadConfig();
     if (!this.cfg.mode) this.cfg.mode = "chat";
     if (!this.cfg.effort) this.cfg.effort = "auto";
@@ -160,6 +190,27 @@ export class AgentSession {
     } else if (this.cfg.lastWorkspace && fs.existsSync(this.cfg.lastWorkspace)) {
       this.workspace = this.cfg.lastWorkspace;
     }
+    this.ready = this.hydrateWorkspacePolicy(this.workspace);
+  }
+
+  private async hydrateWorkspacePolicy(workspace: string | null): Promise<void> {
+    if (!workspace) return;
+    try {
+      this.policyView = await this.workspacePolicies.read(workspace);
+    } catch {
+      this.policyView = { status: "confirmed", workspace: path.resolve(workspace), storedMode: null, effectiveMode: "review", source: "fallback", revision: "fallback", fallbackReason: "invalid", savedForWorkspace: false };
+    }
+  }
+
+  /** State surfaces await this before reading the first post-reload snapshot. */
+  async awaitReady(): Promise<void> { await this.ready; }
+
+  /** Refresh current-workspace policy so legacy state reflects stable-session saves. */
+  async refreshWorkspacePolicy(): Promise<void> {
+    await this.ready;
+    if (!this.workspace) return;
+    try { this.policyView = await this.workspacePolicies.read(this.workspace); }
+    catch { /* retain the confirmed fallback already established during hydration */ }
   }
 
   on(listener: Listener): () => void {
@@ -209,6 +260,12 @@ export class AgentSession {
       appliedModel: this.appliedModel,
       chatRoot,
       shellCapability: this.executionEnvironment.publicView,
+      modelSelectionProvenance: this.cfg.modelSelectionProvenance,
+      modelMigrationRule: null,
+      activeRunCount: this.busy ? 1 : 0,
+      session: this.stableClientSessionId ? { sessionId: this.stableClientSessionId, activeRunId: this.activeRunId, effectivePermissionMode: this.bypassActive ? "bypass_permissions" : (this.policyView?.effectiveMode ?? "review") } : null,
+      permissionPolicy: this.policyView ?? { status:"confirmed", workspace:this.workspace || "", storedMode:null, effectiveMode:"review", source:"fallback", revision:"fallback", fallbackReason:"missing", savedForWorkspace:false },
+      bypassPermissions: this.bypassView(),
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
@@ -230,6 +287,8 @@ export class AgentSession {
     if (typeof patch.apiKey === "string") this.cfg.apiKey = patch.apiKey;
     if (typeof patch.model === "string" && patch.model.trim()) {
       this.cfg.model = patch.model.trim();
+      this.cfg.modelSelectionProvenance = "explicit";
+      this.cfg.modelMigrationVersion = 1;
     }
     if (typeof patch.shellAllowlist === "boolean") {
       this.cfg.shellAllowlist = patch.shellAllowlist;
@@ -332,6 +391,10 @@ export class AgentSession {
     if (!st.isDirectory()) throw new Error("Path is not a directory");
 
     this.workspace = resolved;
+    // Hydrate the durable workspace policy before the first state snapshot. A
+    // fresh AgentSession must never report fallback Review when a confirmed
+    // policy already exists on disk.
+    this.policyView = await this.workspacePolicies.read(resolved);
     this.cfg = loadConfig();
     this.cfg.lastWorkspace = resolved;
     // Opening a folder implies Code mode for workspace-centric flows
@@ -432,19 +495,25 @@ export class AgentSession {
         args,
         executionProfile: this.executionEnvironment.profile,
         env: Object.freeze({
-          ...this.executionEnvironment.effectiveEnvironment,
+          ...Object.fromEntries(Object.entries(this.executionEnvironment.effectiveEnvironment).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
           XAI_API_KEY: token ?? "",
           XAI_MODEL: this.cfg.model,
           GROKFORGE_MODE: mode,
           GROKFORGE_SHELL_ALLOWLIST:
             this.cfg.shellAllowlist === false ? "0" : "1",
+          GROKFORGE_DATA_DIR: dataDir(),
         }),
       });
       this.client = client;
       /** Cache tool names for result logging. */
       const toolNames = new Map<string, string>();
       const gen = client; // capture for exit handler
+      // ACP notifications are delivered by StdioAcpClient without awaiting listeners. Keep a
+      // per-generation FIFO so activity/decision events are durably appended before a following
+      // done/error can finalize the run. A replaced client is rejected at the queue boundary.
+      let eventChain: Promise<void> = Promise.resolve();
       client.onEvent((ev) => {
+        eventChain = eventChain.then(async () => {
         // Ignore events from a disposed/replaced client
         if (this.client !== gen) return;
         if (ev.type === "tool_run") {
@@ -456,6 +525,7 @@ export class AgentSession {
             name: ev.name,
             sessionId: this.sessionId,
           });
+          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const activity={activityId:ev.activityId,invocationId:ev.toolCallId,name:ev.name??"tool",lifecycle:ev.lifecycle,execution:ev.execution,status:ev.status,input:ev.input,output:ev.output,error:ev.error ?? ev.reason ?? ev.reasonCode,diff:ev.diff??null,policy:run.policy,automaticEligibility:ev.automaticEligibility??"not_eligible",autoApplied:ev.autoApplied===true,editId:ev.editId??null,recovery:ev.recovery??null}; const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined); if(envelope){ return;} } }
         }
         if (ev.type === "tool_run" && ev.lifecycle === "terminal" && ev.execution === "executed") {
           const name = toolNames.get(ev.toolCallId) || "tool";
@@ -482,6 +552,11 @@ export class AgentSession {
             kind: ev.kind,
             detail: ev.detail.slice(0, 200),
           });
+          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const expiresAt=Date.now()+300000; this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId:ev.id,kind:"permission",status:"pending",expiresAt}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId:ev.id,kind:"permission",status:"pending",title:ev.kind==="shell"?"Run shell":"Write file",detail:ev.detail,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
+        }
+        if (ev.type === "file_edit") {
+          if (ev.status !== "proposed") { return; }
+          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const invocationId=ev.invocationId??ev.toolCallId??ev.id; const expiresAt=Date.now()+300000; this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
         }
         if (ev.type === "agent_log") {
           log(ev.level === "warn" ? "warn" : "debug", "agent stderr", {
@@ -524,6 +599,9 @@ export class AgentSession {
                   model: nextModel,
                   reasoning_effort: pf.reasoningEffort,
                   history: pf.history,
+                  runId: this.activeRunId ?? "",
+                  connectionGeneration: this.connectionGeneration,
+                  policy: this.workspace ? await this.workspacePolicies.snapshot(this.workspace, this.bypassActive) : { workspace:"", storedMode:null, effectiveMode:"review" as const, source:"fallback" as const, revision:"fallback", fallbackReason:"missing" as const, snapshottedAt:new Date().toISOString() },
                 })
                 .catch((e2) => {
                   this.pendingFallback = null;
@@ -554,7 +632,27 @@ export class AgentSession {
           this.pendingFallback.suppressNextDone = false;
           return;
         }
+        if (this.activeRunId && ev.type === "text_delta" && ev.text) {
+          await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "answer_delta", segmentId: `answer-${this.activeRunId}`, delta: ev.text }, "answer_delta").catch(() => undefined);
+        }
+        if (this.activeRunId && ev.type === "thinking_delta" && ev.text) {
+          await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "reasoning_delta", segmentId: `reasoning-${this.activeRunId}`, delta: ev.text }, "reasoning_delta").catch(() => undefined);
+        }
+        if (this.activeRunId && ev.type === "run_phase" && ev.phase !== "done") {
+          const liveness = ev.phase === "tools" ? "tool" : "provider";
+          const recovering = ev.phase === "waiting_model" || /recover/i.test(String(ev.detail ?? ""));
+          const envelope = await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "run_state", state: recovering ? "recovering" : "running", liveness }, "run_state").catch(() => undefined);
+          if (envelope) return;
+        }
         if (ev.type === "done" || ev.type === "error") {
+          if (this.activeRunId) {
+            const active = this.runCoordinator.get(this.activeRunId);
+            const terminal = active?.state === "cancelling" ? "cancelled" : (ev.type === "done" && ev.reason !== "error" ? "answered" : "failed");
+            const failureCode = ev.type === "error" ? ({missing_final_answer:"missing_final_answer",provider_liveness_timeout:"provider_liveness_exhausted",provider_liveness_exhausted:"provider_liveness_exhausted",auth_missing:"authentication_required",configuration_required:"configuration_required",execution_owner_lost:"execution_owner_lost"} as Record<string,any>)[ev.code] ?? "provider_unavailable" : null;
+            await this.runCoordinator.finalize(this.activeRunId, terminal, null,
+              ev.type === "error" ? { code: failureCode, message: ev.code === "missing_final_answer" ? "No final answer was produced." : "Provider execution failed.", retryable: true, recoveryAction: "retry_prompt" } : null);
+            this.activeRunId = null;
+          }
           if (ev.type === "done" && ev.reason === "stop" && this.pendingFallback) {
             const pf = this.pendingFallback;
             if (pf.attemptIdx > 0) {
@@ -582,6 +680,7 @@ export class AgentSession {
             recordCompletedConversation(this.pendingPromptOrigin);
           }
           this.pendingPromptOrigin = null;
+          await this.reclaimTerminalContext(gen);
           this.broadcastState();
         }
         if (ev.type === "done") {
@@ -591,6 +690,12 @@ export class AgentSession {
           });
         }
         this.emit(ev);
+        }).catch((error) => {
+          log("error", "agent event handling failed", {
+            message: error instanceof Error ? error.message : String(error),
+            sessionId: this.sessionId,
+          });
+        });
       });
 
       try {
@@ -614,6 +719,7 @@ export class AgentSession {
           return this.getState();
         }
         this.sessionId = sid;
+        this.connectionGeneration += 1;
         log("info", "agent session ready", {
           sessionId: this.sessionId,
           workspace: this.workspace,
@@ -659,12 +765,17 @@ export class AgentSession {
       history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
       /** The request's `Origin` header (D1) — null for an absent/empty Origin (never recorded). */
       originKey?: string | null;
+      /** Stable shell session identity; ACP session id remains private to this host context. */
+      clientSessionId?: string;
     },
-  ): Promise<void> {
+  ): Promise<RunSnapshot> {
+    await this.runHydration;
+    if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state === "terminal") { this.activeRunId = null; this.pendingFallback = null; this.setBusy(false); }
     if (this.busy) {
       throw new Error("Agent is busy — wait or Cancel before sending again");
     }
     this.cfg = loadConfig();
+    this.stableClientSessionId = opts?.clientSessionId ?? this.stableClientSessionId;
     const mode = this.cfg.mode === "code" ? "code" : "chat";
     if (mode === "chat") {
       this.workspace = ensureChatRoot(this.cfg.chatRoot);
@@ -677,6 +788,7 @@ export class AgentSession {
     // survives that reset instead of racing behind it, so the *first* prompt after every
     // engine/agent start is still attributed to its Origin.
     await this.ensureAgent();
+    if (!this.stableClientSessionId) this.stableClientSessionId = this.sessionId;
     this.pendingPromptOrigin = opts?.originKey ?? null;
     if (!this.client || !this.sessionId) throw new Error("Agent not connected");
 
@@ -685,8 +797,9 @@ export class AgentSession {
       : isEffort(this.cfg.effort)
         ? this.cfg.effort
         : "auto";
-    const policy = loadPolicy();
-    const selected = clampEffort(rawSelected, policy.maxEffort);
+    const effortPolicy = loadPolicy();
+    const selected = clampEffort(rawSelected, effortPolicy.maxEffort);
+    const workspacePolicy = this.workspace ? await this.workspacePolicies.snapshot(this.workspace, this.bypassActive) : { workspace: "", storedMode: null, effectiveMode: "review" as const, source: "fallback" as const, revision: "fallback", fallbackReason: "missing" as const, snapshottedAt: new Date().toISOString() };
     const binding = resolveEffort(selected, this.cfg.model);
     // AC8 model-id fallback chain: binding.model leads; the rest are the fallback candidates a
     // rejected model retries through (see the `client.onEvent` handler in restartAgent()).
@@ -704,8 +817,15 @@ export class AgentSession {
     };
 
     this.setBusy(true);
+    const admitted = await this.runCoordinator.admit({
+      sessionId: opts?.clientSessionId || this.sessionId,
+      prompt: text,
+      connectionGeneration: this.connectionGeneration,
+      policy: workspacePolicy,
+      model: { requestedModel: this.cfg.model, appliedModel: modelsChain[0], selectionProvenance: this.cfg.modelSelectionProvenance },
+    });
+    this.activeRunId = admitted.runId;
     this.broadcastState();
-    this.armBusyWatchdog();
     log("debug", "prompt", {
       len: text.length,
       sessionId: this.sessionId,
@@ -729,9 +849,13 @@ export class AgentSession {
         model: modelsChain[0],
         reasoning_effort: binding.reasoning_effort,
         history: opts?.history,
+        runId: this.activeRunId ?? "",
+        connectionGeneration: this.connectionGeneration,
+        policy: workspacePolicy,
       });
     } catch (e) {
       this.pendingFallback = null;
+      if (this.activeRunId) { await this.runCoordinator.finalize(this.activeRunId, "failed", null, { code: "provider_unavailable", message: "Prompt failed.", retryable: true, recoveryAction: "retry_prompt" }); this.activeRunId = null; }
       this.setBusy(false);
       this.broadcastState();
       const message = e instanceof Error ? e.message : String(e);
@@ -743,35 +867,48 @@ export class AgentSession {
       });
       throw e;
     }
+    return admitted;
+  }
+  async shutdown(): Promise<void> { const c=this.client; this.client=null; this.sessionId=null; if(c) await c.dispose().catch(()=>undefined); }
+  /** Release the ACP process once a run is terminal; journal/replay state remains owned here. */
+  private async reclaimTerminalContext(gen: StdioAcpClient): Promise<void> {
+    if (this.client !== gen || this.activeRunId || this.busy) return;
+    this.client = null;
+    this.sessionId = null;
+    await gen.dispose().catch(() => undefined);
   }
 
-  /** If agent never emits done/error, clear stuck busy (long tools still within 15m). */
-  private armBusyWatchdog(ms = 15 * 60_000): void {
-    this.clearBusyWatchdog();
-    this.busyWatchdog = setTimeout(() => {
-      this.busyWatchdog = null;
-      if (!this.busy) return;
-      log("warn", "busy watchdog fired — clearing stuck busy");
-      this.busy = false;
-      this.broadcastState();
-      this.emit({
-        type: "error",
-        code: "busy_timeout",
-        message:
-          "Agent run timed out waiting for completion. Try Cancel or Restart agent.",
-      });
-    }, ms);
+  async getWorkspacePolicy(workspace: string): Promise<WorkspacePolicyView> {
+    const p = await this.workspacePolicies.read(workspace);
+    if (this.workspace && path.resolve(this.workspace) === path.resolve(p.workspace)) this.policyView = p;
+    return p;
   }
-
-  private clearBusyWatchdog(): void {
-    if (this.busyWatchdog) {
-      clearTimeout(this.busyWatchdog);
-      this.busyWatchdog = null;
+  async saveWorkspacePolicy(workspace: string, mode: "review" | "trusted_workspace"): Promise<WorkspacePolicyView> {
+    if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state !== "terminal") throw Object.assign(new Error("run active"), { code: "run_active" });
+    const p = await this.workspacePolicies.save(workspace, mode); this.policyView = p; this.emit({type:"state", state:this.getState()}); return p;
+  }
+  async setPermissionMode(mode: "workspace" | "bypass_permissions", activationToken?: string) {
+    if (!this.stableClientSessionId) throw Object.assign(new Error("session not found"), { code: "session_not_found" });
+    // Validate all rejection boundaries before mutating session state. In
+    // particular, a managed deployment must reject Bypass even when a valid
+    // capability token is supplied, and an active run must remain untouched.
+    if (mode === "bypass_permissions" && (process.env.GROKFORGE_MANAGED_BYPASS_DISABLED === "1" || process.env.GROKFORGE_BYPASS_DISABLED === "1")) {
+      throw Object.assign(new Error("Bypass is disabled by managed policy"), { code: "bypass_managed_disabled" });
     }
+    if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state !== "terminal") {
+      throw Object.assign(new Error("run active"), { code: "run_active" });
+    }
+    if (mode === "bypass_permissions") {
+      const desktopPid = Number(process.env.GROKFORGE_DESKTOP_PID ?? 0) || undefined;
+      if (!activationToken || !AgentSession.activation.verify(activationToken, this.stableClientSessionId, desktopPid, process.pid)) throw Object.assign(new Error("Invalid activation token"), {code:"bypass_activation_invalid"});
+      this.bypassActive = true;
+    }
+    if (mode !== "bypass_permissions") this.bypassActive = false;
+    const p = this.policyView ?? (this.workspace ? await this.getWorkspacePolicy(this.workspace) : null);
+    return {sessionId:this.stableClientSessionId,effectivePermissionMode:this.bypassActive?"bypass_permissions":(p?.effectiveMode??"review"),bypassPermissions:this.bypassView()};
   }
 
   private setBusy(next: boolean): void {
-    if (!next) this.clearBusyWatchdog();
     this.busy = next;
   }
 
@@ -792,14 +929,47 @@ export class AgentSession {
     this.broadcastState();
   }
 
-  async permission(id: string, decision: PermissionDecision): Promise<void> {
-    if (!this.client) throw new Error("Agent not connected");
-    await this.client.respondPermission(id, decision);
+  getRun(runId: string, clientSessionId?: string): RunSnapshot | undefined {
+    const run = this.runCoordinator.get(runId);
+    return run && (!clientSessionId || run.sessionId === clientSessionId) ? run : undefined;
+  }
+  getActiveRunId(): string | null { return this.activeRunId; }
+  async replayRun(runId: string, clientSessionId: string, after = 0) {
+    await this.runHydration;
+    return this.runCoordinator.replay(clientSessionId, runId, after);
+  }
+  async cancelRun(runId: string, clientSessionId: string): Promise<RunSnapshot> {
+    const run = this.getRun(runId, clientSessionId);
+    if (!run) throw Object.assign(new Error("Run not found"), { code: "run_not_found" });
+    if (run.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
+    await this.runCoordinator.cancel(runId);
+    if (this.client) await this.client.cancel({ sessionId: this.sessionId || clientSessionId, runId, connectionGeneration: run.connectionGeneration });
+    return this.runCoordinator.get(runId)!;
   }
 
-  async diffAction(id: string, action: "accept" | "reject"): Promise<void> {
+  async permission(id: string, decision: PermissionDecision, ownership?: {sessionId:string;runId:string;connectionGeneration:number}, invocationId?: string): Promise<"accepted"|"declined"> {
     if (!this.client) throw new Error("Agent not connected");
-    await this.client.respondEdit(id, action, this.sessionId ?? undefined);
+    if (ownership && !this.getRun(ownership.runId, ownership.sessionId)) throw Object.assign(new Error("decision not found"), {code:"decision_not_found"});
+    const run = ownership ? this.runCoordinator.get(ownership.runId) : undefined;
+    if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
+    const pending=this.pendingDecisions.get(id); const expired = !!pending && pending.expiresAt < Date.now(); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="permission"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
+    await this.client.respondPermission(id, decision, ownership);
+    log("debug","permission acknowledged",{id,decision,runId:ownership?.runId,sessionId:ownership?.sessionId});
+    if(pending) pending.status=decision==="deny"?"declined":"accepted";
+    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:"Permission",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    return decision === "deny" ? "declined" : "accepted";
+  }
+
+  async diffAction(id: string, action: "accept" | "reject", ownership?: {sessionId:string;runId:string;connectionGeneration:number}, invocationId?: string): Promise<"accepted"|"declined"> {
+    if (!this.client) throw new Error("Agent not connected");
+    if (ownership && !this.getRun(ownership.runId, ownership.sessionId)) throw Object.assign(new Error("decision not found"), {code:"decision_not_found"});
+    const run = ownership ? this.runCoordinator.get(ownership.runId) : undefined;
+    if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
+    const pending=this.pendingDecisions.get(id); const expired = !!pending && pending.expiresAt < Date.now(); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="diff"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
+    await this.client.respondEdit(id, action, this.sessionId ?? undefined, ownership);
+    if(pending) pending.status=action==="accept"?"accepted":"declined";
+    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"diff",status:action==="accept"?"accepted":"declined",title:"Edit",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    return action === "accept" ? "accepted" : "declined";
   }
 
   async startOAuth(): Promise<DeviceStart> {

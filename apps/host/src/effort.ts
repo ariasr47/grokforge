@@ -5,6 +5,7 @@ export type EffortBinding = {
   model: string;
   reasoning_effort?: "low" | "medium" | "high";
 };
+import { INHERITED_DEFAULT_MODEL } from "@grokforge/model-catalog";
 
 const FAST_MODELS = [
   process.env.GROK_FAST_MODEL?.trim(),
@@ -21,7 +22,7 @@ export function resolveEffort(
   effort: Effort,
   defaultModel: string,
 ): EffortBinding {
-  const base = defaultModel.trim() || "grok-4";
+  const base = defaultModel.trim() || INHERITED_DEFAULT_MODEL;
   switch (effort) {
     case "fast":
       return {

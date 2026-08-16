@@ -128,9 +128,9 @@ before(async () => {
     version: 1,
     shells: { [ALLOWED]: { conversations: 1, firstAt: 1, lastAt: 1 } },
   };
-  fs.mkdirSync(path.join(host.homeDir, ".grokforge-dev"), { recursive: true });
+  fs.mkdirSync(host.dataDir, { recursive: true });
   fs.writeFileSync(
-    path.join(host.homeDir, ".grokforge-dev", "shells.json"),
+    path.join(host.dataDir, "shells.json"),
     JSON.stringify(store),
     "utf8",
   );

@@ -50,9 +50,9 @@ describe("GET /api/state priorConversations — origin-keyed, deterministic on a
     };
     // startHost runs the host with GROKFORGE_CHANNEL=test, which channel.ts resolves to the "dev"
     // data-root isolation (.grokforge-dev) — mirrors the fake-home isolation the harness documents.
-    fs.mkdirSync(path.join(host.homeDir, ".grokforge-dev"), { recursive: true });
+    fs.mkdirSync(host.dataDir, { recursive: true });
     fs.writeFileSync(
-      path.join(host.homeDir, ".grokforge-dev", "shells.json"),
+      path.join(host.dataDir, "shells.json"),
       JSON.stringify(store),
       "utf8",
     );

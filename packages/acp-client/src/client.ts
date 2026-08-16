@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createInterface } from "node:readline";
 import { isValidToolRunEvent } from "./types.js";
 import type {
@@ -6,6 +7,8 @@ import type {
   AcpUiEvent,
   AgentSpawnConfig,
   PermissionDecision,
+  PromptOptions,
+  AcpOwnership,
 } from "./types.js";
 
 type JsonRpcId = number | string;
@@ -44,6 +47,7 @@ export class StdioAcpClient implements AcpClient {
   private handlers = new Set<(event: AcpUiEvent) => void>();
   /** When true, process exit is expected (dispose) — do not emit agent_exited. */
   private closing = false;
+  private activeOwnership: AcpOwnership | null = null;
 
   constructor(private readonly config: AgentSpawnConfig) {}
 
@@ -67,9 +71,10 @@ export class StdioAcpClient implements AcpClient {
 
     this.child = spawn(this.config.command, this.config.args, {
       cwd: this.config.workspaceRoot,
-      env: { ...this.config.env },
+      env: Object.fromEntries(Object.entries(this.config.env).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
 
     this.child.stderr.on("data", (chunk: Buffer) => {
@@ -120,28 +125,29 @@ export class StdioAcpClient implements AcpClient {
   async prompt(
     sessionId: string,
     text: string,
-    opts?: {
-      model?: string;
-      reasoning_effort?: "low" | "medium" | "high";
-      /** Prior UI turns so agent matches visible chat after restart/switch */
-      history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-    },
+    opts?: PromptOptions,
   ): Promise<void> {
+    const ownership = opts?.runId && opts.connectionGeneration != null
+      ? { sessionId, runId: opts.runId, connectionGeneration: opts.connectionGeneration }
+      : null;
+    this.activeOwnership = ownership;
     await this.request("session/prompt", {
       sessionId,
+      ...(ownership ?? {}),
       prompt: text,
       model: opts?.model,
       reasoning_effort: opts?.reasoning_effort,
       history: opts?.history,
+      policy: opts?.policy,
     });
   }
 
-  async cancel(): Promise<void> {
+  async cancel(ownership?: AcpOwnership): Promise<void> {
     if (!this.child) return;
     try {
-      await this.request("session/cancel", {});
+      await Promise.race([this.request("session/cancel", ownership ?? this.activeOwnership ?? {}), new Promise((_,reject)=>setTimeout(()=>reject(new Error("cancel acknowledgement timeout")),2000))]);
     } catch {
-      this.child.kill("SIGTERM");
+      const child=this.child; if(child.pid&&process.platform!=="win32") { try { process.kill(-child.pid,"SIGTERM"); } catch {} } else child.kill("SIGTERM"); if(process.platform==="win32"&&child.pid) execFile("taskkill",["/PID",String(child.pid),"/T","/F"],()=>{});
     }
   }
 
@@ -172,7 +178,7 @@ export class StdioAcpClient implements AcpClient {
       /* ignore */
     }
     try {
-      child.kill("SIGTERM");
+      if(child.pid&&process.platform!=="win32") { try { process.kill(-child.pid,"SIGTERM"); } catch {} } else child.kill("SIGTERM"); if(process.platform==="win32"&&child.pid) execFile("taskkill",["/PID",String(child.pid),"/T","/F"],()=>{});
     } catch {
       /* ignore */
     }
@@ -185,16 +191,18 @@ export class StdioAcpClient implements AcpClient {
   async respondPermission(
     id: string,
     decision: PermissionDecision,
+    ownership?: AcpOwnership,
   ): Promise<void> {
-    await this.request("permission/respond", { id, decision });
+    await this.request("permission/respond", { id, decision, ...(ownership ?? this.activeOwnership ?? {}) });
   }
 
   async respondEdit(
     id: string,
     action: "accept" | "reject",
     sessionId?: string,
+    ownership?: AcpOwnership,
   ): Promise<void> {
-    await this.request("edit/respond", { id, action, sessionId });
+    await this.request("edit/respond", { id, action, sessionId, ...(ownership ?? this.activeOwnership ?? {}) });
   }
 
   private request(
@@ -280,6 +288,9 @@ export class StdioAcpClient implements AcpClient {
 
   private mapNotification(method: string, params: unknown): void {
     const p = (params ?? {}) as Record<string, unknown>;
+    if (this.activeOwnership && (p.runId !== undefined || p.sessionId !== undefined || p.connectionGeneration !== undefined)) {
+      if (p.sessionId !== this.activeOwnership.sessionId || p.runId !== this.activeOwnership.runId || p.connectionGeneration !== this.activeOwnership.connectionGeneration) return;
+    }
     switch (method) {
       case "text_delta":
       case "agent/text_delta": {
@@ -342,6 +353,9 @@ export class StdioAcpClient implements AcpClient {
           status:
             (p.status as "proposed" | "accepted" | "rejected") ?? "proposed",
           id: String(p.id ?? ""),
+          editId: String(p.editId ?? p.id ?? ""),
+          invocationId: p.invocationId != null ? String(p.invocationId) : undefined,
+          toolCallId: p.toolCallId != null ? String(p.toolCallId) : undefined,
         });
         break;
       case "error":

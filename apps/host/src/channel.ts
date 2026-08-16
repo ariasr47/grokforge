@@ -31,6 +31,8 @@ export function channelLabel(ch: Channel = resolveChannel()): string {
 
 /** Isolated app data (config, oauth, logs, connectors, chat sandbox). */
 export function dataDir(ch: Channel = resolveChannel()): string {
+  const override = process.env.GROKFORGE_DATA_DIR?.trim();
+  if (override && path.isAbsolute(override)) return path.resolve(override);
   const base = ch === "dev" ? ".grokforge-dev" : ".grokforge";
   return path.join(os.homedir(), base);
 }

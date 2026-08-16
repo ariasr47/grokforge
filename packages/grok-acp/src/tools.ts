@@ -230,10 +230,14 @@ export async function executeReadTool(
   workspaceRoot: string,
   name: ToolName,
   args: Record<string, unknown>,
+  allowOutside = false,
 ): Promise<string> {
+  const resolveReadPath = (value: string) => allowOutside
+    ? path.isAbsolute(value) ? path.resolve(value) : path.resolve(workspaceRoot, value || ".")
+    : resolveUnderWorkspace(workspaceRoot, value);
   switch (name) {
     case "read_file": {
-      const abs = resolveUnderWorkspace(workspaceRoot, String(args.path ?? ""));
+      const abs = resolveReadPath(String(args.path ?? ""));
       const max = Number(args.max_bytes ?? 100_000);
       const buf = await fs.readFile(abs);
       const rel = relativeToWorkspace(workspaceRoot, abs);
@@ -271,7 +275,7 @@ export async function executeReadTool(
       });
     }
     case "list_dir": {
-      const abs = resolveUnderWorkspace(workspaceRoot, String(args.path ?? "."));
+      const abs = resolveReadPath(String(args.path ?? "."));
       const entries = await fs.readdir(abs, { withFileTypes: true });
       return JSON.stringify({
         path: relativeToWorkspace(workspaceRoot, abs) || ".",
@@ -284,10 +288,7 @@ export async function executeReadTool(
     case "grep": {
       const pattern = String(args.pattern ?? "");
       if (!pattern) throw new Error("pattern required");
-      const searchRoot = resolveUnderWorkspace(
-        workspaceRoot,
-        String(args.path ?? "."),
-      );
+      const searchRoot = resolveReadPath(String(args.path ?? "."));
       const glob = args.glob ? String(args.glob) : undefined;
       const maxMatches = Number(args.max_matches ?? 50);
       let re: RegExp;
@@ -336,13 +337,17 @@ export async function prepareWriteEdit(
   name: "write_file" | "apply_patch",
   args: Record<string, unknown>,
   editId: string,
+  allowOutside = false,
 ): Promise<PendingEdit> {
   const rel = String(args.path ?? "");
-  const abs = resolveUnderWorkspace(workspaceRoot, rel);
+  const abs = allowOutside
+    ? path.isAbsolute(rel) ? path.resolve(rel) : path.resolve(workspaceRoot, rel)
+    : resolveUnderWorkspace(workspaceRoot, rel);
   let previous: string | null = null;
   try {
     previous = await fs.readFile(abs, "utf8");
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     previous = null;
   }
   let next: string;

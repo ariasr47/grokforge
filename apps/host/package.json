@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@grokforge/acp-client": "*",
+    "@grokforge/model-catalog": "*",
     "ws": "^8.18.1"
   },
   "devDependencies": {
