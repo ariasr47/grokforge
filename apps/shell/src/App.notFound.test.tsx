@@ -124,6 +124,37 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
     assert.equal(screen.queryByText("Welcome to Forge"), null);
   });
+
+  it("priorConversations:true never hides a restored owned run with no legacy messages", async () => {
+    resetBrowserState();
+    const partition = "chat:__sandbox__";
+    const sessionId = "restored-session";
+    reloadSessionsFromDisk({
+      byWorkspace: { [partition]: [{ id: sessionId, workspace: partition, title: "Restored run", messages: [], updatedAt: Date.now(), status: "live", subagents: [], open: true }] },
+      activeId: { [partition]: sessionId },
+      pinned: [partition],
+      expanded: [partition],
+    });
+    localStorage.setItem("grokforge.runProjection.v1", JSON.stringify({
+      runs: [{
+        sessionId, runId: "restored-run", connectionGeneration: 1, state: "terminal",
+        acceptedPrompt: "restored prompt", admittedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastEventSeq: 3,
+        policy: { effectiveMode: "review" }, model: { appliedModel: "grok-4.6", selectionProvenance: "inherited" },
+        terminalKind: "answered", finalAnswer: "restored answer", answerVouched: true, failure: null,
+        reasoning: {}, answer: { answer: "restored answer" }, activities: {}, decisions: {}, seenEventSeq: [1, 2, 3], terminalEventSeq: 3,
+      }],
+      cursors: { [sessionId]: 3 },
+    }));
+    const host = createFakeHost({ mode: "chat", hasApiKey: true, workspace: null, priorConversations: true });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByText("Answered"));
+    assert.ok(screen.getByText("restored answer"));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+  });
 });
 
 // GATE Q finding N-6 (2026-08-14) — INTERFACE_CONTRACT.md `priorConversations`

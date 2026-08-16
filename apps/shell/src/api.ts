@@ -1,4 +1,15 @@
 import { callDesktop } from "./desktopBridge";
+import { INHERITED_DEFAULT_MODEL, KNOWN_MODEL_IDS } from "../../../packages/model-catalog/src/index";
+export { INHERITED_DEFAULT_MODEL };
+export const MODEL_PRESETS = [...KNOWN_MODEL_IDS];
+
+export class ApiError extends Error {
+  status: number; code: string; runId: string | null; activeRunId?: string; activity?: unknown;
+  constructor(status: number, body: { error?: string; code?: string; runId?: string | null; activeRunId?: string; activity?: unknown }) {
+    super(body.error || `Host request failed (${status})`); this.name = "ApiError";
+    this.status = status; this.code = body.code || "unknown"; this.runId = body.runId ?? null; this.activeRunId = body.activeRunId; this.activity = body.activity;
+  }
+}
 
 export function isTauri(): boolean {
   if (typeof window === "undefined") return false;
@@ -199,6 +210,23 @@ export interface PublicState {
    *  (SPEC §2.8, AC12b/AC12d/AC12e). Absent on older hosts -> undefined,
    *  treated as "unknown" (never as a false first-run signal) by callers. */
   priorConversations?: boolean;
+  permissionPolicy?: {
+    status: "confirmed";
+    workspace: string;
+    storedMode: "review" | "trusted_workspace" | null;
+    effectiveMode: "review" | "trusted_workspace";
+    source: "default" | "saved" | "fallback";
+    revision: string;
+    fallbackReason: "missing" | "invalid" | "unreadable" | null;
+    savedForWorkspace: boolean;
+  };
+  bypassPermissions?: {
+    unlocked: boolean;
+    available: boolean;
+    activeForSession: boolean;
+    blockedReason: "managed_disabled" | "local_attestation_required" | "unlock_required" | null;
+    confirmationVersion: number | null;
+  };
   shellCapability: ShellCapabilityView;
 }
 
@@ -270,6 +298,7 @@ export interface AgentDescriptor {
 }
 
 export type ServerEvent =
+  | import("./runReducer").RunEventEnvelope
   | { type: "state"; state: PublicState }
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
@@ -394,9 +423,7 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
       throw new Error(`Invalid JSON from host (${path}): ${text.slice(0, 120)}`);
     }
   }
-  if (!res.ok) {
-    throw new Error(body?.error || `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw new ApiError(res.status, body ?? {});
   return (body ?? ({} as T)) as T;
 }
 
@@ -414,6 +441,15 @@ export const api = {
       pid?: number;
     }>("/api/health"),
   state: () => json<PublicState>("/api/state"),
+  runState: (runId: string, sessionId: string, after = 0) => json<{ run: import("./runReducer").RunSnapshot; events: import("./runReducer").RunEventEnvelope[] }>(`/api/runs/${encodeURIComponent(runId)}?sessionId=${encodeURIComponent(sessionId)}&after=${after}`),
+  promptRun: (body: { sessionId: string; text: string; effort?: EffortLevel; history?: Array<{ role: "user" | "assistant" | "system"; content: string }> }) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/prompt", { method: "POST", body: JSON.stringify(body) }),
+  cancelRun: (sessionId: string, runId: string) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/cancel", { method: "POST", body: JSON.stringify({ sessionId, runId }) }),
+  workspacePolicy: (workspace: string) => json<{ policy: Record<string, unknown> }>(`/api/workspace-policy?workspace=${encodeURIComponent(workspace)}`),
+  saveWorkspacePolicy: (body: { sessionId: string; workspace: string; mode: "review" | "trusted_workspace" }) => json<{ policy: Record<string, unknown> }>("/api/workspace-policy", { method: "POST", body: JSON.stringify(body) }),
+  sessionPermissionMode: (body: { sessionId: string; mode: "workspace" | "bypass_permissions"; activationToken?: string }) => json<{ sessionId: string; effectivePermissionMode: string; bypassPermissions: Record<string, unknown> }>("/api/session-permission-mode", { method: "POST", body: JSON.stringify(body) }),
+  runPermission: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; decision: "allow_once" | "allow_session" | "deny" }) => json<{ ok: boolean }>("/api/permission", { method: "POST", body: JSON.stringify(body) }),
+  runDiff: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; editId: string; action: "accept" | "reject" }) => json<{ ok: boolean }>("/api/diff", { method: "POST", body: JSON.stringify(body) }),
+  editRecovery: (body: { sessionId: string; runId: string; editId: string }) => json<{ ok: boolean; activity: unknown }>("/api/edit-recovery", { method: "POST", body: JSON.stringify(body) }),
   workspaceFiles: () => json<{ files: string[] }>("/api/workspace/files"),
   workspaceRead: (path: string) =>
     json<{ path: string; content: string; truncated?: boolean }>(
@@ -690,6 +726,7 @@ export class HostSocket {
   private closed = false;
   private onStatus?: (connected: boolean) => void;
   private attempt = 0;
+  private cursors: Array<{ sessionId: string; runId: string; afterEventSeq: number }> = [];
 
   constructor(opts?: { onStatus?: (connected: boolean) => void }) {
     this.onStatus = opts?.onStatus;
@@ -718,6 +755,7 @@ export class HostSocket {
     this.ws = socket;
     socket.onopen = () => {
       this.attempt = 0;
+      if (this.cursors.length) socket.send(JSON.stringify({ type: "resume_runs", cursors: this.cursors }));
       this.onStatus?.(true);
     };
     socket.onmessage = (m) => {
@@ -736,6 +774,11 @@ export class HostSocket {
     socket.onerror = () => {
       this.onStatus?.(false);
     };
+  }
+
+  resume(cursors: Array<{ sessionId: string; runId: string; afterEventSeq: number }>): void {
+    this.cursors = cursors;
+    this.send({ type: "resume_runs", cursors });
   }
 
   private detachSocket(): void {

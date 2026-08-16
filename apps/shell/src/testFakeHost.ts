@@ -33,18 +33,27 @@ export function createFakeDesktopBridge(script: {
   ensure_host?: DesktopHostStatus[];
   restart_host?: DesktopHostStatus[];
   host_status?: DesktopHostStatus[];
-}): { bridge: <T>(cmd: DesktopCommand) => Promise<T>; callsTo: (cmd: DesktopCommand) => number } {
+  [key: string]: DesktopHostStatus[] | undefined;
+}): { bridge: <T>(cmd: DesktopCommand, args?: Record<string, unknown>) => Promise<T>; callsTo: (cmd: DesktopCommand) => number } {
   const cursors: Record<DesktopCommand, number> = {
     ensure_host: 0,
     restart_host: 0,
     host_status: 0,
+    get_bypass_permissions_unlock: 0,
+    unlock_bypass_permissions: 0,
+    lock_bypass_permissions: 0,
+    authorize_bypass_permissions_activation: 0,
   };
   const counts: Record<DesktopCommand, number> = {
     ensure_host: 0,
     restart_host: 0,
     host_status: 0,
+    get_bypass_permissions_unlock: 0,
+    unlock_bypass_permissions: 0,
+    lock_bypass_permissions: 0,
+    authorize_bypass_permissions_activation: 0,
   };
-  const bridge = async <T>(cmd: DesktopCommand): Promise<T> => {
+  const bridge = async <T>(cmd: DesktopCommand, _args?: Record<string, unknown>): Promise<T> => {
     counts[cmd] += 1;
     const list = script[cmd] ?? [];
     const idx = Math.min(cursors[cmd], list.length - 1);
@@ -104,7 +113,7 @@ const BASE_STATE: PublicState = {
   authMode: "sub_pool",
   hasApiKey: true,
   authSource: "oauth",
-  model: "grok-4",
+  model: "grok-4.6",
   connected: true,
   busy: false,
   sessionId: null,
@@ -116,6 +125,8 @@ const BASE_STATE: PublicState = {
   chatRoot: "C:\\Users\\qa\\.grokforge\\chat-sandbox",
   // INTERFACE_CONTRACT.md priorConversations — default false (fresh host).
   priorConversations: false,
+  permissionPolicy: { status: "confirmed", workspace: "", storedMode: null, effectiveMode: "review", source: "default", revision: "default", fallbackReason: null, savedForWorkspace: false },
+  bypassPermissions: { unlocked: false, available: false, activeForSession: false, blockedReason: "unlock_required", confirmationVersion: null },
 };
 
 export interface FakeHostOptions {

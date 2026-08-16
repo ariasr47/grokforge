@@ -105,7 +105,7 @@ export function RunStatusBar({
       </div>
       {busy && onCancel && (
         <button type="button" className="btn" onClick={onCancel}>
-          Cancel
+          Cancel run
         </button>
       )}
     </div>

@@ -6,6 +6,7 @@ export interface StoredMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  projectedRunId?: string;
   toolMeta?: {
     ok?: boolean;
     name?: string;

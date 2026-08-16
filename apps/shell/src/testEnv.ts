@@ -4,6 +4,12 @@
 // Safe to load ahead of plain unit test files too (only defines globals that
 // are missing / configurable; never throws on Node's own getter-only globals).
 import { JSDOM } from "jsdom";
+import React from "react";
+
+// tsx's node loader can lower JSX test modules using the classic runtime even
+// when the project tsconfig selects react-jsx. Keep the test DOM equivalent to
+// the browser bundle by exposing the runtime binding before tests import JSX.
+Object.defineProperty(globalThis, "React", { value: React, configurable: true, writable: true });
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",

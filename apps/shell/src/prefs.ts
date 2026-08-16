@@ -1,7 +1,7 @@
 const KEY = "grokforge.prefs.v1";
 
 export type Density = "comfortable" | "compact";
-/** Dark product theme is Aeon Continuum; legacy "voidglass" migrates to "aeon". */
+/** Voidglass is the locked dark default; Aeon remains an explicit optional theme. */
 export type ThemeMode = "aeon" | "light" | "voidglass";
 export type MotionMode = "full" | "calm";
 export type ProductModePref = "chat" | "code";
@@ -23,7 +23,7 @@ export interface Prefs {
 
 const defaults: Prefs = {
   density: "comfortable",
-  theme: "aeon",
+  theme: "voidglass",
   motion: "full",
   lastMode: "chat",
   effort: "auto",
@@ -33,9 +33,8 @@ const defaults: Prefs = {
 };
 
 function normalize(p: Prefs): Prefs {
-  // Migrate pre-Aeon dark theme id
-  if (p.theme === "voidglass" || (p.theme as string) === "dark") {
-    p = { ...p, theme: "aeon" };
+  if ((p.theme as string) === "dark") {
+    p = { ...p, theme: "voidglass" };
   }
   if (p.motion !== "calm" && p.motion !== "full") {
     p = { ...p, motion: "full" };
@@ -66,7 +65,7 @@ export function patchPrefs(patch: Partial<Prefs>): Prefs {
 
 export function applyPrefsToDom(p: Prefs = loadPrefs()): void {
   const root = document.documentElement;
-  const theme = p.theme === "voidglass" ? "aeon" : p.theme;
+  const theme = p.theme;
   root.dataset.theme = theme;
   root.dataset.density = p.density;
   root.dataset.motion = p.motion;
@@ -75,5 +74,5 @@ export function applyPrefsToDom(p: Prefs = loadPrefs()): void {
 
 export function themeLabel(theme: ThemeMode): string {
   if (theme === "light") return "Light";
-  return "Aeon";
+  return theme === "aeon" ? "Aeon" : "Voidglass";
 }

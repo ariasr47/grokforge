@@ -80,7 +80,14 @@ import {
 } from "./sessionIO";
 import { BrandMark } from "./BrandMark";
 import { ConnectorsPanel } from "./ConnectorsPanel";
-import { appChannel, channelBadge, hostPort } from "./api";
+import {
+  appChannel,
+  channelBadge,
+  hostPort,
+  INHERITED_DEFAULT_MODEL,
+  MODEL_PRESETS,
+} from "./api";
+import { installHealthPollTestScheduler } from "./healthPollTestClock";
 import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
 import { useToast } from "./Toast";
 import {
@@ -101,16 +108,13 @@ import {
   transcriptToMarkdown,
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
+import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import { RunSurface } from "./RunSurface";
+import { PermissionPolicyControl } from "./PermissionPolicyControl";
+import { BypassPermissionsControl } from "./BypassPermissionsControl";
 
 type View = "chat" | "settings";
 type BootPhase = "booting" | "ready" | "error";
-
-const MODEL_PRESETS = [
-  "grok-4",
-  "grok-4.5",
-  "grok-3",
-  "grok-2-latest",
-];
 
 interface OAuthPending {
   user_code: string;
@@ -183,10 +187,26 @@ export function App() {
   const [hostOk, setHostOk] = useState(false);
   const [wsOk, setWsOk] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [runProjection, setRunProjection] = useState<RunProjection>(() => {
+    try { return restoreRunProjection(JSON.parse(localStorage.getItem("grokforge.runProjection.v1") || "null")); } catch { return initialRunProjection(); }
+  });
+  // Reconnect reconciliation reads the latest durable projection without
+  // changing the HostSocket effect's identity (which would create a second
+  // transport). These refs are intentionally updated on every render so an
+  // onopen callback never closes over a stale run cursor.
+  const runProjectionRef = useRef(runProjection);
+  runProjectionRef.current = runProjection;
+  const reconcileRunsInFlightRef = useRef<Promise<{ ok: boolean; hasNonterminal: boolean }> | null>(null);
+  const socketRef = useRef<HostSocket | null>(null);
+  // Keep the transport subscription stable while the render callback evolves.
+  // Recreating HostSocket on every projection/toast update can create an
+  // unbounded reconnect chain during a degraded engine, exhausting the test
+  // process (and flashing duplicate sockets in production).
+  const onServerEventRef = useRef<(ev: ServerEvent) => void>(() => undefined);
   const [draft, setDraft] = useState("");
   const [pathInput, setPathInput] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
-  const [modelDraft, setModelDraft] = useState("grok-4");
+  const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
   const [shellAllowlist, setShellAllowlist] = useState(true);
   const [permissions, setPermissions] = useState<PermissionReq[]>([]);
   const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
@@ -235,6 +255,9 @@ export function App() {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const streamIdRef = useRef<string | null>(null);
+  const normalizedRunIdRef = useRef<string | null>(null);
+  const pendingPromptMessageIdRef = useRef<string | null>(null);
+  const pendingPromptSessionIdRef = useRef<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const openInFlightRef = useRef<string | null>(null);
@@ -255,6 +278,12 @@ export function App() {
     stateRef.current = state;
   }, [state]);
 
+  // Run identity/cursors outlive a WebView reload. Journal replay below fills
+  // any missing owned events; this projection is only a durable UI cache.
+  useEffect(() => {
+    try { localStorage.setItem("grokforge.runProjection.v1", JSON.stringify(persistableRunProjection(runProjection))); } catch { /* storage is best effort */ }
+  }, [runProjection]);
+
   useEffect(() => {
     return onSessionSaveError((err) => {
       if (err) toast.push(`Session save failed: ${err}`, "error");
@@ -271,6 +300,9 @@ export function App() {
     streamBufRef.current?.reset();
     streamIdRef.current = null;
     thinkingIdRef.current = null;
+    normalizedRunIdRef.current = null;
+    pendingPromptMessageIdRef.current = null;
+    pendingPromptSessionIdRef.current = null;
   }, []);
 
   /** Start accepting stream events for a new user turn. */
@@ -286,6 +318,21 @@ export function App() {
     streamBufRef.current?.reset();
     streamIdRef.current = null;
     thinkingIdRef.current = null;
+    normalizedRunIdRef.current = null;
+    pendingPromptMessageIdRef.current = null;
+    pendingPromptSessionIdRef.current = null;
+  }, []);
+
+  const bindNormalizedRun = useCallback((runId: string, ownerSessionId: string) => {
+    normalizedRunIdRef.current = runId;
+    if (pendingPromptSessionIdRef.current !== ownerSessionId) return;
+    const promptMessageId = pendingPromptMessageIdRef.current;
+    if (!promptMessageId) return;
+    setMessages((prev) => prev.map((message) =>
+      message.id === promptMessageId
+        ? { ...message, projectedRunId: runId }
+        : message,
+    ));
   }, []);
 
   // Batched stream flushes → single setMessages per frame
@@ -303,6 +350,7 @@ export function App() {
             next[idx] = {
               ...cur,
               content: (cur.content || "") + text,
+              projectedRunId: cur.projectedRunId ?? normalizedRunIdRef.current ?? undefined,
               streaming: true,
             };
             return next;
@@ -316,6 +364,7 @@ export function App() {
               id: sid,
               role: "assistant",
               content: text,
+              projectedRunId: normalizedRunIdRef.current ?? undefined,
               streaming: true,
             },
           ];
@@ -331,6 +380,7 @@ export function App() {
               ? {
                   ...m,
                   content: (m.content || "") + text,
+                  projectedRunId: m.projectedRunId ?? normalizedRunIdRef.current ?? undefined,
                   streaming: true,
                 }
               : m,
@@ -343,7 +393,10 @@ export function App() {
         const trivial = /^[.\s…·•]+$/.test(text);
         if (
           lastAsst &&
-          (busyRef.current || trivial) &&
+          (trivial ||
+            (busyRef.current &&
+              Boolean(normalizedRunIdRef.current) &&
+              lastAsst.projectedRunId === normalizedRunIdRef.current)) &&
           (lastAsst.content?.trim() || lastAsst.thinking?.trim())
         ) {
           if (trivial && lastAsst.content?.trim()) {
@@ -355,6 +408,7 @@ export function App() {
               ? {
                   ...m,
                   content: (m.content || "") + text,
+                  projectedRunId: m.projectedRunId ?? normalizedRunIdRef.current ?? undefined,
                   streaming: Boolean(busyRef.current),
                 }
               : m,
@@ -364,7 +418,13 @@ export function App() {
         streamIdRef.current = id;
         return [
           ...prev,
-          { id, role: "assistant", content: text, streaming: true },
+          {
+            id,
+            role: "assistant",
+            content: text,
+            projectedRunId: normalizedRunIdRef.current ?? undefined,
+            streaming: true,
+          },
         ];
       });
     });
@@ -615,6 +675,24 @@ export function App() {
   }, []);
 
   const onServerEvent = useCallback((ev: ServerEvent) => {
+    // Contract v1 run envelopes are reduced by owner identity and eventSeq;
+    // legacy transcript events below remain for older hosts during migration.
+    if (typeof (ev as unknown as { schemaVersion?: number }).schemaVersion === "number" && "eventSeq" in (ev as object)) {
+      const runEvent = ev as unknown as RunEventEnvelope;
+      if (runEvent.payload.kind === "run_started") {
+        bindNormalizedRun(runEvent.runId, runEvent.sessionId);
+      }
+      setRunProjection((prev) => reduceRunEvent(prev, runEvent));
+      if (runEvent.payload.kind === "run_terminal") {
+        setRunStartedAt(null);
+        setRunPhase(null);
+        setRunPhaseDetail(null);
+        setAwaitingNextTurn(true);
+      } else if (runEvent.payload.kind === "run_state") {
+        setRunPhaseDetail(runEvent.payload.state === "recovering" ? "Recovering run…" : runEvent.payload.state === "cancelling" ? "Ending run…" : null);
+      }
+      return;
+    }
     if (ev.type === "state") {
       applyState(ev.state);
       setModelDraft(ev.state.model);
@@ -672,6 +750,7 @@ export function App() {
             next[idx] = {
               ...cur,
               thinking: (cur.thinking || "") + ev.text,
+              projectedRunId: cur.projectedRunId ?? normalizedRunIdRef.current ?? undefined,
               streaming: true,
             };
             return next;
@@ -684,6 +763,7 @@ export function App() {
               role: "assistant",
               content: "",
               thinking: ev.text,
+              projectedRunId: normalizedRunIdRef.current ?? undefined,
               streaming: true,
             },
           ];
@@ -700,6 +780,7 @@ export function App() {
               ? {
                   ...m,
                   thinking: (m.thinking || "") + ev.text,
+                  projectedRunId: m.projectedRunId ?? normalizedRunIdRef.current ?? undefined,
                   streaming: true,
                 }
               : m,
@@ -715,6 +796,7 @@ export function App() {
             role: "assistant",
             content: "",
             thinking: ev.text,
+            projectedRunId: normalizedRunIdRef.current ?? undefined,
             streaming: true,
           },
         ];
@@ -1037,42 +1119,6 @@ export function App() {
             }
             break;
           }
-          // Did this run produce any assistant text?
-          const hasAssistantText = settled.some(
-            (m) => m.role === "assistant" && m.content?.trim(),
-          );
-          if (
-            !hasAssistantText &&
-            (reason === "stop" || reason === "error" || reason === "agent_exited")
-          ) {
-            // Keep thinking-only bubble if present; still surface a visible answer path
-            const hasThinking = settled.some(
-              (m) => m.role === "assistant" && m.thinking?.trim(),
-            );
-            if (hasThinking) {
-              // Promote thinking into content if model never sent final text
-              return settled.map((m) =>
-                m.role === "assistant" && m.thinking?.trim() && !m.content?.trim()
-                  ? {
-                      ...m,
-                      content:
-                        "*(Model returned reasoning only — no final answer text.)*\n\n" +
-                        m.thinking,
-                      streaming: false,
-                    }
-                  : m,
-              );
-            }
-            return [
-              ...settled,
-              {
-                id: uid(),
-                role: "system",
-                content:
-                  "Grok finished but no answer text was received. Use Retry on your last message.",
-              },
-            ];
-          }
           return settled;
         });
         if (reason === "error" || reason === "agent_exited") {
@@ -1097,7 +1143,11 @@ export function App() {
       toolFailCountRef.current = 0;
       return;
     }
-  }, [applyState, markDisconnectedActivity, reportError, stampActivity, toast]);
+  }, [applyState, bindNormalizedRun, markDisconnectedActivity, reportError, stampActivity, toast]);
+
+  useEffect(() => {
+    onServerEventRef.current = onServerEvent;
+  }, [onServerEvent]);
 
   const clearBootTimers = useCallback(() => {
     if (slowStartTimerRef.current) clearTimeout(slowStartTimerRef.current);
@@ -1197,10 +1247,25 @@ export function App() {
     const sock = new HostSocket({
       onStatus: (c) => {
         setWsOk(c);
-        if (c) {
+      if (c) {
           healthFailStreakRef.current = 0;
           setHealthFailStreak(0);
           setHostOk(true);
+          // Transport liveness is not run liveness. Reconcile every cached
+          // owned run from the authoritative journal before clearing the
+          // reconnect/unknown chrome; failures remain visible and retry on
+          // the next transport reopen.
+          void reconcileOwnedRuns().then(({ ok, hasNonterminal }) => {
+            if (!ok) return;
+            if (!hasNonterminal) {
+              setRunStartedAt(null);
+              setRunPhase(null);
+              setRunPhaseDetail(null);
+              setRunFooter(null);
+              setAwaitingNextTurn(true);
+              cancelInFlightRef.current = false;
+            }
+          });
           return;
         }
         // The transport status is authoritative for the live activity run:
@@ -1211,9 +1276,9 @@ export function App() {
         // Surface interruption clearly if a run was in flight.
         if (busyRef.current) {
           setRunFooter(
-            "Connection interrupted while running — reconnecting. Your run was not intentionally cancelled.",
+            "Reconnecting — Connection lost. Forge is reconnecting. Your prompt and received output are preserved. Run status will be confirmed when the connection returns.",
           );
-          setRunPhaseDetail("Reconnecting… (still working if host is up)");
+          setRunPhaseDetail("Reconnecting");
           toast.push(
             "Connection blip while Grok was running — reconnecting",
             "info",
@@ -1221,33 +1286,107 @@ export function App() {
         }
       },
     });
-    sock.on(onServerEvent);
+    socketRef.current = sock;
+    sock.on((ev) => onServerEventRef.current(ev));
     sock.connect();
-    // F5 — debounced engine-death detection (AC-U10): the chip may react
-    // after a single failed poll, but the band/banner/composer-disabled
-    // chrome (all gated on `hostOk`) only flips after TWO consecutive fails,
-    // so one blip never flashes scary copy. Recovery (any single success)
-    // clears both immediately.
-    const healthTimer = setInterval(() => {
-      void api
-        .health()
-        .then(() => {
-          healthFailStreakRef.current = 0;
-          setHealthFailStreak(0);
-          setHostOk(true);
-        })
-        .catch(() => {
-          healthFailStreakRef.current += 1;
-          const streak = healthFailStreakRef.current;
-          setHealthFailStreak(streak);
-          if (streak >= 2) setHostOk(false);
-        });
-    }, 4000);
     return () => {
-      clearInterval(healthTimer);
       sock.close();
+      if (socketRef.current === sock) socketRef.current = null;
     };
-  }, [boot, markDisconnectedActivity, onServerEvent, toast]);
+  }, [boot, markDisconnectedActivity]);
+
+  const reconcileOwnedRuns = useCallback(async (): Promise<{ ok: boolean; hasNonterminal: boolean }> => {
+    if (reconcileRunsInFlightRef.current) return reconcileRunsInFlightRef.current;
+    const task = (async () => {
+      const runs = runProjectionRef.current.runOrder
+        .map((id) => runProjectionRef.current.runsById[id])
+        .filter((run): run is NonNullable<typeof run> => Boolean(run));
+      if (!runs.length) return { ok: true, hasNonterminal: false };
+      const results = await Promise.allSettled(runs.map(async (run) => {
+        // GET is the authority after a host replacement. Use the reducer's
+        // cursor for idempotent replay; never infer a terminal from transport
+        // liveness and never recreate the socket from this projection update.
+        const replay = await api.runState(run.runId, run.sessionId, run.lastEventSeq);
+        setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+        return replay.run;
+      }));
+      const ok = results.every((result) => result.status === "fulfilled");
+      const hasNonterminal = results.some((result) =>
+        result.status === "fulfilled" && result.value.state !== "terminal",
+      );
+      return { ok, hasNonterminal };
+    })();
+    reconcileRunsInFlightRef.current = task;
+    try { return await task; }
+    finally {
+      if (reconcileRunsInFlightRef.current === task) reconcileRunsInFlightRef.current = null;
+    }
+  }, []);
+
+  // Normalized terminal truth owns the legacy run chrome regardless of which
+  // transport delivered it (live WS, resume, admission replay, or health
+  // reconciliation). This effect runs only after React has committed the
+  // terminal projection, so it cannot observe the stale pre-reducer snapshot.
+  useEffect(() => {
+    const ownedRuns = runProjection.runOrder
+      .map((id) => runProjection.runsById[id])
+      .filter((run): run is NonNullable<typeof run> => Boolean(run && run.sessionId === sessionId));
+    if (!ownedRuns.length || ownedRuns.some((run) => run.state !== "terminal")) return;
+    setRunStartedAt(null);
+    setRunPhase(null);
+    setRunPhaseDetail(null);
+    setRunFooter(null);
+    setAwaitingNextTurn(true);
+    cancelInFlightRef.current = false;
+  }, [runProjection, sessionId]);
+
+  // F5 — liveness is independent from socket lifecycle. Keeping this poll in
+  // its own effect prevents a failed probe's state update from tearing down and
+  // recreating the WebSocket (which can otherwise amplify reconnect work).
+  useEffect(() => {
+    if (boot !== "ready") return;
+    const healthCadence = 4000;
+    const pollHealth = () => { void api.health().then(() => {
+      healthFailStreakRef.current = 0;
+      setHealthFailStreak(0);
+      setHostOk(true);
+      // A healthy transport does not prove a run outcome. Poll only runs that
+      // remain nonterminal in the owned projection, and merge journal truth
+      // idempotently. Hours-long live runs remain live; missed terminals are
+      // recovered without requiring a reload or a second prompt.
+      const hasOwnedNonterminal = runProjectionRef.current.runOrder.some((id) => {
+        const run = runProjectionRef.current.runsById[id];
+        return Boolean(run && run.state !== "terminal");
+      });
+      if (hasOwnedNonterminal) void reconcileOwnedRuns();
+    }).catch(() => { healthFailStreakRef.current += 1; const streak = healthFailStreakRef.current; setHealthFailStreak(streak); if (streak >= 2) setHostOk(false); }); };
+    const testCleanup = installHealthPollTestScheduler(pollHealth);
+    const healthTimer = testCleanup ? undefined : setInterval(pollHealth, healthCadence);
+    return () => { if (healthTimer !== undefined) clearInterval(healthTimer); testCleanup?.(); };
+  }, [boot]);
+
+  // Reconnect/replay is driven by the reducer's durable per-session cursors.
+  // The socket never guesses a cursor and never replays another session.
+  useEffect(() => {
+    const cursors = runProjection.runOrder
+      .map((runId) => runProjection.runsById[runId])
+      .filter((run): run is NonNullable<typeof run> => Boolean(run))
+      .map((run) => ({ sessionId: run.sessionId, runId: run.runId, afterEventSeq: run.lastEventSeq }));
+    socketRef.current?.resume(cursors);
+  }, [runProjection]);
+
+  // Hydrated runs are reconciled from the host journal as soon as the shell is
+  // ready. This closes the reload gap where localStorage has identity/cursor
+  // but the WebSocket subscription was not yet attached.
+  useEffect(() => {
+    if (boot !== "ready") return;
+    const runs = runProjection.runOrder.map((id) => runProjection.runsById[id]).filter(Boolean);
+    for (const run of runs) {
+      void api.runState(run.runId, run.sessionId, run.lastEventSeq).then((replay) => {
+        setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+      }).catch(() => undefined);
+    }
+  }, [boot]);
 
   const refreshFiles = useCallback(async () => {
     try {
@@ -1269,7 +1408,24 @@ export function App() {
     [launchStatus],
   );
   const chip = useMemo(() => statusChip(state), [state]);
-  const busy = Boolean(state?.busy);
+  const activeRun = useMemo(() => runProjection.runOrder
+    .map((id) => runProjection.runsById[id])
+    .find((run) => run?.sessionId === sessionId && run.state !== "terminal") ?? null,
+    [runProjection, sessionId]);
+  const projectedRunIds = useMemo(() => new Set(
+    runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId),
+  ), [runProjection, sessionId]);
+  const visibleMessages = useMemo(
+    () => messages.filter((message) =>
+      !message.projectedRunId || !projectedRunIds.has(message.projectedRunId),
+    ),
+    [messages, projectedRunIds],
+  );
+  const normalizedRunVisible = projectedRunIds.size > 0;
+  // Run ownership is local to the active client session. The host's legacy
+  // global `busy` bit is intentionally not a send/cancel authority: another
+  // session may be running while this one remains usable.
+  const busy = Boolean(activeRun) || Boolean(runStartedAt);
   busyRef.current = busy;
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
@@ -1307,7 +1463,17 @@ export function App() {
       if (mode === productMode) return;
       setModeSwitching(true);
       try {
-        if (busy) await api.cancel().catch(() => undefined);
+        // The authoritative path is the session-owned run. During the legacy
+        // boot/migration window a host may report busy before the first
+        // run_started envelope reaches the shell; cancel that local host run
+        // only as a compatibility fallback for a mode transition. This does
+        // not participate in Send/cancel admission and must never be used for
+        // switching between independent sessions.
+        if (activeRun && sessionId) {
+          await api.cancelRun(sessionId, activeRun.runId).catch(() => undefined);
+        } else if (state?.busy) {
+          await api.cancel().catch(() => undefined);
+        }
         // Persist current transcript into current partition before host mode flip
         if (sessionId) {
           const msgs = messagesRef.current
@@ -1316,6 +1482,7 @@ export function App() {
               id: m.id,
               role: m.role,
               content: m.content,
+              projectedRunId: m.projectedRunId,
               toolMeta: m.toolMeta,
             }));
           saveSessionMessages(sessionPartition, sessionId, msgs);
@@ -1341,6 +1508,7 @@ export function App() {
             id: m.id,
             role: m.role,
             content: m.content,
+            projectedRunId: m.projectedRunId,
             toolMeta: m.toolMeta,
           })),
         );
@@ -1357,8 +1525,10 @@ export function App() {
       productMode,
       modeSwitching,
       busy,
+      state?.busy,
       reportError,
       sessionId,
+      activeRun,
       sessionPartition,
       discardTranscriptStream,
     ],
@@ -1380,6 +1550,7 @@ export function App() {
   useEffect(() => {
     if (boot !== "ready") return;
     if (productMode !== "chat") return;
+    if (!state) return;
     if (sessionId) return;
     const active = ensureActiveSession(sessionPartition, null);
     setSessionId(active.id);
@@ -1389,10 +1560,22 @@ export function App() {
         id: m.id,
         role: m.role,
         content: m.content,
+        projectedRunId: m.projectedRunId,
         toolMeta: m.toolMeta,
       })),
     );
-  }, [boot, productMode, sessionId, sessionPartition]);
+  }, [boot, productMode, sessionId, sessionPartition, state]);
+
+  // Code sessions must be initialized when the host restores an existing
+  // workspace too; otherwise the Send button can appear enabled while
+  // sendText correctly refuses to dispatch without an owned session.
+  useEffect(() => {
+    if (boot !== "ready" || productMode !== "code" || sessionId || !state?.workspace) return;
+    const active = ensureActiveSession(sessionPartition, null);
+    setSessionId(active.id);
+    setSessionList(listSessions(sessionPartition));
+    setMessages(active.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, projectedRunId: m.projectedRunId, toolMeta: m.toolMeta })));
+  }, [boot, productMode, sessionId, state?.workspace, sessionPartition]);
 
   const setEffortUi = useCallback(
     async (effort: EffortLevel) => {
@@ -1412,10 +1595,14 @@ export function App() {
     if (productMode === "code" && !state?.workspace)
       return "Open a project folder first";
     if (!state?.hasApiKey) return "Sign in or add an API key in Settings";
-    if (busy) return "Agent is running — wait or Cancel";
+    if (runProjection.runOrder.some((id) => {
+      const run = runProjection.runsById[id];
+      return run?.sessionId === sessionId && run.state !== "terminal";
+    })) return "A run is in progress";
+    if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
     if (!draft.trim()) return "Type a message to send";
     return null;
-  }, [connected, productMode, state?.workspace, state?.hasApiKey, busy, draft]);
+  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, runProjection, sessionId, draft]);
   const overview = useMemo(
     () =>
       computeOverview(
@@ -1555,6 +1742,7 @@ export function App() {
           id: m.id,
           role: m.role,
           content: m.content,
+          projectedRunId: m.projectedRunId,
           toolMeta: m.toolMeta,
         })),
       );
@@ -1587,6 +1775,7 @@ export function App() {
           id: m.id,
           role: m.role,
           content: m.content,
+          projectedRunId: m.projectedRunId,
           toolMeta: m.toolMeta,
         }));
       const firstUser = msgs.find((m) => m.role === "user")?.content.slice(0, 48);
@@ -1639,6 +1828,7 @@ export function App() {
           id: m.id,
           role: m.role,
           content: m.content,
+          projectedRunId: m.projectedRunId,
           toolMeta: m.toolMeta,
         })),
       );
@@ -1789,6 +1979,7 @@ export function App() {
           id: m.id,
           role: m.role,
           content: m.content,
+          projectedRunId: m.projectedRunId,
           toolMeta: m.toolMeta,
         })),
       );
@@ -1811,6 +2002,7 @@ export function App() {
           id: m.id,
           role: m.role,
           content: m.content,
+          projectedRunId: m.projectedRunId,
           toolMeta: m.toolMeta,
         })),
       );
@@ -1959,6 +2151,7 @@ export function App() {
               id: m.id,
               role: m.role,
               content: m.content,
+              projectedRunId: m.projectedRunId,
               toolMeta: m.toolMeta,
             })),
           );
@@ -1980,13 +2173,47 @@ export function App() {
     setRunPhaseDetail("Cancelling…");
     setRunFooter("Cancelling…");
     toast.push("Cancel requested", "info");
-    void api
-      .cancel()
+    const active = runProjection.runOrder
+      .map((id) => runProjection.runsById[id])
+      .find((run) => run?.sessionId === sessionId && run.state !== "terminal");
+    const cancelRequest = active && sessionId
+      ? api.cancelRun(sessionId, active.runId)
+      : api.cancel();
+    void cancelRequest
+      .then(async (result) => {
+        if (active && sessionId && "run" in result && result.run) {
+          setRunProjection((prev) => mergeRunSnapshot(prev, result.run));
+          try {
+            const replay = await api.runState(active.runId, sessionId, 0);
+            setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+            if (replay.run.state === "terminal") { setRunStartedAt(null); setRunPhase(null); setRunPhaseDetail(null); setRunFooter(null); setAwaitingNextTurn(true); cancelInFlightRef.current = false; }
+          } catch { /* socket replay remains available */ }
+        }
+      })
       .catch((e) => {
         cancelInFlightRef.current = false;
+        // A fast run can terminalize between discovering it and POST /cancel.
+        // 409 run_terminal is a reconciliation signal, never a stale
+        // cancelling state. Fetch the owned journal and project its terminal.
+        if (active && sessionId && e?.status === 409 && e?.code === "run_terminal") {
+          void api.runState(active.runId, sessionId, 0)
+            .then((replay) => {
+              setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+              if (replay.run.state === "terminal") {
+                setRunStartedAt(null);
+                setRunPhase(null);
+                setRunPhaseDetail(null);
+                setRunFooter(null);
+                setAwaitingNextTurn(true);
+                cancelInFlightRef.current = false;
+              }
+            })
+            .catch((reconcileError) => reportError(reconcileError instanceof Error ? reconcileError.message : String(reconcileError)));
+          return;
+        }
         reportError(e instanceof Error ? e.message : String(e));
       });
-  }, [toast, reportError]);
+  }, [toast, reportError, runProjection, sessionId]);
 
   const sendText = useCallback(
     async (
@@ -1994,12 +2221,17 @@ export function App() {
       opts?: { skipUserBubble?: boolean; stripTrailingAssistant?: boolean },
     ) => {
       const text = raw.trim();
-      if (!text || busyRef.current || !connected) return;
+      const ownedRunActive = runProjection.runOrder.some((id) => {
+        const run = runProjection.runsById[id];
+        return run?.sessionId === sessionId && run.state !== "terminal";
+      });
+      if (!text || ownedRunActive || !connected || !sessionId) return;
       // F8 / AC6 — before any credential is stored, no message is sent and
       // no unlabeled provider error appears; the composer's disabled-reason
       // chip is the only signal, so a bypass via Enter (which does not read
       // the disabled attribute) must be refused here too.
       if (!state?.hasApiKey) return;
+      if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return;
       const mode = state?.mode === "code" ? "code" : "chat";
       if (mode === "code" && !state?.workspace) {
         reportError("Open a project folder first — use Open folder…", {
@@ -2043,9 +2275,15 @@ export function App() {
           break;
         }
       }
+      let promptMessageId: string | null = null;
       if (!opts?.skipUserBubble) {
-        base = [...base, { id: uid(), role: "user", content: text }];
+        promptMessageId = uid();
+        base = [...base, { id: promptMessageId, role: "user", content: text }];
+      } else {
+        promptMessageId = [...base].reverse().find((message) => message.role === "user")?.id ?? null;
       }
+      pendingPromptMessageIdRef.current = promptMessageId;
+      pendingPromptSessionIdRef.current = sessionId;
       setMessages(base);
       setFirstRun((fr) => patchFirstRun({ ...fr, sentMessage: true }));
 
@@ -2079,8 +2317,42 @@ export function App() {
       }
 
       try {
-        await api.prompt(outbound, effortLevel, { history });
+        // Contract path: admission returns the authoritative RunSnapshot (202).
+        // A successful response without it is invalid and is never retried via
+        // the legacy endpoint, which could dispatch the prompt twice.
+        const admitted = await api.promptRun({ sessionId, text: outbound, effort: effortLevel, history });
+        if (!admitted.run) throw new Error("Host returned no run snapshot; prompt was not admitted");
+        {
+          const run = admitted.run;
+          bindNormalizedRun(run.runId, run.sessionId);
+          if (run.state === "terminal") {
+            setRunStartedAt(null);
+            setRunPhase(null);
+            setRunPhaseDetail(null);
+            setAwaitingNextTurn(true);
+          }
+          // Project identity immediately, but never fabricate an eventSeq from
+          // the snapshot. Early WS frames may already be in flight; replay the
+          // journal from the reducer's cursor so those frames remain admissible.
+          setRunProjection((prev) => mergeRunSnapshot(prev, run));
+          try {
+            const replay = await api.runState(run.runId, run.sessionId, 0);
+            setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+            if (replay.run.state === "terminal") {
+              setRunStartedAt(null);
+              setRunPhase(null);
+              setRunPhaseDetail(null);
+              setAwaitingNextTurn(true);
+            }
+          } catch {
+            // WS resume remains authoritative and will retry on reconnect.
+          }
+        }
       } catch (err) {
+        if (!normalizedRunIdRef.current) {
+          pendingPromptMessageIdRef.current = null;
+          pendingPromptSessionIdRef.current = null;
+        }
         setRunPhase(null);
         setRunStartedAt(null);
         setAwaitingNextTurn(true);
@@ -2089,11 +2361,15 @@ export function App() {
     },
     [
       connected,
+      sessionId,
       state?.workspace,
       state?.mode,
+      state?.permissionPolicy,
       effortLevel,
       reportError,
       beginStreamRun,
+      bindNormalizedRun,
+      runProjection,
     ],
   );
 
@@ -2505,14 +2781,14 @@ export function App() {
       {
         id: "theme",
         label:
-          prefs.theme === "light" ? "Theme: Aeon (dark)" : "Theme: Light",
+          prefs.theme === "light" ? "Theme: Voidglass (dark)" : "Theme: Light",
         run: () => {
           const next = patchPrefs({
-            theme: prefs.theme === "light" ? "aeon" : "light",
+            theme: prefs.theme === "light" ? "voidglass" : "light",
           });
           setPrefs(next);
           toast.push(
-            `Theme · ${next.theme === "light" ? "Light" : "Aeon"}`,
+            `Theme · ${themeLabel(next.theme)}`,
             "info",
           );
         },
@@ -2609,6 +2885,7 @@ export function App() {
     boot === "ready" &&
     hostOk &&
     messages.length === 0 &&
+    !normalizedRunVisible &&
     !hasAnyStoredHistory() &&
     state?.priorConversations === true;
 
@@ -2623,7 +2900,8 @@ export function App() {
     !hasAnyStoredHistory() &&
     !isOnboardingDone(firstRun, productMode) &&
     view === "chat" &&
-    messages.length === 0;
+    messages.length === 0 &&
+    !normalizedRunVisible;
 
   if (boot === "booting") {
     // F2 — AC-U1: brand + one phase line + spinner. Never a transcript, an
@@ -2942,6 +3220,34 @@ export function App() {
                   Logs:{" "}
                   <code>{state?.logHint || "%USERPROFILE%\\.grokforge\\logs"}</code>
                 </div>
+                {(() => {
+                  const policy = (state as PublicState & { permissionPolicy?: { effectiveMode?: string; fallbackReason?: string | null; status?: string } })?.permissionPolicy;
+                  const bypass = (state as PublicState & { bypassPermissions?: { unlocked?: boolean; available?: boolean; activeForSession?: boolean; blockedReason?: string | null } })?.bypassPermissions;
+                  return <>
+                    <PermissionPolicyControl
+                      status={!state ? "loading" : !state.workspace ? "no_workspace" : policy?.status === "confirmed" ? "confirmed" : hostOk ? "unconfirmed" : "offline"}
+                      confirmedMode={policy?.effectiveMode === "trusted_workspace" ? "trusted_workspace" : policy?.effectiveMode === "review" ? "review" : null}
+                      fallbackReason={policy?.fallbackReason}
+                      disabled={Boolean(runStartedAt)}
+                      onSave={async (mode) => {
+                        if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
+                        const result = await api.saveWorkspacePolicy({ sessionId, workspace: state.workspace, mode });
+                        if (state) applyState({ ...state, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
+                      }}
+                    />
+                    {sessionId && <BypassPermissionsControl
+                      sessionId={sessionId}
+                      unlocked={Boolean(bypass?.unlocked)}
+                      available={Boolean(bypass?.available)}
+                      active={Boolean(bypass?.activeForSession)}
+                      blockedReason={bypass?.blockedReason}
+                      onActiveChange={(active) => {
+                        if (!state || !bypass) return;
+                        applyState({ ...state, bypassPermissions: { ...bypass, activeForSession: active } });
+                      }}
+                    />}
+                  </>;
+                })()}
                 <div className="row" style={{ marginBottom: 16 }}>
                   <button
                     type="button"
@@ -3119,7 +3425,7 @@ export function App() {
                       className="btn"
                       onClick={() => {
                         const next = patchPrefs({
-                          theme: prefs.theme === "light" ? "aeon" : "light",
+                          theme: prefs.theme === "light" ? "voidglass" : "light",
                         });
                         setPrefs(next);
                       }}
@@ -3354,7 +3660,7 @@ export function App() {
                       setFirstRun((fr) => patchFirstRun({ ...fr, dismissed: true }))
                     }
                   />
-                ) : messages.length === 0 && hostOk ? (
+                ) : messages.length === 0 && !normalizedRunVisible && hostOk ? (
                   <EmptyStates
                     kind={
                       !state?.hasApiKey
@@ -3372,7 +3678,7 @@ export function App() {
                       setTimeout(() => composerRef.current?.focus(), 0);
                     }}
                   />
-                ) : messages.length === 0 && !hostOk ? (
+                ) : messages.length === 0 && !normalizedRunVisible && !hostOk ? (
                   <EmptyStates
                     kind="host-offline"
                     onReconnect={
@@ -3381,10 +3687,13 @@ export function App() {
                   />
                 ) : (
                   <>
+                    {runProjection.runOrder.map((id) => {
+                      const run = runProjection.runsById[id];
+                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} /> : null;
+                    })}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
-                        <strong>Forge's engine stopped.</strong> Your conversation is
-                        saved.
+                        <strong>{activeRun ? "Offline" : "Forge's engine stopped."}</strong> {activeRun ? "Forge is offline. Your prompt and received output are preserved. Reconnect to confirm this run’s outcome." : "Your conversation is saved."}
                         {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
                         {engineRetryAllowed && (
                           <button
@@ -3398,11 +3707,11 @@ export function App() {
                       </div>
                     )}
                     <MessageList
-                      messages={messages}
-                      busy={busy || Boolean(runStartedAt)}
+                      messages={visibleMessages}
+                      busy={normalizedRunVisible ? false : busy || Boolean(runStartedAt)}
                       thinkingDetail={runPhaseDetail}
                       showTurnDelimiter={
-                        awaitingNextTurn && messages.length > 0 && !busy
+                        awaitingNextTurn && visibleMessages.length > 0 && !busy
                       }
                       lastUserId={lastUserId}
                       lastAssistantId={lastAssistantId}
@@ -3564,10 +3873,20 @@ export function App() {
                     {state?.appliedModel || state?.model || modelDraft}
                     {state?.authSource ? ` · ${state.authSource}` : ""}
                   </span>
+                  {state?.permissionPolicy?.status === "confirmed" && (
+                    <span className="composer-policy" aria-label="Effective permission policy">
+                      Policy: {state.permissionPolicy.effectiveMode === "trusted_workspace" ? "Trusted workspace" : "Review"}
+                    </span>
+                  )}
                   <span className="composer-hint">
                     Attach text · Export .md · Enter send · Ctrl+K
                   </span>
                 </div>
+                {state?.permissionPolicy?.fallbackReason && (
+                  <div className="composer-policy-notice" role="status">
+                    Forge couldn’t use the saved permission policy. Review is active.
+                  </div>
+                )}
                 {sendDisabledReason && draft.trim() ? (
                   <div className="composer-block-reason" role="status">
                     {sendDisabledReason}

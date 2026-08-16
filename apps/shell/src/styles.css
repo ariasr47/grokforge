@@ -1,26 +1,26 @@
 :root {
-  /* Aeon Continuum (Theme C) */
-  --void: #03040a;
-  --bg: #03040a;
-  --bg2: rgba(255, 255, 255, 0.035);
-  --bg3: rgba(255, 255, 255, 0.06);
-  --card: rgba(255, 255, 255, 0.035);
-  --border: rgba(125, 255, 232, 0.12);
-  --border-strong: rgba(125, 255, 232, 0.35);
-  --text: #eef8ff;
-  --text-secondary: rgba(238, 248, 255, 0.78);
-  --muted: rgba(220, 240, 255, 0.55);
-  --whisper: rgba(220, 240, 255, 0.55);
-  --accent: #7dffe8;
-  --accent2: #c4b5fd;
+  /* Voidglass — locked project default */
+  --void: #050508;
+  --bg: #050508;
+  --bg2: rgba(255, 255, 255, 0.04);
+  --bg3: rgba(255, 255, 255, 0.07);
+  --card: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(120, 220, 255, 0.35);
+  --text: #f2f4f8;
+  --text-secondary: rgba(242, 244, 248, 0.78);
+  --muted: #8b93a7;
+  --whisper: #8b93a7;
+  --accent: #5ce1ff;
+  --accent2: #a78bfa;
   --accent3: #f0b45a;
-  --plasma: #7dffe8;
-  --mind: #c4b5fd;
+  --plasma: #5ce1ff;
+  --mind: #a78bfa;
   --danger: #ff7a90;
   --success: #5ee4a8;
-  --glow: 0 0 40px rgba(125, 255, 232, 0.18);
-  --glow-mind: 0 0 40px rgba(196, 181, 253, 0.16);
-  --radius: 20px;
+  --glow: 0 0 40px rgba(92, 225, 255, 0.18);
+  --glow-mind: 0 0 40px rgba(167, 139, 250, 0.16);
+  --radius: 16px;
   --radius-sm: 12px;
   --radius-md: 16px;
   --radius-thought: 28px 28px 28px 10px;
@@ -55,6 +55,28 @@
   --weight-semibold: 600;
   --weight-bold: 700;
   color-scheme: dark;
+}
+
+/* Aeon remains available only when an existing/operator preference selects it. */
+html[data-theme="aeon"] {
+  --void: #03040a;
+  --bg: #03040a;
+  --bg2: rgba(255, 255, 255, 0.035);
+  --bg3: rgba(255, 255, 255, 0.06);
+  --card: rgba(255, 255, 255, 0.035);
+  --border: rgba(125, 255, 232, 0.12);
+  --border-strong: rgba(125, 255, 232, 0.35);
+  --text: #eef8ff;
+  --text-secondary: rgba(238, 248, 255, 0.78);
+  --muted: rgba(220, 240, 255, 0.55);
+  --whisper: rgba(220, 240, 255, 0.55);
+  --accent: #7dffe8;
+  --accent2: #c4b5fd;
+  --plasma: #7dffe8;
+  --mind: #c4b5fd;
+  --glow: 0 0 40px rgba(125, 255, 232, 0.18);
+  --glow-mind: 0 0 40px rgba(196, 181, 253, 0.16);
+  --radius: 20px;
 }
 
 * {
@@ -581,6 +603,22 @@ html[data-motion="calm"] .brand-mark {
   min-width: 0;
   height: 100%;
 }
+
+.run-content,.activity-output,.terminal-detail { overflow-wrap:anywhere; min-width:0; }
+.action-dock { position:sticky; bottom:var(--composer-height); z-index:20; }
+:where(button,input,select,summary):focus-visible { outline:2px solid var(--accent); outline-offset:2px; box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .run-live,.policy-saving,.bypass-danger { animation:none !important; transition:none !important; }
+}
+.run-content { display:grid; gap:12px; }
+.run-provenance { display:flex; flex-wrap:wrap; gap:6px 10px; color:var(--muted); font-family:var(--mono); font-size:11px; line-height:1.4; }
+.run-provenance span { display:inline-flex; min-width:0; padding:3px 8px; border:1px solid var(--border); border-radius:999px; background:var(--card); overflow-wrap:anywhere; }
+.run-content details { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; }
+.assistant-answer { background:var(--card); border:1px solid var(--border-strong); border-radius:var(--radius); padding:16px; }
+.policy-control { display:grid; gap:10px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--card); }
+.policy-heading { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.policy-option { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; padding:8px; }
+.policy-option small { grid-column:2; color:var(--muted); }
 
 .transcript {
   flex: 1;

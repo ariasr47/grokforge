@@ -4,6 +4,13 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /**
+   * The normalized run that owns this legacy-compatible transcript record.
+   * While that run is projected, RunSurface is the sole live renderer; the
+   * record remains persisted so an older/offline transcript still survives a
+   * reload where no run projection has been replayed yet.
+   */
+  projectedRunId?: string;
   streaming?: boolean;
   /** Model think-aloud / reasoning summary (collapsed in UI by default) */
   thinking?: string;

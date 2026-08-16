@@ -1,3 +1,7 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use hmac::{Hmac, Mac};
+use rand::RngCore;
+use sha2::Sha256;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -19,10 +23,7 @@ const BUILD_CHANNEL: &str = match option_env!("GROKFORGE_BUILD_CHANNEL") {
 };
 
 fn host_channel() -> &'static str {
-    if matches!(
-        BUILD_CHANNEL,
-        "dev" | "development" | "tst" | "test" | "qa"
-    ) {
+    if matches!(BUILD_CHANNEL, "dev" | "development" | "tst" | "test" | "qa") {
         "dev"
     } else {
         "prod"
@@ -85,7 +86,10 @@ const REASON_UNKNOWN: &str = "unknown";
 
 /// SPEC §5 rows 1-4. The shell keys card selection on (reason, osError); the launcher never
 /// attributes a cause it cannot observe.
-fn classify_spawn_error(err: &std::io::Error, runtime_present: bool) -> (&'static str, Option<i32>) {
+fn classify_spawn_error(
+    err: &std::io::Error,
+    runtime_present: bool,
+) -> (&'static str, Option<i32>) {
     let code = err.raw_os_error();
     if !runtime_present {
         return (REASON_ENTRY_MISSING, code);
@@ -120,7 +124,9 @@ impl HostJob {
             SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
-        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        };
 
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -189,6 +195,189 @@ struct HostProcess {
     generation: AtomicU64,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BypassUnlockState {
+    unlocked: bool,
+    confirmation_version: Option<u32>,
+    managed_disabled: bool,
+    local_attestation: &'static str,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BypassActivationCapability {
+    session_id: String,
+    activation_token: String,
+    expires_at: String,
+}
+
+// The host owns capability consumption/replay protection. The desktop keeps
+// only the unlock bit and signing key; it must not maintain a second token
+// ledger that can drift from the host's authoritative single-use check.
+struct BypassState {
+    unlocked: Mutex<bool>,
+    secret: Vec<u8>,
+}
+
+fn bypass_view(state: &BypassState) -> BypassUnlockState {
+    let unlocked = state.unlocked.lock().map(|v| *v).unwrap_or(false);
+    let managed_disabled = std::env::var("GROKFORGE_MANAGED_BYPASS_DISABLED").ok().as_deref() == Some("1");
+    // Repository/user-controlled environment can only make the capability
+    // stricter; it can never assert an approved isolation context.
+    let local_attestation = local_attestation();
+    BypassUnlockState {
+        unlocked,
+        confirmation_version: unlocked.then_some(1),
+        managed_disabled,
+        local_attestation,
+    }
+}
+
+fn local_attestation() -> &'static str {
+    if std::env::var("GROKFORGE_LOCAL_ATTESTATION").ok().as_deref().is_some_and(|v| v != "") { return "unavailable"; }
+    #[cfg(windows)] {
+        use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+        unsafe {
+            let mut token = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 { return "unavailable"; }
+            let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 }; let mut size = 0u32;
+            let ok = GetTokenInformation(token, TokenElevation, &mut elevation as *mut _ as *mut _, std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut size);
+            windows_sys::Win32::Foundation::CloseHandle(token);
+            if ok == 0 { return "unavailable"; }
+            if elevation.TokenIsElevated != 0 { return "unavailable"; }
+        }
+    }
+    #[cfg(not(windows))]
+    { return "unavailable"; }
+    #[cfg(windows)]
+    { "local_standard_user" }
+}
+fn attestation_allows_bypass(attestation: &str, managed_disabled: bool) -> bool { !managed_disabled && attestation == "local_standard_user" }
+
+#[tauri::command]
+fn get_bypass_permissions_unlock(app: tauri::AppHandle) -> BypassUnlockState {
+    app.state::<BypassState>().inner().clone_view()
+}
+
+impl BypassState {
+    fn clone_view(&self) -> BypassUnlockState {
+        bypass_view(self)
+    }
+}
+
+#[tauri::command]
+fn unlock_bypass_permissions(
+    app: tauri::AppHandle,
+    acknowledged: bool,
+    confirmation_version: u32,
+) -> Result<BypassUnlockState, String> {
+    if !acknowledged || confirmation_version != 1 {
+        return Err("confirmation_required".into());
+    }
+    let state = app.state::<BypassState>();
+    let managed_disabled = std::env::var("GROKFORGE_MANAGED_BYPASS_DISABLED").ok().as_deref() == Some("1");
+    if managed_disabled { return Err("bypass_disabled".into()); }
+    if !attestation_allows_bypass(local_attestation(), managed_disabled) { return Err("attestation_unavailable".into()); }
+    *state.unlocked.lock().map_err(|_| "state_unavailable")? = true;
+    let view = bypass_view(&state);
+    persist_bypass_unlock(&app, true);
+    Ok(view)
+}
+
+#[tauri::command]
+fn lock_bypass_permissions(app: tauri::AppHandle) -> BypassUnlockState {
+    let state = app.state::<BypassState>();
+    if let Ok(mut v) = state.unlocked.lock() {
+        *v = false;
+    }
+    persist_bypass_unlock(&app, false);
+    bypass_view(&state)
+}
+
+#[tauri::command]
+fn authorize_bypass_permissions_activation(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<BypassActivationCapability, String> {
+    if session_id.trim().is_empty() {
+        return Err("session_required".into());
+    }
+    let state = app.state::<BypassState>();
+    let managed_disabled = std::env::var("GROKFORGE_MANAGED_BYPASS_DISABLED").ok().as_deref() == Some("1");
+    if managed_disabled { return Err("bypass_disabled".into()); }
+    if !attestation_allows_bypass(local_attestation(), managed_disabled) { return Err("attestation_unavailable".into()); }
+    if !state
+        .unlocked
+        .lock()
+        .map_err(|_| "state_unavailable")?
+        .to_owned()
+    {
+        return Err("unlock_required".into());
+    }
+    let host_pid = app.state::<HostProcess>().reaped_pid.load(Ordering::SeqCst);
+    if host_pid == 0 {
+        return Err("host_unavailable".into());
+    }
+    let mut nonce_bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
+    let issued = now_millis();
+    let expires = issued + 60_000;
+    let payload = serde_json::json!({"sessionId":session_id,"desktopProcessId":std::process::id(),"hostProcessId":host_pid,"nonce":nonce,"expiresAt":expires,"issuedAt":issued});
+    let token = sign_activation_payload(&state.secret, &payload).map_err(|_| "token_secret")?;
+    Ok(BypassActivationCapability {
+        session_id,
+        activation_token: token,
+        expires_at: iso8601_from_epoch_ms(expires),
+    })
+}
+
+fn now_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+/// Host-compatible capability encoding: URL-safe JSON body, then HMAC-SHA256
+/// over the exact body bytes using the URL-safe encoded shared secret.
+fn sign_activation_payload(
+    secret: &[u8],
+    payload: &serde_json::Value,
+) -> Result<String, &'static str> {
+    let body = URL_SAFE_NO_PAD.encode(serde_json::to_vec(payload).map_err(|_| "token_encode")?);
+    let shared_key = URL_SAFE_NO_PAD.encode(secret);
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(shared_key.as_bytes()).map_err(|_| "token_secret")?;
+    mac.update(body.as_bytes());
+    Ok(format!(
+        "{}.{}",
+        body,
+        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+    ))
+}
+fn persist_bypass_unlock(app: &tauri::AppHandle, unlocked: bool) {
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let body = if unlocked {
+            "{\"unlocked\":true,\"confirmationVersion\":1}"
+        } else {
+            "{\"unlocked\":false}"
+        };
+        let _ = std::fs::write(dir.join("bypass-unlock.json"), body.as_bytes());
+    }
+}
+fn load_bypass_unlock(app: &tauri::AppHandle) -> bool {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join("bypass-unlock.json")).ok())
+        .map(|s| s.contains("\"unlocked\":true"))
+        .unwrap_or(false)
+}
+
 fn is_repo_root(dir: &Path) -> bool {
     // Packaged install: resources/host/index.js present
     if dir
@@ -199,7 +388,11 @@ fn is_repo_root(dir: &Path) -> bool {
     {
         return true;
     }
-    dir.join("apps").join("host").join("src").join("index.ts").is_file()
+    dir.join("apps")
+        .join("host")
+        .join("src")
+        .join("index.ts")
+        .is_file()
         || (dir.join("package.json").is_file()
             && dir.join("apps").join("host").is_dir()
             && dir.join("apps").join("shell").is_dir())
@@ -253,7 +446,12 @@ fn repo_root_dev() -> PathBuf {
 /// behind an explicit `cfg!(debug_assertions)` gate. No `std::env::current_dir()` fallback.
 fn resource_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if let Ok(dir) = app.path().resource_dir() {
-        if dir.join("resources").join("host").join("index.js").is_file() {
+        if dir
+            .join("resources")
+            .join("host")
+            .join("index.js")
+            .is_file()
+        {
             return Ok(dir);
         }
     }
@@ -344,7 +542,8 @@ fn health_service_and_pid(port: u16) -> Option<(String, u32)> {
         let mut parts = line.splitn(2, ':');
         let name = parts.next().unwrap_or("").trim();
         let value = parts.next().unwrap_or("").trim();
-        name.eq_ignore_ascii_case("transfer-encoding") && value.to_ascii_lowercase().contains("chunked")
+        name.eq_ignore_ascii_case("transfer-encoding")
+            && value.to_ascii_lowercase().contains("chunked")
     });
     let body = if is_chunked {
         dechunk_body(raw_body)?
@@ -449,7 +648,9 @@ fn runtime_port_record_path() -> Option<PathBuf> {
 }
 
 fn write_runtime_port_record(port: u16, pid: u32) {
-    let Some(path) = runtime_port_record_path() else { return };
+    let Some(path) = runtime_port_record_path() else {
+        return;
+    };
     let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
     let body = format!(
         "{{\"port\":{},\"pid\":{},\"channel\":\"{}\",\"updatedAt\":\"{}\"}}",
@@ -476,7 +677,28 @@ fn chrono_like_now() -> String {
     format!("{}", now.as_secs())
 }
 
-fn spawn_host_process(root: &Path, port: u16) -> Result<(Child, bool), String> {
+fn iso8601_from_epoch_ms(ms: u128) -> String {
+    let secs = ms / 1000;
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    format!("{year:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3_600, (rem % 3_600) / 60, rem % 60)
+}
+
+fn spawn_host_process(
+    root: &Path,
+    port: u16,
+    bypass_secret: &[u8],
+) -> Result<(Child, bool), String> {
     let (stdout_path, stderr_path) = host_log_paths(root);
     let stdout_file = std::fs::File::create(&stdout_path)
         .map_err(|e| format!("host stdout log: {e} ({})", stdout_path.display()))?;
@@ -504,7 +726,11 @@ fn spawn_host_process(root: &Path, port: u16) -> Result<(Child, bool), String> {
     } else if cfg!(debug_assertions) {
         // Dev-only fallback branches: system Node via PATH lookup, tsx entry from the monorepo.
         // Never reachable in a release build (SPEC §2.1).
-        let tsx_cli = root.join("node_modules").join("tsx").join("dist").join("cli.mjs");
+        let tsx_cli = root
+            .join("node_modules")
+            .join("tsx")
+            .join("dist")
+            .join("cli.mjs");
         let host_entry = root.join("apps").join("host").join("src").join("index.ts");
         entry_present = host_entry.exists() || resource_host.exists();
         runtime_present = true; // dev path relies on system Node; not the isolation-rule surface
@@ -541,6 +767,13 @@ fn spawn_host_process(root: &Path, port: u16) -> Result<(Child, bool), String> {
     cmd.env("GROKFORGE_PORT", port.to_string())
         .env("GROKFORGE_CHANNEL", host_channel())
         .env("GROKFORGE_ROOT", root.as_os_str())
+        // Bind host attestation to this desktop process. The host compares
+        // this value with the signed payload.desktopProcessId.
+        .env("GROKFORGE_DESKTOP_PID", std::process::id().to_string())
+        .env(
+            "GROKFORGE_BYPASS_SECRET",
+            URL_SAFE_NO_PAD.encode(bypass_secret),
+        )
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .stdin(Stdio::null());
@@ -569,7 +802,11 @@ fn spawn_host_process(root: &Path, port: u16) -> Result<(Child, bool), String> {
 fn reap_host(state: &HostProcess) {
     let fallback_pid = if state.reap_by_taskkill.swap(false, Ordering::SeqCst) {
         let pid = state.reaped_pid.load(Ordering::SeqCst);
-        if pid != 0 { Some(pid) } else { None }
+        if pid != 0 {
+            Some(pid)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -682,10 +919,15 @@ fn ensure_host_inner(app: &tauri::AppHandle) -> HostStatus {
 
         // Known BEFORE spawning, independent of the spawn Result, so a spawn failure can still be
         // classified (SPEC §5 rows 1-4: entry_missing vs runtime_missing hinges on this).
-        let runtime_present_for_classification =
-            root.join("resources").join("runtime").join("node.exe").exists() || cfg!(debug_assertions);
+        let runtime_present_for_classification = root
+            .join("resources")
+            .join("runtime")
+            .join("node.exe")
+            .exists()
+            || cfg!(debug_assertions);
 
-        let (child, _runtime_present) = match spawn_host_process(&root, rung) {
+        let bypass_secret = app.state::<BypassState>().secret.clone();
+        let (child, _runtime_present) = match spawn_host_process(&root, rung, &bypass_secret) {
             Ok(v) => v,
             Err(e) => {
                 if let Some(raw) = e.strip_prefix("__SPAWN_ERROR__") {
@@ -855,12 +1097,7 @@ fn ensure_host(app: tauri::AppHandle) -> HostStatus {
 #[tauri::command]
 fn host_status(app: tauri::AppHandle) -> HostStatus {
     let (owned, pid) = current_owned_pid(&app);
-    let port = pid.and_then(|_| {
-        ladder()
-            .iter()
-            .copied()
-            .find(|&p| host_healthy_at(p))
-    });
+    let port = pid.and_then(|_| ladder().iter().copied().find(|&p| host_healthy_at(p)));
     if let Some(p) = port {
         HostStatus {
             ok: true,
@@ -916,7 +1153,11 @@ fn spawn_watcher(app: tauri::AppHandle, generation: u64) {
                 Some(s) => s,
                 None => return,
             };
-            state.child.lock().ok().and_then(|g| g.as_ref().map(|c| c.id()))
+            state
+                .child
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.id()))
         };
         let Some(_pid) = pid else { return };
 
@@ -947,34 +1188,43 @@ fn spawn_watcher(app: tauri::AppHandle, generation: u64) {
                 return;
             }
 
-            let _ = app.emit("host-status", HostStatus {
-                ok: false,
-                phase: "failed",
-                owned: true,
-                port: None,
-                pid: None,
-                reason: Some(REASON_CRASHED),
-                os_error: None,
-                message: "Host process exited unexpectedly.".into(),
-            });
+            let _ = app.emit(
+                "host-status",
+                HostStatus {
+                    ok: false,
+                    phase: "failed",
+                    owned: true,
+                    port: None,
+                    pid: None,
+                    reason: Some(REASON_CRASHED),
+                    os_error: None,
+                    message: "Host process exited unexpectedly.".into(),
+                },
+            );
 
-            let mut attempts = state.restart_attempts.lock().unwrap_or_else(|p| p.into_inner());
+            let mut attempts = state
+                .restart_attempts
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             let now = std::time::Instant::now();
             attempts.retain(|t| now.duration_since(*t) < Duration::from_secs(60));
             if attempts.len() >= 3 {
                 drop(attempts);
                 reap_host(&state);
                 state.terminal.store(true, Ordering::SeqCst);
-                let _ = app.emit("host-status", HostStatus {
-                    ok: false,
-                    phase: "failed",
-                    owned: false,
-                    port: None,
-                    pid: None,
-                    reason: Some(REASON_CRASHED),
-                    os_error: None,
-                    message: "Bounded restart limit reached; host is not running.".into(),
-                });
+                let _ = app.emit(
+                    "host-status",
+                    HostStatus {
+                        ok: false,
+                        phase: "failed",
+                        owned: false,
+                        port: None,
+                        pid: None,
+                        reason: Some(REASON_CRASHED),
+                        os_error: None,
+                        message: "Bounded restart limit reached; host is not running.".into(),
+                    },
+                );
                 return;
             }
             let attempt_idx = attempts.len();
@@ -1021,7 +1271,22 @@ pub fn run() {
             terminal: AtomicBool::new(false),
             generation: AtomicU64::new(0),
         })
+        .manage(BypassState {
+            unlocked: Mutex::new(false),
+            secret: {
+                let mut b = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut b);
+                b.to_vec()
+            },
+        })
         .setup(|app| {
+            if let Some(state) = app.try_state::<BypassState>() {
+                if load_bypass_unlock(&app.handle()) {
+                    if let Ok(mut v) = state.unlocked.lock() {
+                        *v = true;
+                    }
+                }
+            }
             // Explicit window icon so taskbar never shows a blank square
             // (Windows sometimes fails to pick up a bad/legacy .ico embed).
             if let Some(win) = app.get_webview_window("main") {
@@ -1037,7 +1302,10 @@ pub fn run() {
                 let status = ensure_host_inner(&handle);
                 if status.ok {
                     if let Some(state) = handle.try_state::<HostProcess>() {
-                        spawn_watcher(handle.clone(), state.generation.load(std::sync::atomic::Ordering::SeqCst));
+                        spawn_watcher(
+                            handle.clone(),
+                            state.generation.load(std::sync::atomic::Ordering::SeqCst),
+                        );
                     }
                 }
             });
@@ -1046,7 +1314,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ensure_host,
             host_status,
-            restart_host
+            restart_host,
+            get_bypass_permissions_unlock,
+            unlock_bypass_permissions,
+            lock_bypass_permissions,
+            authorize_bypass_permissions_activation
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event
@@ -1074,11 +1346,20 @@ mod reason_tests {
     #[test]
     fn missing_file_codes_stay_runtime_missing_with_the_raw_code() {
         let e = std::io::Error::from_raw_os_error(2);
-        assert_eq!(classify_spawn_error(&e, true), (REASON_RUNTIME_MISSING, Some(2)));
+        assert_eq!(
+            classify_spawn_error(&e, true),
+            (REASON_RUNTIME_MISSING, Some(2))
+        );
         let e = std::io::Error::from_raw_os_error(5);
-        assert_eq!(classify_spawn_error(&e, true), (REASON_RUNTIME_MISSING, Some(5)));
+        assert_eq!(
+            classify_spawn_error(&e, true),
+            (REASON_RUNTIME_MISSING, Some(5))
+        );
         let e = std::io::Error::from_raw_os_error(193);
-        assert_eq!(classify_spawn_error(&e, true), (REASON_RUNTIME_MISSING, Some(193)));
+        assert_eq!(
+            classify_spawn_error(&e, true),
+            (REASON_RUNTIME_MISSING, Some(193))
+        );
     }
 
     #[test]
@@ -1127,7 +1408,8 @@ mod dechunk_tests {
         // terminating zero-size chunk.
         let body = "31\r\n{\"ok\":true,\"service\":\"grokforge-host\",\"pid\":1234}\r\n0\r\n\r\n";
         let decoded = dechunk_body(body).expect("valid chunked body decodes");
-        let json: serde_json::Value = serde_json::from_str(&decoded).expect("decoded body is valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&decoded).expect("decoded body is valid JSON");
         assert_eq!(json["service"], "grokforge-host");
         assert_eq!(json["pid"], 1234);
     }
@@ -1143,5 +1425,68 @@ mod dechunk_tests {
     fn rejects_a_truncated_chunk_stream() {
         let body = "d5\r\n{\"ok\":true";
         assert_eq!(dechunk_body(body), None);
+    }
+}
+
+#[cfg(test)]
+mod bypass_capability_tests {
+    use super::*;
+
+    fn fixture_payload() -> serde_json::Value {
+        serde_json::json!({
+            "sessionId": "session-1",
+            "desktopProcessId": 111,
+            "hostProcessId": 222,
+            "nonce": "nonce-1",
+            "expiresAt": 1_700_000_060_000u64,
+            "issuedAt": 1_700_000_000_000u64
+        })
+    }
+
+    #[test]
+    fn signs_the_exact_node_host_payload() {
+        let secret = b"host-compatible-secret";
+        let token = sign_activation_payload(secret, &fixture_payload()).expect("token");
+        let (body, sig) = token.split_once('.').expect("body.signature");
+        let expected_key = URL_SAFE_NO_PAD.encode(secret);
+        let mut mac = Hmac::<Sha256>::new_from_slice(expected_key.as_bytes()).unwrap();
+        mac.update(body.as_bytes());
+        assert_eq!(sig, URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()));
+        let decoded: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(body).unwrap()).unwrap();
+        assert_eq!(decoded, fixture_payload());
+    }
+
+    #[test]
+    fn payload_carries_expiry_and_process_bindings() {
+        let p = fixture_payload();
+        assert_eq!(p["sessionId"], "session-1");
+        assert_eq!(p["desktopProcessId"], 111);
+        assert_eq!(p["hostProcessId"], 222);
+        assert!(p["expiresAt"].as_u64().unwrap() <= p["issuedAt"].as_u64().unwrap() + 60_000);
+    }
+
+    #[test]
+    fn signing_is_deterministic_and_secret_changes_signature() {
+        let payload = fixture_payload();
+        let a = sign_activation_payload(b"a", &payload).unwrap();
+        let b = sign_activation_payload(b"a", &payload).unwrap();
+        let c = sign_activation_payload(b"b", &payload).unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn activation_expiry_ipc_is_iso8601() {
+        assert_eq!(iso8601_from_epoch_ms(1_700_000_060_000), "2023-11-14T22:14:20Z");
+    }
+
+    #[test]
+    fn attestation_guard_only_allows_standard_unmanaged_local() {
+        assert!(attestation_allows_bypass("local_standard_user", false));
+        assert!(!attestation_allows_bypass("local_standard_user", true));
+        assert!(!attestation_allows_bypass("elevated", false));
+        assert!(!attestation_allows_bypass("remote", false));
+        assert!(!attestation_allows_bypass("unavailable", false));
     }
 }
