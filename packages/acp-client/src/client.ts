@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
+import { isValidToolRunEvent } from "./types.js";
 import type {
   AcpClient,
   AcpUiEvent,
@@ -66,7 +67,7 @@ export class StdioAcpClient implements AcpClient {
 
     this.child = spawn(this.config.command, this.config.args, {
       cwd: this.config.workspaceRoot,
-      env: { ...process.env, ...this.config.env },
+      env: { ...this.config.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -111,6 +112,7 @@ export class StdioAcpClient implements AcpClient {
   async newSession(): Promise<string> {
     const result = (await this.request("session/new", {
       cwd: this.config.workspaceRoot,
+      executionProfile: this.config.executionProfile,
     })) as { sessionId: string };
     return result.sessionId;
   }
@@ -306,23 +308,21 @@ export class StdioAcpClient implements AcpClient {
         });
         break;
       }
+      case "tool_run":
+      case "agent/tool_run": {
+        const event = { ...p, type: "tool_run" };
+        if (!isValidToolRunEvent(event)) {
+          this.emit({ type: "agent_log", level: "warn", message: "Malformed tool_run notification ignored." });
+          break;
+        }
+        this.emit(event);
+        break;
+      }
       case "tool_request":
       case "agent/tool_request":
-        this.emit({
-          type: "tool_request",
-          id: String(p.id ?? ""),
-          name: String(p.name ?? ""),
-          input: p.input,
-        });
-        break;
       case "tool_result":
       case "agent/tool_result":
-        this.emit({
-          type: "tool_result",
-          id: String(p.id ?? ""),
-          ok: Boolean(p.ok),
-          output: p.output,
-        });
+        this.emit({ type: "agent_log", level: "warn", message: "Legacy tool notification ignored; current tool_run schema required." });
         break;
       case "permission_request":
       case "agent/permission_request":
@@ -341,7 +341,7 @@ export class StdioAcpClient implements AcpClient {
           diff: String(p.diff ?? ""),
           status:
             (p.status as "proposed" | "accepted" | "rejected") ?? "proposed",
-          id: p.id ? String(p.id) : undefined,
+          id: String(p.id ?? ""),
         });
         break;
       case "error":
@@ -365,6 +365,9 @@ export class StdioAcpClient implements AcpClient {
           type: "done",
           reason: p.reason ? String(p.reason) : undefined,
         });
+        break;
+      case "agent_log":
+        this.emit({ type:"agent_log", level:(p.level === "warn" || p.level === "info" ? p.level : "debug"), message:String(p.message ?? "") });
         break;
       default:
         break;

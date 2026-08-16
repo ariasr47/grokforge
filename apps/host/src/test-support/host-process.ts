@@ -26,6 +26,7 @@ export interface StartedHost {
 export async function startHost(opts: {
   port: number;
   env?: Record<string, string>;
+  unsetEnv?: string[];
   timeoutMs?: number;
 }): Promise<StartedHost> {
   const port = opts.port;
@@ -39,7 +40,7 @@ export async function startHost(opts: {
     {
       cwd: path.resolve(here, "../.."),
       env: {
-        ...process.env,
+        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !(opts.unsetEnv ?? []).some((name) => name.toLowerCase() === key.toLowerCase()))),
         GROKFORGE_PORT: String(port),
         GROKFORGE_CHANNEL: "test",
         USERPROFILE: homeDir,

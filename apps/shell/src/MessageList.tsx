@@ -259,7 +259,7 @@ export const MessageList = memo(function MessageList({
           Showing last {windowSize} of {messages.length} messages
         </div>
       ) : null}
-      {blocks.map((block, i) => {
+      {blocks.map((block) => {
         if (block.kind === "message") {
           const m = block.message;
           if (isActivityChip(m)) {
@@ -296,12 +296,11 @@ export const MessageList = memo(function MessageList({
             />
           );
         }
-        const isLast = i === blocks.length - 1;
         return (
           <ToolActivityGroup
             key={block.key}
             tools={block.tools}
-            live={busy && isLast}
+            groupKey={block.key}
             onOpenPath={onOpenPath}
             forceOpen={
               forceOpenFailedTools &&

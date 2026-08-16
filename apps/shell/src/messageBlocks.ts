@@ -8,6 +8,9 @@ export interface ChatMessage {
   /** Model think-aloud / reasoning summary (collapsed in UI by default) */
   thinking?: string;
   toolMeta?: ToolMeta;
+  activityRunKey?: string;
+  activityOrder?: number;
+  activityIdentity?: string;
 }
 
 export type DisplayBlock =
@@ -19,6 +22,14 @@ export type DisplayBlock =
  * transcript stays scannable (chat turns + one activity rail per tool burst).
  */
 export function toDisplayBlocks(messages: ChatMessage[]): DisplayBlock[] {
+  const stampedTools = new Map<string, ChatMessage[]>();
+  for (const m of messages) {
+    if (m.role !== "tool" || !m.activityRunKey) continue;
+    const list = stampedTools.get(m.activityRunKey) ?? [];
+    list.push(m);
+    stampedTools.set(m.activityRunKey, list);
+  }
+  const emitted = new Set<string>();
   const blocks: DisplayBlock[] = [];
   let toolRun: ChatMessage[] = [];
 
@@ -34,6 +45,17 @@ export function toDisplayBlocks(messages: ChatMessage[]): DisplayBlock[] {
 
   for (const m of messages) {
     if (m.role === "tool") {
+      if (m.activityRunKey) {
+        if (emitted.has(m.activityRunKey)) continue;
+        emitted.add(m.activityRunKey);
+        const tools = [...(stampedTools.get(m.activityRunKey) ?? [])].sort(
+          (a, b) => (a.activityOrder ?? 0) - (b.activityOrder ?? 0),
+        );
+        if (tools.length) {
+          blocks.push({ kind: "tools", key: m.activityRunKey, tools });
+        }
+        continue;
+      }
       toolRun.push(m);
       continue;
     }
@@ -47,20 +69,23 @@ export function toDisplayBlocks(messages: ChatMessage[]): DisplayBlock[] {
 export function toolRunStats(tools: ChatMessage[]): {
   total: number;
   failed: number;
+  notRun: number;
   pending: number;
   ok: number;
   names: string[];
 } {
   let failed = 0;
+  let notRun = 0;
   let pending = 0;
   let ok = 0;
   const names: string[] = [];
   for (const t of tools) {
     const n = t.toolMeta?.name;
     if (n && !names.includes(n)) names.push(n);
-    if (t.toolMeta?.done === false) pending += 1;
-    else if (t.toolMeta?.ok === false) failed += 1;
+    if (t.toolMeta?.done === false || t.toolMeta?.status === "running") pending += 1;
+    else if (t.toolMeta?.execution === "not_executed" || t.toolMeta?.status === "rejected") notRun += 1;
+    else if (t.toolMeta?.ok === false || t.toolMeta?.status === "failed") failed += 1;
     else ok += 1;
   }
-  return { total: tools.length, failed, pending, ok, names };
+  return { total: tools.length, failed, notRun, pending, ok, names };
 }

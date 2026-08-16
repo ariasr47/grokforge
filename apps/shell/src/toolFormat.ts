@@ -7,6 +7,16 @@ export interface ToolMeta {
   summary?: string;
   /** Whether result has arrived. */
   done?: boolean;
+  lifecycle?: "pending" | "terminal";
+  execution?: "executed" | "not_executed" | null;
+  status?: "running" | "succeeded" | "failed" | "rejected";
+  detailAvailable?: boolean;
+  activityId?: string;
+  toolCallId?: string;
+  reasonCode?: string | null;
+  reason?: string | null;
+  command?: string | null;
+  activityEvent?: import("./api").ToolRunEvent;
 }
 
 const MAX_TOOL_BODY = 4_000;

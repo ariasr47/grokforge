@@ -5,21 +5,32 @@ export interface RunOverview {
   lastError: string | null;
   userTurns: number;
 }
+import type { ShellCapabilityView } from "./api";
 
 interface Props {
   overview: RunOverview;
   workspaceName: string | null;
   /** Chat must never be labelled a Code "workspace" (SPEC §4). */
   mode?: "chat" | "code";
+  shellCapability?: ShellCapabilityView;
 }
 
-export function OverviewStrip({ overview, workspaceName, mode = "code" }: Props) {
+export function OverviewStrip({ overview, workspaceName, mode = "code", shellCapability }: Props) {
   if (!workspaceName) return null;
   return (
     <div className="overview-strip" role="status" aria-label="Run overview">
       <span className="ov-item">
         <em>{mode === "chat" ? "files" : "ws"}</em> {workspaceName}
       </span>
+      {shellCapability?.status === "available" ? (
+        <span className="ov-item" title={shellCapability.executable}>
+          <em>shell</em> {shellCapability.displayName}
+        </span>
+      ) : shellCapability?.status === "unavailable" ? (
+        <span className="ov-item ov-err" title={shellCapability.reason}>
+          <em>shell</em> Shell unavailable. Structured repository tools are still available.
+        </span>
+      ) : null}
       <span className="ov-item">
         <em>turns</em> {overview.userTurns}
       </span>

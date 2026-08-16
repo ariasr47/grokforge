@@ -109,11 +109,10 @@ try {
 
 try {
   const r = await j("POST", "/api/prefetch-mode", { mode: "code" });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.ok, true);
-  ok("prefetch");
+  assert.equal(r.status, 404);
+  ok("removed prefetch endpoint stays absent");
 } catch (e) {
-  fail("prefetch", e);
+  fail("removed prefetch endpoint", e);
 }
 
 try {

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import type { ExecutionEnvironmentCapability } from "./executionCapability.js";
 import { ensureDirForFile, relativeToWorkspace, resolveUnderWorkspace } from "./paths.js";
 import { checkShellCommand } from "./shell-policy.js";
 
@@ -102,6 +103,10 @@ export const TOOL_DEFINITIONS = [
     },
   },
 ];
+export function toolDefinitionsFor(capability: { status: string; displayName?: string | null; dialect?: string | null }) {
+  if (!capability) return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.map((tool) => tool.function.name === "run_shell" ? { ...tool, function: { ...tool.function, description: capability.status === "available" ? `Run a command using ${capability.displayName} (${capability.dialect}) after approval; cwd is the workspace start. Prefer list_dir, read_file, and grep for ordinary repository work.` : "Shell unavailable. Use list_dir, read_file, and grep for repository work." } } : tool);
+}
 
 export type ToolName =
   | "read_file"
@@ -364,11 +369,12 @@ export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
 }
 
 export async function runShell(
-  workspaceRoot: string,
+  capability: ExecutionEnvironmentCapability,
   command: string,
   timeoutMs = 60_000,
   options?: { enforceAllowlist?: boolean },
 ): Promise<string> {
+  const root = path.resolve(capability.workspaceRoot);
   const policy = checkShellCommand(command, {
     timeoutMs,
     enforceAllowlist: options?.enforceAllowlist,
@@ -380,18 +386,21 @@ export async function runShell(
       exit_code: null,
       stdout: "",
       stderr: policy.reason,
-      cwd: path.resolve(workspaceRoot),
+      cwd: root,
       timeout_ms: policy.timeoutMs,
     });
   }
 
-  const root = path.resolve(workspaceRoot);
   const limit = policy.timeoutMs;
   return new Promise((resolve, reject) => {
-    const child = spawn(command, {
+    if (capability.status !== "available") {
+      resolve(JSON.stringify({ blocked:true, error:capability.reason, exit_code:null, stdout:"", stderr:capability.reason, cwd:root, timeout_ms:limit }));
+      return;
+    }
+    const child = spawn(capability.executable, [...capability.argvPrefix, command], {
       cwd: root,
-      shell: true,
-      env: process.env,
+      shell: false,
+      env: capability.effectiveEnvironment,
       windowsHide: true,
     });
     let stdout = "";

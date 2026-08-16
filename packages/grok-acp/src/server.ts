@@ -19,6 +19,8 @@ import {
   type ChatMessage,
   type ToolCall,
 } from "./xai.js";
+import { bindExecutionCapability, isHostExecutionProfile, type ExecutionEnvironmentCapability } from "./executionCapability.js";
+import { preflightShell } from "./shellPreflight.js";
 
 type JsonRpcId = number | string | null;
 
@@ -29,12 +31,13 @@ interface Incoming {
   params?: Record<string, unknown>;
 }
 
-interface Session {
+export interface Session {
   id: string;
   messages: ChatMessage[];
   pendingEdits: Map<string, PendingEdit>;
   sessionWrite: boolean;
   sessionShell: boolean;
+  capability: ExecutionEnvironmentCapability;
 }
 
 /** Cap agent context growth during long dogfood sessions (system + recent turns). */
@@ -74,6 +77,7 @@ export class GrokAcpServer {
   >();
   private abort: AbortController | null = null;
   private cancelled = false;
+  private capability: ExecutionEnvironmentCapability | null = null;
 
   start(): void {
     const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -124,13 +128,19 @@ export class GrokAcpServer {
           if (typeof params?.cwd === "string" && params.cwd) {
             this.workspaceRoot = params.cwd;
           }
+          if (!isHostExecutionProfile(params?.executionProfile)) {
+            this.respondError(id ?? null, -32001, "Missing or invalid host execution profile");
+            break;
+          }
+          this.capability = bindExecutionCapability(params.executionProfile, this.workspaceRoot, Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)) as Record<string,string>);
           const sessionId = randomUUID();
           this.sessions.set(sessionId, {
             id: sessionId,
-            messages: [{ role: "system", content: systemPromptForMode() }],
+            messages: [{ role: "system", content: systemPromptForMode(this.capability) }],
             pendingEdits: new Map(),
             sessionWrite: false,
             sessionShell: false,
+            capability: this.capability,
           });
           this.respond(id ?? null, {
             sessionId,
@@ -331,12 +341,13 @@ export class GrokAcpServer {
           streamedContent = false;
           streamedThinking = false;
           try {
-            return await streamChatCompletion({
+              return await streamChatCompletion({
               apiKey,
               model,
               messages: session.messages,
               tools: true,
-              reasoning_effort: effort,
+              capability: session.capability,
+                reasoning_effort: effort,
               signal: this.abort?.signal,
               onThinkingDelta: (t) => {
                 streamedThinking = true;
@@ -370,6 +381,7 @@ export class GrokAcpServer {
               model,
               messages: session.messages,
               tools: true,
+              capability: session.capability,
               reasoning_effort: effort,
               signal: this.abort?.signal,
             });
@@ -525,22 +537,26 @@ export class GrokAcpServer {
       args = {};
     }
 
-    this.notify("tool_request", {
-      id: call.id,
-      name,
-      input: args,
-    });
+    const capability = session.capability;
+    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true });
+    this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true });
 
     const perm = toolPermissionKind(name);
 
     try {
       if (perm === "read") {
         const out = await executeReadTool(this.workspaceRoot, name, args);
-        this.notify("tool_result", { id: call.id, ok: true, output: out });
+        emitTerminal(out, true);
         return out;
       }
 
       if (perm === "shell") {
+        const preflight = await preflightShell(capability, String(args.command ?? ""));
+        if (preflight.disposition === "reject") {
+          const msg = JSON.stringify({ execution: "not_executed", reasonCode: preflight.reasonCode, command: preflight.command, reason: preflight.reason, shellDisplayName: preflight.shellDisplayName });
+          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason });
+          return msg;
+        }
         if (!session.sessionShell) {
           const decision = await this.waitPermission(
             call.id,
@@ -550,13 +566,13 @@ export class GrokAcpServer {
           if (decision === "allow_session") session.sessionShell = true;
           if (decision === "deny" || decision === "cancelled") {
             const msg = JSON.stringify({ error: "User denied shell permission" });
-            this.notify("tool_result", { id: call.id, ok: false, output: msg });
+            emitTerminal(msg, false);
             return msg;
           }
         }
         const enforceAllowlist = process.env.GROKFORGE_SHELL_ALLOWLIST !== "0";
         const out = await runShell(
-          this.workspaceRoot,
+          capability,
           String(args.command ?? ""),
           Number(args.timeout_ms ?? 60_000),
           { enforceAllowlist },
@@ -575,7 +591,7 @@ export class GrokAcpServer {
         } catch {
           /* keep ok */
         }
-        this.notify("tool_result", { id: call.id, ok, output: out });
+        emitTerminal(out, ok);
         return out;
       }
 
@@ -589,7 +605,7 @@ export class GrokAcpServer {
         if (decision === "allow_session") session.sessionWrite = true;
         if (decision === "deny") {
           const msg = JSON.stringify({ error: "User denied write permission" });
-          this.notify("tool_result", { id: call.id, ok: false, output: msg });
+          emitTerminal(msg, false);
           return msg;
         }
       }
@@ -617,7 +633,7 @@ export class GrokAcpServer {
           path: edit.path,
           status: "accepted",
         });
-        this.notify("tool_result", { id: call.id, ok: true, output: out });
+        emitTerminal(out, true);
         return out;
       }
       session.pendingEdits.delete(editId);
@@ -632,13 +648,18 @@ export class GrokAcpServer {
         path: edit.path,
         status: "rejected",
       });
-      this.notify("tool_result", { id: call.id, ok: false, output: out });
+      emitTerminal(out, false);
       return out;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const out = JSON.stringify({ error: message });
-      this.notify("tool_result", { id: call.id, ok: false, output: out });
+      emitTerminal(out, false);
       return out;
     }
+  }
+
+  /** Backend test seam: executes the same production tool path used by prompt turns. */
+  async executeTool(session: Session, call: ToolCall): Promise<string> {
+    return this.handleToolCall(session, call);
   }
 }

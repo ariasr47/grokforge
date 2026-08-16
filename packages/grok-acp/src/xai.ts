@@ -1,4 +1,5 @@
-import { TOOL_DEFINITIONS } from "./tools.js";
+import { toolDefinitionsFor } from "./tools.js";
+import type { ExecutionEnvironmentCapability } from "./executionCapability.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -87,6 +88,7 @@ export async function chatCompletion(options: {
   temperature?: number;
   reasoning_effort?: "low" | "medium" | "high";
   signal?: AbortSignal;
+  capability: ExecutionEnvironmentCapability;
 }): Promise<ChatCompletionResult> {
   const body: Record<string, unknown> = {
     model: options.model,
@@ -95,7 +97,7 @@ export async function chatCompletion(options: {
     stream: false,
   };
   if (options.tools !== false) {
-    body.tools = TOOL_DEFINITIONS;
+    body.tools = toolDefinitionsFor(options.capability);
     body.tool_choice = "auto";
   }
   if (options.reasoning_effort) {
@@ -162,6 +164,7 @@ export async function streamChatCompletion(options: {
   onThinkingDelta?: (text: string) => void;
   onTextDelta?: (text: string) => void;
   onPhase?: (phase: "reasoning" | "writing" | "tools") => void;
+  capability: ExecutionEnvironmentCapability;
 }): Promise<ChatCompletionResult> {
   const body: Record<string, unknown> = {
     model: options.model,
@@ -170,7 +173,7 @@ export async function streamChatCompletion(options: {
     stream: true,
   };
   if (options.tools !== false) {
-    body.tools = TOOL_DEFINITIONS;
+    body.tools = toolDefinitionsFor(options.capability);
     body.tool_choice = "auto";
   }
   if (options.reasoning_effort) {
@@ -439,7 +442,11 @@ Guidelines:
 - When the user is choosing between product modes or plans, use carousel or choices so they can click "Choose this".
 `;
 
-export function systemPromptForMode(): string {
+export function systemPromptForMode(capability: { status: string; platform?: string; executable?: string | null; displayName?: string | null; dialect?: string | null; reasonCode?: string | null; reason?: string | null; structuredRepositoryTools?: readonly string[] }): string {
   const mode = process.env.GROKFORGE_MODE?.trim().toLowerCase();
-  return mode === "chat" ? CHAT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  const base = mode === "chat" ? CHAT_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  const context = capability.status === "available"
+    ? `\nHost shell: ${capability.platform}; executable ${capability.executable}; display ${capability.displayName}; dialect ${capability.dialect}. Start in the workspace directory. Prefer list_dir, read_file, and grep for ordinary repository work; use shell only when those tools cannot express it. Do not claim confinement.`
+    : `\nShell unavailable (${capability.platform ?? "unknown"}). Prefer structured repository tools list_dir, read_file, and grep. Reason code: ${capability.reasonCode ?? "unsupported_platform"}. ${capability.reason ?? "Shell execution is unavailable."}`;
+  return base + context;
 }

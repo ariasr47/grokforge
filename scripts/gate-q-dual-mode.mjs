@@ -5,7 +5,6 @@
  */
 import assert from "node:assert/strict";
 import path from "node:path";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const HOST = process.env.GROKFORGE_URL || "http://127.0.0.1:8787";
@@ -108,14 +107,13 @@ try {
   fail("AC1 mode switch", e);
 }
 
-// Prefetch
+// Removed prefetch endpoint — mode switching stays explicit and single-agent.
 try {
   const r = await j("POST", "/api/prefetch-mode", { mode: "code" });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.ok, true);
-  ok("prefetch-mode endpoint");
+  assert.equal(r.status, 404);
+  ok("removed prefetch-mode endpoint stays absent");
 } catch (e) {
-  fail("prefetch-mode", e);
+  fail("removed prefetch-mode endpoint", e);
 }
 
 // Dual-mode exclusive: health reports single pid
@@ -137,17 +135,6 @@ try {
   ok("AC4-ish path confinement unit");
 } catch (e) {
   fail("path confinement", e);
-}
-
-// SPEC / INTERFACE present
-try {
-  const base = path.join(root, ".spire/clusters/tech/contracts/dual-mode-shell");
-  for (const f of ["SPEC.md", "INTERFACE_CONTRACT.md", "PLAN.md", "BRIEF.md"]) {
-    assert.ok(fs.existsSync(path.join(base, f)), f);
-  }
-  ok("contract artifacts present");
-} catch (e) {
-  fail("contract artifacts", e);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -35,6 +35,7 @@ import { getAgent, listAgents, resolveAgentSpawn } from "./agents.js";
 import { audit } from "./audit.js";
 import { clampEffort, loadPolicy } from "./policy.js";
 import { recordCompletedConversation } from "./shell-history.js";
+import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./executionEnvironment.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -84,6 +85,13 @@ export type BusEvent =
 
 export type Listener = (event: BusEvent) => void;
 
+export function classifyToolRunLog(event: Extract<AcpUiEvent, { type: "tool_run" }>): { message: "tool_not_executed" | "tool_failed" | null; fields: Record<string, unknown> } {
+  if (event.lifecycle !== "terminal") return { message: null, fields: {} };
+  if (event.execution === "not_executed" && event.status === "rejected") return { message: "tool_not_executed", fields: { toolCallId:event.toolCallId, command:event.command, reasonCode:event.reasonCode, reason:event.reason, shellDisplayName:event.shellDisplayName } };
+  if (event.execution === "executed" && event.status === "failed") return { message: "tool_failed", fields: { toolCallId:event.toolCallId, command:event.command, error:event.error } };
+  return { message: null, fields: {} };
+}
+
 export interface PublicState {
   workspace: string | null;
   workspaceName: string | null;
@@ -105,6 +113,7 @@ export interface PublicState {
   appliedEffort: EffortLevel | null;
   appliedModel: string | null;
   chatRoot: string | null;
+  shellCapability: ShellCapabilityView;
 }
 
 export class AgentSession {
@@ -140,6 +149,7 @@ export class AgentSession {
     selected: Effort;
     suppressNextDone: boolean;
   } | null = null;
+  private readonly executionEnvironment = resolveHostExecutionEnvironment({ platform: process.platform, environment: process.env });
 
   constructor() {
     this.cfg = loadConfig();
@@ -198,6 +208,7 @@ export class AgentSession {
       appliedEffort: this.appliedEffort,
       appliedModel: this.appliedModel,
       chatRoot,
+      shellCapability: this.executionEnvironment.publicView,
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
@@ -419,13 +430,15 @@ export class AgentSession {
         workspaceRoot: this.workspace!,
         command,
         args,
-        env: {
+        executionProfile: this.executionEnvironment.profile,
+        env: Object.freeze({
+          ...this.executionEnvironment.effectiveEnvironment,
           XAI_API_KEY: token ?? "",
           XAI_MODEL: this.cfg.model,
           GROKFORGE_MODE: mode,
           GROKFORGE_SHELL_ALLOWLIST:
             this.cfg.shellAllowlist === false ? "0" : "1",
-        },
+        }),
       });
       this.client = client;
       /** Cache tool names for result logging. */
@@ -434,27 +447,29 @@ export class AgentSession {
       client.onEvent((ev) => {
         // Ignore events from a disposed/replaced client
         if (this.client !== gen) return;
-        if (ev.type === "tool_request") {
-          toolNames.set(ev.id, ev.name);
+        if (ev.type === "tool_run") {
+          toolNames.set(ev.toolCallId, ev.name ?? "tool");
+          const taxonomy = classifyToolRunLog(ev);
+          if (taxonomy.message) log("warn", taxonomy.message, taxonomy.fields);
           log("debug", "tool request", {
-            id: ev.id,
+            id: ev.toolCallId,
             name: ev.name,
             sessionId: this.sessionId,
           });
         }
-        if (ev.type === "tool_result") {
-          const name = toolNames.get(ev.id) || "tool";
+        if (ev.type === "tool_run" && ev.lifecycle === "terminal" && ev.execution === "executed") {
+          const name = toolNames.get(ev.toolCallId) || "tool";
           const meta = summarizeToolOutput(ev.output);
-          if (!ev.ok) {
+          if (ev.status === "failed") {
             log("warn", "tool failed", {
-              id: ev.id,
+              id: ev.toolCallId,
               name,
               sessionId: this.sessionId,
               ...meta,
             });
           } else {
             log("debug", "tool ok", {
-              id: ev.id,
+              id: ev.toolCallId,
               name,
               sessionId: this.sessionId,
               ...meta,

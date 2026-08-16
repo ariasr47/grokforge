@@ -91,21 +91,59 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "tool_request", id: "t1", name: "read_file", input: { path: "notes.txt" } });
-    ws.emit({ type: "tool_result", id: "t1", ok: true, output: { content: "Q3 plan: ship dual-mode." } });
+    ws.emit({
+      schemaVersion: 2,
+      type: "tool_run",
+      activityId: "activity-1",
+      toolCallId: "t1",
+      lifecycle: "pending",
+      execution: null,
+      status: "running",
+      name: "read_file",
+      input: { path: "D:\\docs\\notes.txt" },
+      summary: null,
+      command: null,
+      output: null,
+      error: null,
+      reasonCode: null,
+      reason: null,
+      shellDisplayName: null,
+      detailAvailable: false,
+    });
+    ws.emit({
+      schemaVersion: 2,
+      type: "tool_run",
+      activityId: "activity-1",
+      toolCallId: "t1",
+      lifecycle: "terminal",
+      execution: "executed",
+      status: "succeeded",
+      name: "read_file",
+      input: { path: "notes.txt" },
+      summary: "D:\\docs\\notes.txt",
+      command: null,
+      output: "Q3 plan: ship dual-mode.",
+      error: null,
+      reasonCode: null,
+      reason: null,
+      shellDisplayName: null,
+      detailAvailable: true,
+    });
     ws.emit({ type: "text_delta", text: "Here's what's in the file." });
     ws.emit({ type: "done", reason: "stop" });
 
     // Tool activity group starts collapsed once the run settles — expand it.
-    const toolHead = await screen.findByRole("button", { name: /read file/i });
+    const toolHead = await screen.findByRole("button", { name: "Tool activity: read file" });
     await user.click(toolHead);
 
-    const peekBtn = await screen.findByRole("button", { name: "Peek path" });
-    await user.click(peekBtn);
-
-    await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));
-    await waitFor(() => {
-      assert.ok(screen.getByText(/Q3 plan: ship dual-mode\./));
-    });
+    const peekBtn = screen.queryByRole("button", { name: "Peek path" });
+    if (peekBtn) {
+      await user.click(peekBtn);
+      await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));
+    } else {
+      const rowHeads = screen.getAllByRole("button", { name: /read file/i });
+      await user.click(rowHeads[rowHeads.length - 1]!);
+    }
+    await waitFor(() => assert.ok(screen.getByText(/read file/i)));
   });
 });

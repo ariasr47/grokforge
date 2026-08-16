@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   ensureDesktopHost,
@@ -38,7 +38,6 @@ import { RunStatusBar, type RunPhase } from "./RunStatusBar";
 import {
   formatToolInput,
   formatToolOutput,
-  summarizeToolInput,
 } from "./toolFormat";
 import { type PendingDiff } from "./DiffPanel";
 import { type PermissionReq } from "./PermissionCard";
@@ -84,6 +83,17 @@ import { ConnectorsPanel } from "./ConnectorsPanel";
 import { appChannel, channelBadge, hostPort } from "./api";
 import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
 import { useToast } from "./Toast";
+import {
+  activityIdentityFor,
+  createLiveActivityRun,
+  closeFirstSights,
+  freezeDisconnected,
+  mergeToolDetail,
+  reduceToolRun,
+  stampFirstSight,
+  type ActivityStamp,
+  type LiveActivityRun,
+} from "./activityRun";
 import { readFilesForAttach } from "./contextAttach";
 import {
   downloadMarkdown,
@@ -236,6 +246,10 @@ export function App() {
   /** Bumped on session/mode switch so late agent events cannot paint the wrong transcript. */
   const eventEpochRef = useRef(0);
   const streamEpochRef = useRef(0);
+  const nextActivityRunCounterRef = useRef(0);
+  const liveActivityRunRef = useRef<LiveActivityRun | null>(null);
+  const activityRevealRef = useRef<string | null>(null);
+  const activityOuterStickDisabledRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = state;
@@ -249,6 +263,9 @@ export function App() {
 
   const discardTranscriptStream = useCallback(() => {
     // Invalidate in-flight stream paint (session/mode switch).
+    if (liveActivityRunRef.current) {
+      liveActivityRunRef.current.acceptingFirstSight = false;
+    }
     eventEpochRef.current += 1;
     streamEpochRef.current = eventEpochRef.current; // keep equal — only send() opens a new run
     streamBufRef.current?.reset();
@@ -260,6 +277,12 @@ export function App() {
   const beginStreamRun = useCallback(() => {
     eventEpochRef.current += 1;
     streamEpochRef.current = eventEpochRef.current;
+    const counter = nextActivityRunCounterRef.current++;
+    liveActivityRunRef.current = createLiveActivityRun(
+      eventEpochRef.current,
+      `activity-run:${counter}`,
+    );
+    activityOuterStickDisabledRef.current = false;
     streamBufRef.current?.reset();
     streamIdRef.current = null;
     thinkingIdRef.current = null;
@@ -376,6 +399,10 @@ export function App() {
     const el = transcriptRef.current;
     if (!el) return;
     const onScroll = () => {
+      if (activityOuterStickDisabledRef.current) {
+        stickToBottomRef.current = false;
+        return;
+      }
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       stickToBottomRef.current = gap < 96;
     };
@@ -399,6 +426,28 @@ export function App() {
       }
     };
   }, [messages, permissions.length, diffQueue.length, oauth]);
+
+  // Reveal the first activity header inside the transcript viewport once. This
+  // deliberately uses the nearest scroll container and never the page/body.
+  useLayoutEffect(() => {
+    const key = activityRevealRef.current;
+    if (!key) return;
+    const header = document.querySelector<HTMLElement>(
+      `[data-activity-run="${CSS.escape(key)}"] .tool-activity-head`,
+    );
+    if (header) {
+      header.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
+      const transcript = transcriptRef.current;
+      if (transcript) {
+        const tr = transcript.getBoundingClientRect();
+        const hr = header.getBoundingClientRect();
+        if (hr.top < tr.top) transcript.scrollTop -= tr.top - hr.top;
+        else if (hr.bottom > tr.bottom) transcript.scrollTop += hr.bottom - tr.bottom;
+      }
+      activityRevealRef.current = null;
+    }
+  }, [messages]);
+
 
   const classifyRecovery = useCallback(
     (msg: string, meta?: Record<string, unknown>) => {
@@ -529,10 +578,47 @@ export function App() {
     }
   }, [sessionId, state, pathInput, errorBanner, boot, bootMsg, launchStatus]);
 
+  const stampActivity = useCallback(
+    (identity: string): ActivityStamp | null => {
+      const run = liveActivityRunRef.current;
+      if (!run || run.epoch !== eventEpochRef.current || run.frozenDisconnected) {
+        if (run?.frozenDisconnected) {
+          void api.clientLog("debug", "activity ignored while disconnected", { identity });
+        }
+        return null;
+      }
+      const wasFirstSight = run.acceptingFirstSight && !run.seen.has(identity);
+      const stamp = stampFirstSight(run, identity);
+      if (wasFirstSight && stamp) {
+        // Activity owns its bounded viewport. Once its first sight is painted,
+        // transcript mutations must not pull the outer scroll owner to bottom.
+        activityOuterStickDisabledRef.current = true;
+        stickToBottomRef.current = false;
+        activityRevealRef.current = stamp.activityRunKey;
+      }
+      return stamp;
+    },
+    [],
+  );
+
+  const markDisconnectedActivity = useCallback(() => {
+    const run = liveActivityRunRef.current;
+    if (!run || run.frozenDisconnected) return;
+    freezeDisconnected(run);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === "tool" && m.toolMeta?.done === false
+          ? { ...m, content: `${m.content}\nOffline — tool status may be incomplete.` }
+          : m,
+      ),
+    );
+  }, []);
+
   const onServerEvent = useCallback((ev: ServerEvent) => {
     if (ev.type === "state") {
       applyState(ev.state);
       setModelDraft(ev.state.model);
+      if (!ev.state.connected) markDisconnectedActivity();
       if (typeof ev.state.shellAllowlist === "boolean") {
         setShellAllowlist(ev.state.shellAllowlist);
       }
@@ -651,132 +737,182 @@ export function App() {
       streamBufRef.current?.push(ev.text);
       return;
     }
-    if (ev.type === "tool_request") {
+    if (ev.type === "tool_run") {
       if (!epochOk) return;
       streamBufRef.current?.flush();
+      const toolEvent = ev;
+      const validTuple =
+        toolEvent.schemaVersion === 2 &&
+        Boolean(toolEvent.activityId.trim()) &&
+        Boolean(toolEvent.toolCallId.trim()) &&
+        ((toolEvent.lifecycle === "pending" && toolEvent.execution === null && toolEvent.status === "running") ||
+          (toolEvent.lifecycle === "terminal" &&
+            ((toolEvent.execution === "executed" && (toolEvent.status === "succeeded" || toolEvent.status === "failed")) ||
+              (toolEvent.execution === "not_executed" && toolEvent.status === "rejected"))));
+      if (!validTuple) {
+        void api.clientLog("warn", "ignored malformed tool_run event", {
+          activityId: toolEvent.activityId,
+          toolCallId: toolEvent.toolCallId,
+        });
+        return;
+      }
       setRunPhase("tools");
-      const summary = summarizeToolInput(ev.name, ev.input);
+      const identity = activityIdentityFor(toolEvent);
+      const stamp = stampActivity(identity);
+      if (!stamp) return;
+      const current = messagesRef.current.find(
+        (m) => m.role === "tool" && m.activityIdentity === identity,
+      );
+      const reduction = reduceToolRun(
+        current
+          ? {
+              activityRunKey: current.activityRunKey,
+              activityOrder: current.activityOrder,
+              activityIdentity: current.activityIdentity,
+              activity: current.toolMeta?.activityEvent,
+            }
+          : null,
+        toolEvent,
+        stamp,
+      );
+      if (reduction.kind === "ignore") return;
+      const body = toolEvent.output ? formatToolOutput(toolEvent.output) : "";
+      if (toolEvent.status === "failed") {
+        toolFailCountRef.current += 1;
+        if (toolFailCountRef.current === 1 || toolFailCountRef.current % 3 === 0) {
+          reportError(`${toolEvent.name || "tool"} failed`, {
+            code: "tool_error", source: "tool", snippet: (toolEvent.error || body).slice(0, 200),
+          });
+        }
+      }
       setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.role === "tool" && m.id === ev.id);
+        const idx = prev.findIndex((m) => m.role === "tool" && m.activityIdentity === identity);
+        if (reduction.kind === "enrich" && idx >= 0) {
+          const cur = prev[idx]!;
+          const existing = cur.toolMeta?.activityEvent;
+          if (!existing) return prev;
+          const enriched = mergeToolDetail(existing, reduction.detail);
+          const next = prev.slice();
+          next[idx] = {
+            ...cur,
+            toolMeta: {
+              ...cur.toolMeta,
+              activityEvent: enriched,
+              name: enriched.name ?? cur.toolMeta?.name,
+              summary: enriched.summary ?? cur.toolMeta?.summary,
+            },
+          };
+          return next;
+        }
+        const st = reduction.stamp;
         const entry: ChatMessage = {
-          id: ev.id,
+          id: toolEvent.activityId,
           role: "tool",
-          content: formatToolInput(ev.input),
+          content: body || (toolEvent.input != null ? formatToolInput(toolEvent.input) : current?.content || ""),
+          activityIdentity: st.activityIdentity,
+          activityRunKey: st.activityRunKey,
+          activityOrder: st.activityOrder,
           toolMeta: {
-            name: ev.name,
-            summary,
-            done: false,
+            activityId: toolEvent.activityId,
+            toolCallId: toolEvent.toolCallId,
+            activityEvent: toolEvent,
+            name: toolEvent.name ?? current?.toolMeta?.name,
+            summary: toolEvent.summary ?? current?.toolMeta?.summary,
+            ok: toolEvent.execution === "executed" ? toolEvent.status === "succeeded" : undefined,
+            done: toolEvent.lifecycle === "terminal",
+            lifecycle: toolEvent.lifecycle,
+            execution: toolEvent.execution,
+            status: toolEvent.status,
+            detailAvailable: toolEvent.detailAvailable,
+            reasonCode: toolEvent.reasonCode,
+            reason: toolEvent.reason,
           },
         };
         if (idx >= 0) {
           const next = prev.slice();
-          next[idx] = entry;
+          const prior = next[idx]!;
+          if (prior.toolMeta?.activityEvent?.lifecycle === "terminal" && toolEvent.lifecycle === "pending") {
+            const enriched = mergeToolDetail(prior.toolMeta.activityEvent, {
+              activityId: toolEvent.activityId,
+              toolCallId: toolEvent.toolCallId,
+              name: toolEvent.name,
+              input: toolEvent.input,
+              summary: toolEvent.summary,
+              command: toolEvent.command,
+              shellDisplayName: toolEvent.shellDisplayName,
+            });
+            next[idx] = {
+              ...prior,
+              toolMeta: {
+                ...prior.toolMeta,
+                activityEvent: enriched,
+                name: enriched.name ?? prior.toolMeta.name,
+                summary: enriched.summary ?? prior.toolMeta.summary,
+              },
+            };
+            return next;
+          }
+          next[idx] = {
+            ...entry,
+            activityRunKey: entry.activityRunKey ?? prior.activityRunKey,
+            activityOrder: entry.activityOrder ?? prior.activityOrder,
+            activityIdentity: entry.activityIdentity ?? prior.activityIdentity,
+            toolMeta: {
+              ...prior.toolMeta,
+              ...entry.toolMeta,
+              name: entry.toolMeta?.name ?? prior.toolMeta?.name,
+              summary: entry.toolMeta?.summary ?? prior.toolMeta?.summary,
+              activityEvent: toolEvent,
+            },
+          };
           return next;
         }
         return [...prev, entry];
       });
       return;
     }
-    if (ev.type === "tool_result") {
-      if (!epochOk) return;
-      streamBufRef.current?.flush();
-      const body = formatToolOutput(ev.output);
-      if (!ev.ok) {
-        toolFailCountRef.current += 1;
-        // Soft surface first fail + every 3rd after — avoid banner spam
-        if (
-          toolFailCountRef.current === 1 ||
-          toolFailCountRef.current % 3 === 0
-        ) {
-          const name =
-            messagesRef.current.find((m) => m.id === ev.id)?.toolMeta?.name ||
-            "tool";
-          reportError(`${name} failed`, {
-            code: "tool_error",
-            source: "tool",
-            snippet: body.slice(0, 200),
-          });
-        }
-      }
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.role === "tool" && m.id === ev.id);
-        if (idx >= 0) {
-          const cur = prev[idx]!;
-          const next = prev.slice();
-          next[idx] = {
-            ...cur,
-            content: body || cur.content,
-            toolMeta: {
-              ...cur.toolMeta,
-              name: cur.toolMeta?.name,
-              summary: cur.toolMeta?.summary,
-              ok: ev.ok,
-              done: true,
-            },
-          };
-          return next;
-        }
-        return [
-          ...prev,
-          {
-            id: ev.id,
-            role: "tool",
-            content: body,
-            toolMeta: {
-              name: "tool",
-              summary: ev.ok ? "completed" : "failed",
-              ok: ev.ok,
-              done: true,
-            },
-          },
-        ];
-      });
-      return;
-    }
     if (ev.type === "permission_request") {
       if (!epochOk) return;
       streamBufRef.current?.flush();
+      const stamp = stampActivity(`permission:${ev.id}`);
+      if (!stamp) return;
       setPermissions((q) => {
         if (q.some((p) => p.id === ev.id)) return q;
         return [...q, { id: ev.id, kind: ev.kind, detail: ev.detail }];
       });
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `perm-sys-${ev.id}`,
-          role: "system",
-          content: `Permission requested: ${ev.kind}`,
-        },
-      ]);
+      setMessages((prev) => {
+        if (prev.some((m) => m.activityIdentity === stamp.activityIdentity)) return prev;
+        return [...prev, {
+          id: `perm-sys-${ev.id}`, role: "system", content: `Permission requested: ${ev.kind}`,
+          activityRunKey: stamp.activityRunKey, activityOrder: stamp.activityOrder,
+          activityIdentity: stamp.activityIdentity,
+        }];
+      });
       return;
     }
     if (ev.type === "file_edit") {
       if (!epochOk) return;
       streamBufRef.current?.flush();
-      if (ev.status === "proposed" && ev.id) {
+      if (!ev.id) return;
+      const stamp = stampActivity(`diff:${ev.id}`);
+      if (!stamp) return;
+      if (ev.status === "proposed") {
         setDiffQueue((q) => {
           if (q.some((d) => d.id === ev.id)) return q;
           return [...q, { id: ev.id!, path: ev.path, diff: ev.diff }];
         });
         setActiveDiffId((cur) => cur ?? ev.id!);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: "system",
-            content: `Diff proposed: ${ev.path}`,
-          },
-        ]);
+        setMessages((prev) => prev.some((m) => m.activityIdentity === stamp.activityIdentity)
+          ? prev
+          : [...prev, { id: `diff-sys-${ev.id}`, role: "system", content: `Diff proposed: ${ev.path}`, activityRunKey: stamp.activityRunKey, activityOrder: stamp.activityOrder, activityIdentity: stamp.activityIdentity }]);
       } else if (ev.status === "accepted" || ev.status === "rejected") {
         setDiffQueue((q) => q.filter((d) => d.id !== ev.id));
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: "system",
-            content: `Diff ${ev.status}: ${ev.path}`,
-          },
-        ]);
+        setMessages((prev) => {
+          const existing = prev.findIndex((m) => m.activityIdentity === stamp.activityIdentity);
+          const msg = { id: `diff-sys-${ev.id}`, role: "system" as const, content: `Diff ${ev.status}: ${ev.path}`, activityRunKey: stamp.activityRunKey, activityOrder: stamp.activityOrder, activityIdentity: stamp.activityIdentity };
+          if (existing < 0) return [...prev, msg];
+          const next = prev.slice(); next[existing] = { ...next[existing]!, ...msg }; return next;
+        });
       }
       return;
     }
@@ -807,6 +943,7 @@ export function App() {
       return;
     }
     if (ev.type === "done") {
+      if (epochOk && liveActivityRunRef.current) closeFirstSights(liveActivityRunRef.current);
       // Always flush buffered tokens first
       if (epochOk || busyRef.current) {
         streamBufRef.current?.flush();
@@ -960,7 +1097,7 @@ export function App() {
       toolFailCountRef.current = 0;
       return;
     }
-  }, [reportError, toast]);
+  }, [applyState, markDisconnectedActivity, reportError, stampActivity, toast]);
 
   const clearBootTimers = useCallback(() => {
     if (slowStartTimerRef.current) clearTimeout(slowStartTimerRef.current);
@@ -1066,6 +1203,10 @@ export function App() {
           setHostOk(true);
           return;
         }
+        // The transport status is authoritative for the live activity run:
+        // freeze current evidence before reconnect attempts can deliver any
+        // late identities or updates.
+        markDisconnectedActivity();
         // Win+PrtScn / focus loss can briefly drop WS — don't silent-cancel.
         // Surface interruption clearly if a run was in flight.
         if (busyRef.current) {
@@ -1106,7 +1247,7 @@ export function App() {
       clearInterval(healthTimer);
       sock.close();
     };
-  }, [boot, onServerEvent, toast]);
+  }, [boot, markDisconnectedActivity, onServerEvent, toast]);
 
   const refreshFiles = useCallback(async () => {
     try {
@@ -3156,6 +3297,7 @@ export function App() {
                     productMode === "chat" ? chatRootLabel : (state?.workspaceName ?? null)
                   }
                   mode={productMode}
+                  shellCapability={state?.shellCapability}
                 />
               )}
               <RunStatusBar

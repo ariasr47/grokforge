@@ -71,18 +71,43 @@ describe("AC4 — Chat: an escaping path is rendered as a failed, visible tool r
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    // Exactly the shape QA observed against the live host (QA_REPORT §5/AC4).
     ws.emit({
-      type: "tool_request",
-      id: "escape-1",
+      schemaVersion: 2,
+      type: "tool_run",
+      activityId: "escape-activity",
+      toolCallId: "escape-1",
+      lifecycle: "pending",
+      execution: null,
+      status: "running",
       name: "read_file",
       input: { path: "../../../../windows/win.ini" },
+      summary: null,
+      command: null,
+      output: null,
+      error: null,
+      reasonCode: null,
+      reason: null,
+      shellDisplayName: null,
+      detailAvailable: false,
     });
     ws.emit({
-      type: "tool_result",
-      id: "escape-1",
-      ok: false,
-      output: { error: "Path escapes workspace" },
+      schemaVersion: 2,
+      type: "tool_run",
+      activityId: "escape-activity",
+      toolCallId: "escape-1",
+      lifecycle: "terminal",
+      execution: "not_executed",
+      status: "rejected",
+      name: "read_file",
+      input: { path: "../../../../windows/win.ini" },
+      summary: "Path escapes workspace",
+      command: null,
+      output: null,
+      error: "Path escapes workspace",
+      reasonCode: "shell_resolution_failed",
+      reason: "Path escapes workspace",
+      shellDisplayName: null,
+      detailAvailable: true,
     });
     ws.emit({ type: "text_delta", text: "I can't read outside your folder." });
     ws.emit({ type: "done", reason: "stop" });
@@ -93,7 +118,7 @@ describe("AC4 — Chat: an escaping path is rendered as a failed, visible tool r
       assert.ok(activity, "expected a failed tool-activity group, not a silent drop");
     });
     await waitFor(() => {
-      assert.ok(screen.getByText(/Path escapes workspace/));
+      assert.ok(screen.getAllByText(/Path escapes workspace/).length >= 1);
     });
     // Never rendered as a successful tool run.
     assert.equal(document.querySelector('[data-tool-activity].ok'), null);

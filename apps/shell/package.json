@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:e2e-tool-activity": "node scripts/e2e-tool-activity.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "node --import tsx --import ./src/testEnv.ts --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",

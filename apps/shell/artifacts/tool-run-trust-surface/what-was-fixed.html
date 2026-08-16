@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Forge — Tool-run trust surface repair</title>
+  <style>
+    :root {
+      --paper: #f2f5f2;
+      --paper-raised: #fbfcf9;
+      --ink: #10162b;
+      --ink-soft: #586174;
+      --line: #cbd2d5;
+      --line-strong: #9ca8ae;
+      --indigo: #4b47c6;
+      --indigo-deep: #242260;
+      --aqua: #168f91;
+      --aqua-wash: #dceeee;
+      --coral: #d76050;
+      --coral-wash: #f5e1dc;
+      --green: #147353;
+      --green-wash: #dcece5;
+      --amber: #95651e;
+      --shadow: 0 22px 70px rgba(25, 35, 64, .12);
+      --radius: 18px;
+      --display: Bahnschrift, "Arial Narrow", "Aptos Display", sans-serif;
+      --body: Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(75, 71, 198, .035) 1px, transparent 1px) 0 0 / 52px 52px,
+        linear-gradient(rgba(75, 71, 198, .035) 1px, transparent 1px) 0 0 / 52px 52px,
+        var(--paper);
+      font: 16px/1.58 var(--body);
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 3px solid var(--aqua); outline-offset: 3px; }
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 10px;
+      left: 10px;
+      padding: 10px 14px;
+      background: var(--ink);
+      color: white;
+      transform: translateY(-150%);
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .utility {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      padding: 18px 0;
+      color: var(--ink-soft);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .utility__brand { display: flex; align-items: center; gap: 9px; color: var(--ink); }
+    .utility__mark {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--indigo);
+      border-radius: 6px;
+      color: var(--indigo);
+      transform: rotate(45deg);
+    }
+    .utility__mark span { transform: rotate(-45deg); }
+    .utility__state { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-wash); }
+
+    .hero {
+      overflow: hidden;
+      position: relative;
+      min-height: 610px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(330px, .92fr);
+      background: var(--ink);
+      color: #f8faf7;
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 75% 25%, rgba(28, 185, 178, .15), transparent 31%),
+        linear-gradient(118deg, transparent 0 63%, rgba(255,255,255,.045) 63% 63.4%, transparent 63.4% 100%);
+    }
+    .hero__copy { position: relative; z-index: 1; padding: clamp(44px, 7vw, 88px); align-self: center; }
+    .eyebrow {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 0 0 26px;
+      font: 700 11px/1.2 var(--mono);
+      color: #9cd7d4;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+    }
+    .eyebrow::before { content: ""; width: 34px; height: 1px; background: currentColor; }
+    h1, h2, h3 { font-family: var(--display); margin-top: 0; }
+    h1 {
+      max-width: 720px;
+      margin-bottom: 30px;
+      font-size: clamp(52px, 7.5vw, 104px);
+      line-height: .88;
+      letter-spacing: -.055em;
+      font-weight: 800;
+      text-wrap: balance;
+    }
+    .hero__dek {
+      max-width: 600px;
+      margin: 0;
+      color: #cfd5df;
+      font-size: clamp(17px, 2vw, 22px);
+      line-height: 1.48;
+    }
+
+    .hero__trace {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      align-content: center;
+      gap: 18px;
+      padding: 50px clamp(28px, 5vw, 62px) 50px 0;
+    }
+    .trace-card {
+      position: relative;
+      padding: 22px 22px 22px 62px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 14px;
+      background: rgba(255,255,255,.045);
+      backdrop-filter: blur(8px);
+    }
+    .trace-card::before {
+      content: attr(data-step);
+      position: absolute;
+      left: 20px;
+      top: 22px;
+      color: #9cd7d4;
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .08em;
+    }
+    .trace-card:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 33px;
+      top: 50px;
+      width: 1px;
+      height: 43px;
+      background: linear-gradient(#9cd7d4, transparent);
+      transform: translateY(100%);
+    }
+    .trace-card strong { display: block; margin-bottom: 3px; font-family: var(--display); font-size: 19px; }
+    .trace-card span { color: #b8c1ce; font-size: 14px; }
+    .hero__stamp {
+      position: absolute;
+      right: -36px;
+      bottom: 24px;
+      transform: rotate(-90deg);
+      transform-origin: center;
+      color: rgba(255,255,255,.27);
+      font: 700 10px/1 var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    main { padding: 92px 0 110px; }
+    .section { margin-top: 110px; }
+    .section:first-child { margin-top: 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: 190px minmax(0, 700px);
+      gap: 32px;
+      align-items: start;
+      margin-bottom: 42px;
+    }
+    .section-kicker { color: var(--indigo); font: 700 11px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    h2 { font-size: clamp(34px, 4vw, 58px); line-height: 1; letter-spacing: -.035em; margin-bottom: 16px; }
+    .section-intro { margin: 0; color: var(--ink-soft); font-size: 18px; max-width: 68ch; }
+
+    .signal-grid { display: grid; gap: 16px; }
+    .signal {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, .92fr) 44px minmax(0, 1.08fr) 44px minmax(210px, .7fr);
+      align-items: stretch;
+      min-height: 196px;
+    }
+    .signal__cell {
+      padding: 28px;
+      background: var(--paper-raised);
+      border: 1px solid var(--line);
+    }
+    .signal__cell:first-child { border-radius: var(--radius) 0 0 var(--radius); border-right: 0; }
+    .signal__cell:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: 0; }
+    .signal__cell--fix { border-color: rgba(75,71,198,.32); background: linear-gradient(145deg, #fcfcfa, #eeeffb); }
+    .signal__arrow {
+      display: grid;
+      place-items: center;
+      color: var(--indigo);
+      background: linear-gradient(var(--paper-raised), var(--paper-raised)) center / 100% 1px no-repeat;
+      font: 700 20px/1 var(--mono);
+    }
+    .signal__label { display: block; margin-bottom: 13px; color: var(--ink-soft); font: 700 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .signal__cell h3 { margin-bottom: 9px; font-size: 24px; line-height: 1.08; }
+    .signal__cell p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+    .signal__cell--before { border-top: 4px solid var(--coral); }
+    .signal__cell--proof { border-top: 4px solid var(--green); }
+    .signal__metric { display: block; margin: 4px 0 7px; color: var(--green); font: 800 28px/1 var(--display); }
+    code { padding: .12em .35em; border-radius: 5px; background: rgba(75,71,198,.09); color: var(--indigo-deep); font: .86em/1.35 var(--mono); }
+
+    .path {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--paper-raised);
+    }
+    .path__step { position: relative; min-height: 154px; padding: 24px 18px; border-right: 1px solid var(--line); }
+    .path__step:last-child { border-right: 0; }
+    .path__step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: 29px;
+      right: -5px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--aqua);
+      box-shadow: 0 0 0 4px var(--aqua-wash);
+    }
+    .path__num { display: block; margin-bottom: 28px; color: var(--aqua); font: 700 11px/1 var(--mono); }
+    .path__step strong { display: block; margin-bottom: 8px; font-size: 14px; line-height: 1.2; }
+    .path__step span { color: var(--ink-soft); font-size: 12px; line-height: 1.4; display: block; }
+
+    .evidence {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .metric {
+      grid-column: span 3;
+      min-height: 190px;
+      padding: 25px;
+      border-radius: var(--radius);
+      background: var(--paper-raised);
+      border: 1px solid var(--line);
+    }
+    .metric--wide { grid-column: span 6; background: var(--ink); color: white; border-color: var(--ink); }
+    .metric__value { display: block; margin-bottom: 24px; font: 800 clamp(40px, 5vw, 68px)/.9 var(--display); letter-spacing: -.04em; color: var(--indigo); }
+    .metric--wide .metric__value { color: #8ee0dc; }
+    .metric__label { font-weight: 700; }
+    .metric__note { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 13px; }
+    .metric--wide .metric__note { color: #aeb7c7; }
+    .proof-strip {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 18px 20px;
+      border-radius: 12px;
+      background: var(--green-wash);
+      color: var(--green);
+      font: 700 12px/1.3 var(--mono);
+    }
+    .proof-strip strong { margin-right: 6px; text-transform: uppercase; letter-spacing: .08em; }
+    .proof-strip span { padding: 6px 9px; border: 1px solid rgba(20,115,83,.24); border-radius: 999px; background: rgba(255,255,255,.5); }
+
+    .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--paper-raised);
+    }
+    summary {
+      cursor: pointer;
+      padding: 20px 52px 20px 22px;
+      font-weight: 750;
+      list-style: none;
+      position: relative;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; position: absolute; right: 22px; color: var(--indigo); font: 700 22px/1 var(--mono); }
+    details[open] summary::after { content: "−"; }
+    .details__body { padding: 0 22px 22px; color: var(--ink-soft); font-size: 14px; }
+    .details__body ul { margin: 0; padding-left: 18px; }
+    .details__body li + li { margin-top: 8px; }
+
+    .status-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 30px;
+      align-items: center;
+      padding: clamp(28px, 5vw, 54px);
+      border-radius: 22px;
+      background: linear-gradient(130deg, var(--indigo-deep), #37329d);
+      color: white;
+      box-shadow: var(--shadow);
+    }
+    .status-card h2 { margin-bottom: 13px; }
+    .status-card p { margin: 0; color: #d7daf1; max-width: 65ch; }
+    .status-card__seal {
+      width: 126px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 50%;
+      color: #a9e4df;
+      font: 800 12px/1.3 var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      transform: rotate(-7deg);
+    }
+    .status-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .button {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      min-height: 42px;
+      padding: 10px 15px;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 10px;
+      background: transparent;
+      color: white;
+      font: 700 13px/1 var(--body);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button:hover { background: rgba(255,255,255,.1); }
+    .button--solid { border-color: white; background: white; color: var(--indigo-deep); }
+    .button--solid:hover { background: #e7e8f8; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 34px 0 50px;
+      color: var(--ink-soft);
+      font: 12px/1.5 var(--mono);
+    }
+    .print-only { display: none; }
+
+    @media (max-width: 940px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero__trace { padding: 0 36px 50px; grid-template-columns: repeat(3, 1fr); }
+      .trace-card { padding: 50px 18px 20px; }
+      .trace-card::before { left: 18px; }
+      .trace-card::after { display: none; }
+      .signal { grid-template-columns: 1fr; }
+      .signal__arrow { height: 34px; transform: rotate(90deg); }
+      .signal__cell:first-child, .signal__cell:last-child { border: 1px solid var(--line); border-radius: var(--radius); }
+      .signal__cell--before { border-top: 4px solid var(--coral) !important; }
+      .signal__cell--proof { border-top: 4px solid var(--green) !important; }
+      .path { grid-template-columns: repeat(2, 1fr); }
+      .path__step { border-bottom: 1px solid var(--line); }
+      .path__step:nth-child(2n) { border-right: 0; }
+      .path__step::after { display: none; }
+      .metric { grid-column: span 6; }
+    }
+
+    @media (max-width: 640px) {
+      .shell { width: min(100% - 24px, 1180px); }
+      .utility { align-items: flex-start; }
+      .utility__state { text-align: right; }
+      .hero { min-height: 0; border-radius: 18px; }
+      .hero__copy { padding: 42px 25px; }
+      h1 { font-size: clamp(48px, 17vw, 74px); }
+      .hero__trace { grid-template-columns: 1fr; padding: 0 18px 24px; }
+      main { padding-top: 68px; }
+      .section { margin-top: 80px; }
+      .section-head { grid-template-columns: 1fr; gap: 12px; }
+      .path { grid-template-columns: 1fr; }
+      .path__step { border-right: 0; }
+      .metric, .metric--wide { grid-column: 1 / -1; }
+      .details-grid { grid-template-columns: 1fr; }
+      .status-card { grid-template-columns: 1fr; }
+      .status-card__seal { width: 104px; }
+      footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .hero__copy, .hero__trace { animation: settle .65s cubic-bezier(.2,.75,.2,1) both; }
+      .hero__trace { animation-delay: .12s; }
+      @keyframes settle { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    }
+
+    @media print {
+      :root { --paper: white; --paper-raised: white; }
+      body { background: white; font-size: 11pt; }
+      .shell { width: 100%; }
+      .utility button, .status-actions { display: none; }
+      .hero { min-height: 0; box-shadow: none; break-inside: avoid; }
+      .hero__copy { padding: 32px; }
+      .hero__trace { padding: 32px 32px 32px 0; }
+      .section { margin-top: 56px; }
+      .signal, .metric, details, .status-card { break-inside: avoid; }
+      details .details__body { display: block; }
+      .print-only { display: inline; }
+      footer { padding-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#report">Skip to report</a>
+
+  <header class="shell utility" aria-label="Report header">
+    <div class="utility__brand"><span class="utility__mark" aria-hidden="true"><span>F</span></span> Forge repair log</div>
+    <div class="utility__state"><span class="dot" aria-hidden="true"></span> Gate Q passed · release authorized</div>
+  </header>
+
+  <div class="shell hero">
+    <div class="hero__copy">
+      <p class="eyebrow">Tool-run trust surface · 15 Aug 2026</p>
+      <h1>Windows knew.<br>The tools didn’t.</h1>
+      <p class="hero__dek">Forge now chooses the real host shell, reports preflight failures honestly, and keeps every tool action visible, reachable, and attached to the conversation.</p>
+    </div>
+    <div class="hero__trace" aria-label="Repair trace">
+      <div class="trace-card" data-step="01"><strong>Environment truth</strong><span>One explicit Windows capability replaces shell guessing.</span></div>
+      <div class="trace-card" data-step="02"><strong>Event truth</strong><span>Not run, failed, and succeeded are distinct evidence.</span></div>
+      <div class="trace-card" data-step="03"><strong>Visual truth</strong><span>One persistent, bounded activity rail survives settlement.</span></div>
+    </div>
+    <span class="hero__stamp">Forge 0.3.2 · Windows · Code + Chat</span>
+  </div>
+
+  <main id="report" class="shell">
+    <section class="section" aria-labelledby="repair-title">
+      <div class="section-head">
+        <span class="section-kicker">Reported → repaired</span>
+        <div>
+          <h2 id="repair-title">Three symptoms. Three causal fixes.</h2>
+          <p class="section-intro">The work followed the failure from host environment selection through ACP events to the rendered transcript. Each visible symptom is tied to a mechanism and a fresh proof.</p>
+        </div>
+      </div>
+
+      <div class="signal-grid">
+        <article class="signal">
+          <div class="signal__cell signal__cell--before">
+            <span class="signal__label">Reported symptom</span>
+            <h3><code>ls</code> attempted on Windows</h3>
+            <p>The agent could infer a POSIX command while the product was actually running on Windows, producing avoidable failures and misleading recovery.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--fix">
+            <span class="signal__label">Causal repair</span>
+            <h3>Bind one explicit host capability</h3>
+            <p>Forge resolves an absolute <code>cmd.exe</code> once, carries the same frozen profile into ACP, prefers structured reads, and conservatively preflights commands before approval or process creation.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--proof">
+            <span class="signal__label">Observed proof</span>
+            <span class="signal__metric">47 / 47</span>
+            <p>Real-Windows seam tests. An absent exact <code>ls</code> becomes <strong>Not run</strong> before permission; compatible commands still use approval and workspace cwd.</p>
+          </div>
+        </article>
+
+        <article class="signal">
+          <div class="signal__cell signal__cell--before">
+            <span class="signal__label">Reported symptom</span>
+            <h3>The tool list could not be scrolled</h3>
+            <p>Long, dynamically settling activity competed with the outer transcript for height and scroll ownership. At zoom, the rail could collapse or push controls out of view.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--fix">
+            <span class="signal__label">Causal repair</span>
+            <h3>Give the activity body its own viewport</h3>
+            <p>The group is bounded to the transcript, its body owns native scrolling, and first-visible-row anchoring preserves position during updates. Header, composer, and topbar remain stable.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--proof">
+            <span class="signal__label">Observed proof</span>
+            <span class="signal__metric">45 rows</span>
+            <p>Wheel, native thumb, Page Up/Down, Home, and End reach every row at 100% and 200% in Chromium and packaged WebView2.</p>
+          </div>
+        </article>
+
+        <article class="signal">
+          <div class="signal__cell signal__cell--before">
+            <span class="signal__label">Reported symptom</span>
+            <h3>Rows disappeared or left visual debris</h3>
+            <p>Legacy event ambiguity, result-first ordering, flex shrink, and paint containment could erase settled evidence, duplicate it, or leave bordered fragments behind.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--fix">
+            <span class="signal__label">Causal repair</span>
+            <h3>Keep one truthful activity record</h3>
+            <p>A strict current <code>tool_run</code> union preserves first-sight order and terminal facts. Result-first updates fill only missing detail. Groups remain open until the operator collapses them; disconnect freezes known evidence.</p>
+          </div>
+          <div class="signal__arrow" aria-hidden="true">→</div>
+          <div class="signal__cell signal__cell--proof">
+            <span class="signal__label">Observed proof</span>
+            <span class="signal__metric">0 ghosts</span>
+            <p>One group, two top-level decision chips, no duplicates, no blank rows, and truthful <strong>1 failed · 1 not run</strong> summaries across settle and scroll-away/back.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="path-title">
+      <div class="section-head">
+        <span class="section-kicker">Current behavior</span>
+        <div>
+          <h2 id="path-title">The execution path now has one story.</h2>
+          <p class="section-intro">The same capability and outcome vocabulary travel from host startup to the screen. No layer invents a second platform guess or silently changes a terminal result.</p>
+        </div>
+      </div>
+      <div class="path" aria-label="Current tool execution path">
+        <div class="path__step"><span class="path__num">01</span><strong>Resolve host</strong><span>Absolute shell and frozen environment at startup.</span></div>
+        <div class="path__step"><span class="path__num">02</span><strong>Prefer structure</strong><span>List, read, and search use repository tools first.</span></div>
+        <div class="path__step"><span class="path__num">03</span><strong>Preflight shell</strong><span>Reject only proven incompatibility or absence.</span></div>
+        <div class="path__step"><span class="path__num">04</span><strong>Ask permission</strong><span>Only compatible commands enter existing approval.</span></div>
+        <div class="path__step"><span class="path__num">05</span><strong>Emit evidence</strong><span>Pending and terminal tuples stay schema-valid.</span></div>
+        <div class="path__step"><span class="path__num">06</span><strong>Group once</strong><span>First sight anchors one persistent activity block.</span></div>
+        <div class="path__step"><span class="path__num">07</span><strong>Freeze safely</strong><span>Disconnect keeps visible evidence immutable.</span></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="evidence-title">
+      <div class="section-head">
+        <span class="section-kicker">Independent evidence</span>
+        <div>
+          <h2 id="evidence-title">Fresh checks, not builder confidence.</h2>
+          <p class="section-intro">The final QA seat reran the product boundaries, exercised real native scrolling, and observed the packaged Windows surface at both scale factors.</p>
+        </div>
+      </div>
+      <div class="evidence">
+        <div class="metric metric--wide"><span class="metric__value">24 / 24</span><span class="metric__label">Acceptance criteria passed</span><span class="metric__note">0 failed · 0 unverifiable · no Critical finding</span></div>
+        <div class="metric"><span class="metric__value">301</span><span class="metric__label">Automated tests passed</span><span class="metric__note">Host, shell, ACP client, and Grok ACP</span></div>
+        <div class="metric"><span class="metric__value">1 / 1</span><span class="metric__label">Live conformance passed</span><span class="metric__note">11 required state fields</span></div>
+        <div class="metric"><span class="metric__value">5</span><span class="metric__label">Browser cells passed</span><span class="metric__note">Cells 1, 2, 3, 4, and repeated 4</span></div>
+        <div class="metric"><span class="metric__value">2</span><span class="metric__label">Packaged views passed</span><span class="metric__note">Native 100% and forced 200%</span></div>
+        <div class="metric"><span class="metric__value">47</span><span class="metric__label">Windows seam tests passed</span><span class="metric__note">No skips; real cmd capability</span></div>
+        <div class="metric"><span class="metric__value">0</span><span class="metric__label">Duplicate activity rows</span><span class="metric__note">Across the 45-row streaming fixture</span></div>
+        <div class="proof-strip" aria-label="Verified journeys"><strong>Verified journeys</strong><span>Chat + Code</span><span>100% + 200%</span><span>Aeon + Light</span><span>Comfortable + Compact</span><span>Y / N / S</span><span>A / R</span><span>Offline freeze</span><span>Result first</span></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="details-title">
+      <div class="section-head">
+        <span class="section-kicker">Technical ledger</span>
+        <div>
+          <h2 id="details-title">What changed under the surface.</h2>
+          <p class="section-intro">Open a section for the implementation detail. These are grouped by responsibility rather than by commit because the work remains intentionally uncommitted.</p>
+        </div>
+      </div>
+      <div class="details-grid">
+        <details>
+          <summary>Host and shell capability</summary>
+          <div class="details__body"><ul>
+            <li>Resolved one immutable execution profile from explicit host inputs.</li>
+            <li>Advertised the same absolute executable later invoked with <code>/d /s /c</code>.</li>
+            <li>Removed ambient platform, <code>ComSpec</code>, and SystemRoot fallbacks.</li>
+            <li>Kept the effective environment private and frozen.</li>
+          </ul></div>
+        </details>
+        <details>
+          <summary>Preflight and process safety</summary>
+          <div class="details__body"><ul>
+            <li>Added a conservative cmd-aware scanner for segments, quoting, caret escapes, and assignment prefixes.</li>
+            <li>Uses controlled <code>Path</code>/<code>PATHEXT</code> lookup and rejects only proven absence.</li>
+            <li>Starts approved commands in workspace cwd with explicit spawn semantics.</li>
+            <li>Preserves the existing permission policy for compatible commands.</li>
+          </ul></div>
+        </details>
+        <details>
+          <summary>Truthful ACP event contract</summary>
+          <div class="details__body"><ul>
+            <li>Introduced the closed current-version <code>tool_run</code> event union.</li>
+            <li>Separated <strong>Not run</strong> from executed failure in UI, recovery context, and logs.</li>
+            <li>Rejected malformed current events and legacy ambiguity.</li>
+            <li>Protected terminal facts during result-first detail enrichment.</li>
+          </ul></div>
+        </details>
+        <details>
+          <summary>Persistent activity presentation</summary>
+          <div class="details__body"><ul>
+            <li>Anchored one activity group at the run’s first tool sight.</li>
+            <li>Kept permission and diff chips outside the group at their own rail positions.</li>
+            <li>Made disclosure state operator-owned through updates and settlement.</li>
+            <li>Rendered supplied terminal error/reason detail and an explicit offline qualifier.</li>
+          </ul></div>
+        </details>
+        <details>
+          <summary>Scroll, focus, and paint</summary>
+          <div class="details__body"><ul>
+            <li>Bounded the activity group to the transcript and assigned scroll ownership to its body.</li>
+            <li>Preserved first-visible identity and pixel offset across row updates.</li>
+            <li>Prevented flex collapse, subpixel header clipping, and zoom-driven topbar loss.</li>
+            <li>Verified Tab entry/exit, stable focus, visible focus, and native scrollbar dragging.</li>
+          </ul></div>
+        </details>
+        <details>
+          <summary>Test and observation seams</summary>
+          <div class="details__body"><ul>
+            <li>Added a deterministic test-only ACP entry outside production build inputs.</li>
+            <li>Drove real host HTTP/WebSocket → ACP JSON-RPC → GrokAcpServer boundaries.</li>
+            <li>Expanded browser journeys for settle, scroll, decisions, disconnect, stale tails, and zero-tool runs.</li>
+            <li>Restored real packaged resources and cleared isolated listeners after observation.</li>
+          </ul></div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section status-card" aria-labelledby="status-title">
+      <div>
+        <span class="section-kicker" style="color:#9cd7d4">Current checkpoint</span>
+        <h2 id="status-title">Verified for the v0.3.2 release.</h2>
+        <p>The release candidate passed the full local and packaged evidence set. The installed Forge instance on port 8787 was preserved throughout verification, and the operator explicitly authorized commit, push, and release after GATE Q passed.</p>
+        <div class="status-actions">
+          <a class="button button--solid" href="../../../../.spire/clusters/tech/contracts/tool-run-trust-surface/QA_REPORT.md">Open QA report</a>
+          <a class="button" href="../../../../.spire/clusters/tech/contracts/tool-run-trust-surface/conformance-receipt-qa.json">Open conformance receipt</a>
+          <a class="button" href="frontend-visual-evidence.md">Open visual evidence</a>
+          <button class="button" type="button" id="print-report">Print / save PDF</button>
+        </div>
+      </div>
+      <div class="status-card__seal" aria-label="Gate Q passed">Gate Q<br>passed<br>24 / 24</div>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <span>GrokForge · tool-run-trust-surface</span>
+    <span>Prepared from the final QA evidence · <span class="print-only">Local engineering artifact · </span>2026-08-15</span>
+  </footer>
+
+  <script>
+    document.getElementById('print-report')?.addEventListener('click', () => window.print());
+  </script>
+</body>
+</html>

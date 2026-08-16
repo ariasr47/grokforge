@@ -1,0 +1,3 @@
+export type ToolReasonCode = "shell_resolution_failed" | "unsupported_platform" | "shell_dialect_incompatible" | "leading_command_unresolved";
+export type ToolRunEvent = { schemaVersion:2; type:"tool_run"; activityId:string; toolCallId:string; lifecycle:"pending"|"terminal"; execution:null|"executed"|"not_executed"; status:"running"|"succeeded"|"failed"|"rejected"; name:string|null; input:unknown|null; summary:string|null; command:string|null; output:string|null; error:string|null; reasonCode:ToolReasonCode|null; reason:string|null; shellDisplayName:string|null; detailAvailable:boolean };
+export type AgentToolRecoveryContext = { execution:"not_executed"; reasonCode:ToolReasonCode; command:string; reason:string; shellDisplayName:string|null };

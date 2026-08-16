@@ -199,7 +199,30 @@ export interface PublicState {
    *  (SPEC §2.8, AC12b/AC12d/AC12e). Absent on older hosts -> undefined,
    *  treated as "unknown" (never as a false first-run signal) by callers. */
   priorConversations?: boolean;
+  shellCapability: ShellCapabilityView;
 }
+
+export type ShellCapabilityView =
+  | {
+      status: "available";
+      platform: string;
+      osFamily: "windows" | "macos" | "linux";
+      executable: string;
+      displayName: string;
+      dialect: "cmd" | "posix";
+      reasonCode: null;
+      reason: null;
+    }
+  | {
+      status: "unavailable";
+      platform: string;
+      osFamily: "windows" | "macos" | "linux" | "unsupported";
+      executable: null;
+      displayName: null;
+      dialect: null;
+      reasonCode: "shell_resolution_failed" | "unsupported_platform";
+      reason: string;
+    };
 
 /**
  * INTERFACE_CONTRACT.md "Which surfaces carry it, and what a response that
@@ -255,8 +278,7 @@ export type ServerEvent =
       phase: "waiting_model" | "reasoning" | "tools" | "writing" | "done";
       detail?: string;
     }
-  | { type: "tool_request"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; id: string; ok: boolean; output: unknown }
+  | ToolRunEvent
   | {
       type: "permission_request";
       id: string;
@@ -268,7 +290,7 @@ export type ServerEvent =
       path: string;
       diff: string;
       status: "proposed" | "accepted" | "rejected";
-      id?: string;
+      id: string;
     }
   | {
       type: "error";
@@ -286,6 +308,32 @@ export type ServerEvent =
       verification_uri_complete?: string;
     }
   | { type: "oauth_complete"; ok: boolean; message?: string };
+
+export type ToolReasonCode =
+  | "shell_resolution_failed"
+  | "unsupported_platform"
+  | "shell_dialect_incompatible"
+  | "leading_command_unresolved";
+
+export type ToolRunEvent = {
+  schemaVersion: 2;
+  type: "tool_run";
+  activityId: string;
+  toolCallId: string;
+  lifecycle: "pending" | "terminal";
+  execution: null | "executed" | "not_executed";
+  status: "running" | "succeeded" | "failed" | "rejected";
+  name: string | null;
+  input: unknown | null;
+  summary: string | null;
+  command: string | null;
+  output: string | null;
+  error: string | null;
+  reasonCode: ToolReasonCode | null;
+  reason: string | null;
+  shellDisplayName: string | null;
+  detailAvailable: boolean;
+};
 
 /**
  * Launcher -> shell boundary (INTERFACE_CONTRACT.md "Launcher → shell

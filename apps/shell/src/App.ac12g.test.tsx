@@ -223,6 +223,7 @@ describe("Structural oracle — every response that updates `state` routes throu
 // one function every call site above is required to route through.
 describe("mergeState — SPEC.md §2.8 property 4 / INTERFACE_CONTRACT.md merge rule", () => {
   const FULL: PublicState = {
+    shellCapability: { status: "available", platform: "win32", osFamily: "windows", executable: "C:\\Windows\\System32\\cmd.exe", displayName: "Command Prompt (cmd.exe)", dialect: "cmd", reasonCode: null, reason: null },
     workspace: null,
     workspaceName: null,
     authMode: "sub_pool",

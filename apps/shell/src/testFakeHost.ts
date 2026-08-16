@@ -98,6 +98,7 @@ export interface FakeHost {
 }
 
 const BASE_STATE: PublicState = {
+  shellCapability: { status: "available", platform: "win32", osFamily: "windows", executable: "C:\\Windows\\System32\\cmd.exe", displayName: "Command Prompt (cmd.exe)", dialect: "cmd", reasonCode: null, reason: null },
   workspace: null,
   workspaceName: null,
   authMode: "sub_pool",

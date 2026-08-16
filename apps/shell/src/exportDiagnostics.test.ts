@@ -5,6 +5,7 @@ import type { DesktopHostStatus, PublicState } from "./api";
 
 function baseState(overrides: Partial<PublicState> = {}): PublicState {
   return {
+    shellCapability: { status: "available", platform: "win32", osFamily: "windows", executable: "C:\\Windows\\System32\\cmd.exe", displayName: "Command Prompt (cmd.exe)", dialect: "cmd", reasonCode: null, reason: null },
     workspace: null,
     workspaceName: null,
     authMode: "sub_pool",
