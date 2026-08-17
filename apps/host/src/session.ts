@@ -126,6 +126,34 @@ export function activityRecordFromToolRun(
   };
 }
 
+export function activityRecordFromProposedEdit(input: {
+  editId: string;
+  invocationId: string;
+  path: string;
+  diff: string;
+  policy: PolicySnapshot;
+}): ActivityRecord {
+  return {
+    activityId: input.editId,
+    invocationId: input.invocationId,
+    name: "write_file",
+    lifecycle: "pending",
+    execution: null,
+    status: "running",
+    input: { path: input.path },
+    output: null,
+    error: null,
+    diff: input.diff,
+    path: input.path,
+    policy: input.policy,
+    automaticEligibility: "not_eligible",
+    autoApplied: false,
+    command: null,
+    editId: input.editId,
+    recovery: null,
+  };
+}
+
 export function classifyToolRunLog(event: Extract<AcpUiEvent, { type: "tool_run" }>): { message: "tool_not_executed" | "tool_failed" | null; fields: Record<string, unknown> } {
   if (event.lifecycle !== "terminal") return { message: null, fields: {} };
   if (event.execution === "not_executed" && event.status === "rejected") return { message: "tool_not_executed", fields: { toolCallId:event.toolCallId, command:event.command, reasonCode:event.reasonCode, reason:event.reason, shellDisplayName:event.shellDisplayName } };
@@ -602,7 +630,21 @@ export class AgentSession {
         }
         if (ev.type === "file_edit") {
           if (ev.status !== "proposed") { return; }
-          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const invocationId=ev.invocationId??ev.toolCallId??ev.id; const expiresAt=Date.now()+300000; this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
+          if (this.activeRunId) {
+            const run=this.runCoordinator.get(this.activeRunId);
+            if(run){
+              const editId=ev.editId??ev.id;
+              const invocationId=ev.invocationId??ev.toolCallId??editId;
+              const expiresAt=Date.now()+300000;
+              this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt});
+              const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined);
+              if (ev.path && ev.diff && editId) {
+                const activity=activityRecordFromProposedEdit({editId,invocationId,path:ev.path,diff:ev.diff,policy:run.policy});
+                await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined);
+              }
+              if(envelope){ return; }
+            }
+          }
         }
         if (ev.type === "agent_log") {
           log(ev.level === "warn" ? "warn" : "debug", "agent stderr", {

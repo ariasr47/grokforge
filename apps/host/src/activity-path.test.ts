@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activityRecordFromToolRun } from "./session.js";
+import { activityRecordFromProposedEdit, activityRecordFromToolRun } from "./session.js";
 
 const policy = {
   workspace: "w",
@@ -75,4 +75,20 @@ test("non-edit tools keep path null", () => {
   );
   assert.equal(activity.path, null);
   assert.equal(activity.editId, null);
+});
+
+test("activityRecordFromProposedEdit journals path, full diff, and editId", () => {
+  const activity = activityRecordFromProposedEdit({
+    editId: "edit-r1",
+    invocationId: "inv-r1",
+    path: "r1.txt",
+    diff: "--- a/r1.txt\n+++ b/r1.txt\n@@ -0,0 +1 @@\n+one",
+    policy,
+  });
+  assert.equal(activity.path, "r1.txt");
+  assert.equal(activity.editId, "edit-r1");
+  assert.equal(activity.invocationId, "inv-r1");
+  assert.equal(activity.lifecycle, "pending");
+  assert.equal(activity.autoApplied, false);
+  assert.ok(activity.diff && activity.diff.includes("+one"));
 });
