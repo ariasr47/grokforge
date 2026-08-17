@@ -41,6 +41,11 @@ import { RunCoordinator } from "./run-coordinator.js";
 import type { RunEventEnvelope, RunSnapshot } from "./run-types.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
+import {
+  TrustedCommandClassStore,
+  type TrustedCommandClassId,
+  type TrustedCommandClassesView,
+} from "./trusted-command-classes.js";
 import { BypassActivation } from "./bypass-activation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -150,6 +155,9 @@ export class AgentSession {
   private readonly runHydration: Promise<void>;
   private readonly workspacePolicies = new WorkspacePolicyStore(dataDir());
   private policyView: WorkspacePolicyView | null = null;
+  private readonly trustedCommandClasses = new TrustedCommandClassStore(dataDir());
+  private trustedClassesView: TrustedCommandClassesView | null = null;
+  private trustedClassesSnapshot: TrustedCommandClassId[] = [];
   private bypassActive = false;
   private static readonly activation = new BypassActivation(process.env.GROKFORGE_BYPASS_SECRET ?? "");
   private bypassView() {
@@ -199,6 +207,13 @@ export class AgentSession {
       this.policyView = await this.workspacePolicies.read(workspace);
     } catch {
       this.policyView = { status: "confirmed", workspace: path.resolve(workspace), storedMode: null, effectiveMode: "review", source: "fallback", revision: "fallback", fallbackReason: "invalid", savedForWorkspace: false };
+    }
+    try {
+      this.trustedClassesView = await this.trustedCommandClasses.read(workspace);
+      this.trustedClassesSnapshot = this.trustedClassesView.classes.slice();
+    } catch {
+      this.trustedClassesView = null;
+      this.trustedClassesSnapshot = [];
     }
   }
 
@@ -395,6 +410,8 @@ export class AgentSession {
     // fresh AgentSession must never report fallback Review when a confirmed
     // policy already exists on disk.
     this.policyView = await this.workspacePolicies.read(resolved);
+    this.trustedClassesView = await this.trustedCommandClasses.read(resolved);
+    this.trustedClassesSnapshot = this.trustedClassesView.classes.slice();
     this.cfg = loadConfig();
     this.cfg.lastWorkspace = resolved;
     // Opening a folder implies Code mode for workspace-centric flows
@@ -882,6 +899,43 @@ export class AgentSession {
     const p = await this.workspacePolicies.read(workspace);
     if (this.workspace && path.resolve(this.workspace) === path.resolve(p.workspace)) this.policyView = p;
     return p;
+  }
+  async getTrustedCommandClasses(workspace: string): Promise<TrustedCommandClassesView> {
+    const v = await this.trustedCommandClasses.read(workspace);
+    if (
+      this.workspace &&
+      path.resolve(this.workspace) === path.resolve(v.workspace)
+    ) {
+      this.trustedClassesView = v;
+    }
+    return v;
+  }
+  async saveTrustedCommandClasses(
+    workspace: string,
+    classes: unknown,
+    expectedRevision: string,
+  ): Promise<TrustedCommandClassesView> {
+    if (
+      this.activeRunId &&
+      this.runCoordinator.get(this.activeRunId)?.state !== "terminal"
+    ) {
+      throw Object.assign(new Error("run active"), { code: "run_active" });
+    }
+    const saved = await this.trustedCommandClasses.save(
+      workspace,
+      classes,
+      expectedRevision,
+    );
+    // W2: refresh authorization snapshot only when save is for this session's bound workspace
+    if (
+      this.workspace &&
+      path.resolve(this.workspace) === path.resolve(saved.workspace)
+    ) {
+      this.trustedClassesView = saved;
+      this.trustedClassesSnapshot = saved.classes.slice();
+    }
+    this.emit({ type: "state", state: this.getState() });
+    return saved;
   }
   async saveWorkspacePolicy(workspace: string, mode: "review" | "trusted_workspace"): Promise<WorkspacePolicyView> {
     if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state !== "terminal") throw Object.assign(new Error("run active"), { code: "run_active" });

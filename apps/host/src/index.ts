@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AgentSession } from "./session.js";
+import { TRUSTED_COMMAND_CLASS_CATALOG } from "./trusted-command-classes.js";
 import type { PermissionDecision } from "@grokforge/acp-client";
 import {
   clientLog,
@@ -215,6 +216,76 @@ const server = http.createServer(async (req, res) => {
       // first prompt. Read/cancel/replay routes remain non-creating.
       const owner=sessionFor(body.sessionId,true); if (!owner) { sendContractError(res,404,"session_not_found","Session not found"); return; }
       try { sendJson(res,200,{policy:await owner.saveWorkspacePolicy(body.workspace,body.mode)}); } catch(e) { const code=(e as any)?.code; sendContractError(res,code==="run_active"?409:400,code==="run_active"?"run_active":"invalid_policy",code==="run_active"?"Run is active":"Invalid policy",code==="run_active"?{activeRunId:owner.getActiveRunId()}:{}); } return;
+    }
+    if (method === "GET" && url.pathname === "/api/trusted-command-class-catalog") {
+      sendJson(res, 200, { catalog: TRUSTED_COMMAND_CLASS_CATALOG });
+      return;
+    }
+    if (method === "GET" && url.pathname === "/api/trusted-command-classes") {
+      const workspace = url.searchParams.get("workspace");
+      if (!workspace || !path.isAbsolute(workspace)) {
+        sendContractError(res, 400, "invalid_workspace", "Workspace must be an absolute directory");
+        return;
+      }
+      try {
+        sendJson(res, 200, { classes: await session.getTrustedCommandClasses(workspace) });
+      } catch {
+        sendContractError(res, 400, "invalid_workspace", "Invalid workspace");
+      }
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/trusted-command-classes") {
+      const body = JSON.parse((await readBody(req)) || "{}") as {
+        sessionId?: string;
+        workspace?: string;
+        classes?: unknown;
+        expectedRevision?: string;
+      };
+      if (
+        !body.sessionId ||
+        !body.workspace ||
+        !path.isAbsolute(body.workspace) ||
+        typeof body.expectedRevision !== "string"
+      ) {
+        sendContractError(res, 400, "invalid_workspace", "Invalid workspace or classes request");
+        return;
+      }
+      const owner = sessionFor(body.sessionId, true);
+      if (!owner) {
+        sendContractError(res, 404, "session_not_found", "Session not found");
+        return;
+      }
+      try {
+        sendJson(res, 200, {
+          classes: await owner.saveTrustedCommandClasses(
+            body.workspace,
+            body.classes,
+            body.expectedRevision,
+          ),
+        });
+      } catch (e) {
+        const code = (e as any)?.code;
+        if (code === "run_active") {
+          sendContractError(res, 409, "run_active", "Run is active", {
+            activeRunId: owner.getActiveRunId(),
+          });
+          return;
+        }
+        if (code === "class_revision_conflict") {
+          sendContractError(res, 409, "class_revision_conflict", "Class revision conflict");
+          return;
+        }
+        if (code === "invalid_classes" || code === "invalid_request") {
+          sendContractError(res, 400, code, "Invalid classes");
+          return;
+        }
+        if (code === "invalid_workspace") {
+          sendContractError(res, 400, "invalid_workspace", "Invalid workspace");
+          return;
+        }
+        sendContractError(res, 500, "class_save_failed", "Could not save Trusted command classes");
+      }
+      return;
     }
     if (method === "POST" && url.pathname === "/api/session-permission-mode") {
       const body=JSON.parse((await readBody(req))||"{}") as {sessionId?:string;activationToken?:string;mode?:"workspace"|"bypass_permissions"};
