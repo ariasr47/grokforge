@@ -10,7 +10,7 @@ export interface RunSnapshot {
   failure: { code: string; message: string; retryable: boolean; recoveryAction: RecoveryAction } | null;
 }
 export interface DecisionRequest { requestId: string; invocationId: string; kind: "permission" | "diff" | "recovery_confirmation"; status: "pending" | "accepted" | "declined" | "expired"; title: string; detail: string; expiresAt: string | null; policy: Record<string, unknown>; }
-export interface ActivityRecord { activityId: string; invocationId: string; name: string; lifecycle: "pending" | "terminal"; execution: "executed" | "not_executed" | null; status: "running" | "succeeded" | "failed" | "rejected"; input: unknown; output: unknown | null; error: string | null; diff: string | null; policy: Record<string, unknown>; automaticEligibility: string; autoApplied: boolean; command: string | null; editId: string | null; recovery: { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" } | null; }
+export interface ActivityRecord { activityId: string; invocationId: string; name: string; lifecycle: "pending" | "terminal"; execution: "executed" | "not_executed" | null; status: "running" | "succeeded" | "failed" | "rejected"; input: unknown; output: unknown | null; error: string | null; diff: string | null; path: string | null; policy: Record<string, unknown>; automaticEligibility: string; autoApplied: boolean; command: string | null; editId: string | null; recovery: { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" } | null; }
 export type RunEventPayload =
   | { kind: "run_started"; run: RunSnapshot }
   | { kind: "run_state"; state: Exclude<RunState, "terminal">; liveness: string | null }
@@ -70,7 +70,11 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
     case "answer_delta": if (event.payload.delta) run.answer[event.payload.segmentId] = (run.answer[event.payload.segmentId] ?? "") + event.payload.delta; break;
     case "activity_update": {
       const incoming = event.payload.activity;
-      run.activities[incoming.activityId] = { ...incoming, command: incoming.command ?? null };
+      run.activities[incoming.activityId] = {
+        ...incoming,
+        command: incoming.command ?? null,
+        path: typeof incoming.path === "string" && incoming.path.length > 0 ? incoming.path : null,
+      };
       break;
     }
     case "decision_request": run.decisions[event.payload.request.requestId] = event.payload.request; break;
@@ -99,7 +103,20 @@ export function restoreRunProjection(raw: unknown): RunProjection {
     if (!item || typeof item !== "object") continue;
     const run = item as RunProjectionRun & { seenEventSeq?: unknown };
     if (!run.runId || !run.sessionId) continue;
-    runsById[run.runId] = { ...run, seenEventSeq: new Set(Array.isArray(run.seenEventSeq) ? run.seenEventSeq.filter((n): n is number => typeof n === "number") : []) };
+    const activities: Record<string, ActivityRecord> = {};
+    for (const [activityId, activity] of Object.entries(run.activities ?? {})) {
+      if (!activity || typeof activity !== "object") continue;
+      activities[activityId] = {
+        ...activity,
+        command: activity.command ?? null,
+        path: typeof activity.path === "string" && activity.path.length > 0 ? activity.path : null,
+      };
+    }
+    runsById[run.runId] = {
+      ...run,
+      activities,
+      seenEventSeq: new Set(Array.isArray(run.seenEventSeq) ? run.seenEventSeq.filter((n): n is number => typeof n === "number") : []),
+    };
     runOrder.push(run.runId);
   }
   return { runsById, runOrder, sessionCursors: value.cursors ?? {} };

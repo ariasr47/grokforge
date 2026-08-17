@@ -18,8 +18,74 @@ test("terminal projection cannot be downgraded by a late admission snapshot",()=
 test("terminal admission snapshot upgrades admitted projection without losing identity",()=>{let a=mergeRunSnapshot(initialRunProjection(),snap()); const b=mergeRunSnapshot(a,{...snap(),state:"terminal",terminalKind:"answered",finalAnswer:"ok",answerVouched:true,lastEventSeq:2}); assert.equal(b.runsById.r1.state,"terminal"); assert.equal(b.runsById.r1.acceptedPrompt,"prompt"); assert.equal(b.runsById.r1.lastEventSeq,0);});
 test("activity_update copies original command and defaults missing command to null",()=>{
   let a=reduceRunEvent(initialRunProjection(),started());
-  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a1",invocationId:"i1",name:"run_shell",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,policy:{},automaticEligibility:"trusted_command_class",autoApplied:true,command:"npm test",editId:null,recovery:null}},2));
+  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a1",invocationId:"i1",name:"run_shell",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,path:null,policy:{},automaticEligibility:"trusted_command_class",autoApplied:true,command:"npm test",editId:null,recovery:null}},2));
   assert.equal(a.runsById.r1.activities.a1.command,"npm test");
-  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a2",invocationId:"i2",name:"read_file",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,policy:{},automaticEligibility:"read",autoApplied:false,command:undefined as unknown as string,editId:null,recovery:null}},3));
+  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a2",invocationId:"i2",name:"read_file",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,path:null,policy:{},automaticEligibility:"read",autoApplied:false,command:undefined as unknown as string,editId:null,recovery:null}},3));
   assert.equal(a.runsById.r1.activities.a2.command,null);
+});
+test("activity_update retains first-class path with diff and editId", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a1",
+          invocationId: "i1",
+          name: "write_file",
+          lifecycle: "terminal",
+          execution: "executed",
+          status: "succeeded",
+          input: {},
+          output: null,
+          error: null,
+          diff: "--- a/x\n+++ b/x\n+hi",
+          path: "x.ts",
+          policy: {},
+          automaticEligibility: "text_edit",
+          autoApplied: true,
+          command: null,
+          editId: "e1",
+          recovery: { kind: "guarded_revert", available: true, status: "available" },
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.activities.a1.path, "x.ts");
+  assert.equal(a.runsById.r1.activities.a1.editId, "e1");
+  assert.ok(a.runsById.r1.activities.a1.diff?.includes("+hi"));
+});
+test("activity_update defaults missing path to null", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a3",
+          invocationId: "i3",
+          name: "read_file",
+          lifecycle: "terminal",
+          execution: "executed",
+          status: "succeeded",
+          input: {},
+          output: "ok",
+          error: null,
+          diff: null,
+          path: undefined as unknown as null,
+          policy: {},
+          automaticEligibility: "read",
+          autoApplied: false,
+          command: null,
+          editId: null,
+          recovery: null,
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.activities.a3.path, null);
 });

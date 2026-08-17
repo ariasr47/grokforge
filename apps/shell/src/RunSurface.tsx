@@ -5,6 +5,8 @@ import { RunTerminalNotice } from "./RunTerminalNotice";
 import { api } from "./api";
 import { useEffect, useState } from "react";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
+import { projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
+import { FileChangesSection } from "./FileChangesSection";
 
 const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
 const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
@@ -29,15 +31,19 @@ function ActivityProvenance({ activity }: { activity: ActivityRecord }) {
 }
 export interface RunSurfaceProps {
   run: RunProjectionRun;
+  catchUp?: CatchUpSignal;
+  offline?: boolean;
   onRetryPrompt?: (prompt: string) => void;
   onReconnect?: () => void;
   onOpenSettings?: () => void;
   onExportDiagnostics?: () => void;
+  onFocusDiffRequest?: (requestId: string) => void;
 }
-export function RunSurface({ run, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics }: RunSurfaceProps) {
+export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
+  const [openChangeDiff, setOpenChangeDiff] = useState<string | null>(null);
   const [recoveryResult, setRecoveryResult] = useState<Record<string, "reverted" | "conflict">>({});
   useEffect(() => {
     if (!pending) return;
@@ -76,6 +82,12 @@ export function RunSurface({ run, onRetryPrompt, onReconnect, onOpenSettings, on
       else setError(e instanceof Error ? e.message : "Recovery failed");
     } finally { setPending(null); }
   }
+  async function recoverByMember(member: RunChangeMember) {
+    const activity = run.activities[member.activityId]
+      ?? Object.values(run.activities).find((a) => a.editId === member.editId);
+    if (activity) await recover(activity);
+  }
+  const changeList = projectRunChangeList(run, catchUp);
   const reasoning = Object.values(run.reasoning).join("");
   const answer = run.finalAnswer;
   // answer_delta is durable received provider output, but is not itself a
@@ -88,6 +100,18 @@ export function RunSurface({ run, onRetryPrompt, onReconnect, onOpenSettings, on
     <div className="run-prompt"><strong>You</strong><p>{run.acceptedPrompt}</p></div>
     <div className="run-provenance" aria-label="Run provenance"><span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>{model.selectionProvenance && <span>Selection: {model.selectionProvenance}</span>}<span>Policy: {policy.effectiveMode || "unspecified"}</span>{policy.source && <span>Policy source: {policy.source}</span>}</div>
     {reasoning && <details><summary>Reasoning</summary><p>{reasoning}</p></details>}
+    <FileChangesSection
+      projection={changeList}
+      runNonTerminal={run.state !== "terminal"}
+      offline={offline}
+      openEditId={openChangeDiff}
+      onViewDiff={(member) => setOpenChangeDiff(member.editId)}
+      onHideDiff={() => setOpenChangeDiff(null)}
+      onRevert={(member) => void recoverByMember(member)}
+      revertPendingEditId={pending}
+      recoveryFlash={recoveryResult}
+      onFocusDock={onFocusDiffRequest}
+    />
     {Object.values(run.activities).length > 0 && <div className="activity-output" aria-label="Activity">{Object.values(run.activities).map(a => { const result = recoveryResult[a.activityId]; return <details key={a.activityId}><summary>{a.name}: {a.status}</summary><p>Input: {typeof a.input === "string" ? a.input : JSON.stringify(a.input)}</p>{a.output != null && <p>Output: {typeof a.output === "string" ? a.output : JSON.stringify(a.output)}</p>}{a.error && <p role="alert">Failure: {a.error}</p>}{a.diff && <><button type="button" onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}>{openDiff === a.activityId ? "Hide diff" : "View diff"}</button>{openDiff === a.activityId && <pre>{a.diff}</pre>}</>}<ActivityProvenance activity={a} />{a.recovery?.available && !result && <><p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p><button type="button" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</button></>}{result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}{result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}{result === "conflict" && a.diff && <button type="button" onClick={() => setOpenDiff(a.activityId)}>View diff</button>}</details>; })}</div>}
     {Object.values(run.decisions).filter(d => d.status === "pending").map(d => <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}><strong>{d.title}</strong><p>{d.detail}</p><button type="button" disabled={pending === d.requestId} onClick={() => void submitDecision(d, "allow_once")}>{d.kind === "diff" ? "Accept" : d.kind === "recovery_confirmation" ? "Recover" : "Allow"}</button><button type="button" disabled={pending === d.requestId || d.kind === "recovery_confirmation"} onClick={() => void submitDecision(d, "deny")}>{d.kind === "diff" ? "Reject" : "Decline"}</button></div>)}
     {error && <p role="alert">{error}</p>}

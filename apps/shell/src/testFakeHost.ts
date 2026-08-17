@@ -127,12 +127,18 @@ export interface FetchCall {
   body: Record<string, unknown> | undefined;
 }
 
+export interface FakeRunJournal {
+  run: unknown;
+  events: unknown[];
+}
+
 export interface FakeHost {
   state: PublicState;
   calls: FetchCall[];
   fetchImpl: typeof fetch;
   callsTo: (pathIncludes: string) => FetchCall[];
   trustedClasses: Map<string, TrustedCommandClassesView>;
+  runJournals: Map<string, FakeRunJournal>;
   nextClassSaveError: { status: number; code: string } | null;
 }
 
@@ -179,6 +185,8 @@ export interface FakeHostOptions {
   omitPriorConversationsOnMutatingResponses?: boolean;
   trustedClasses?: TrustedCommandClassesView;
   classSaveError?: { status: number; code: string } | null;
+  /** GET /api/runs/{runId} bodies keyed by runId. */
+  runJournals?: Record<string, FakeRunJournal>;
 }
 
 export function createFakeHost(
@@ -192,6 +200,7 @@ export function createFakeHost(
   if (opts.trustedClasses && overrides.workspace) {
     trustedClasses.set(overrides.workspace, opts.trustedClasses);
   }
+  const runJournals = new Map<string, FakeRunJournal>(Object.entries(opts.runJournals ?? {}));
   let nextClassSaveError = opts.classSaveError ?? null;
 
   function snapshot(): PublicState {
@@ -357,6 +366,12 @@ export function createFakeHost(
     }
     if (path === "/api/permission" && method === "POST") return { ok: true };
     if (path === "/api/diff" && method === "POST") return { ok: true };
+    if (path.startsWith("/api/runs/") && method === "GET") {
+      const runId = decodeURIComponent(path.slice("/api/runs/".length));
+      const journal = runJournals.get(runId);
+      if (!journal) return { __notFound: true };
+      return journal;
+    }
     if (path === "/api/policy") return { policy: {} };
     if (path === "/api/agents")
       return {
@@ -411,6 +426,7 @@ export function createFakeHost(
     fetchImpl,
     callsTo: (pathIncludes: string) => calls.filter((c) => c.path.includes(pathIncludes)),
     trustedClasses,
+    runJournals,
     get nextClassSaveError() {
       return nextClassSaveError;
     },

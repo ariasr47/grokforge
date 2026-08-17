@@ -111,6 +111,17 @@ import {
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
 import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import { mergePendingDiffs } from "./runChangeList";
+import {
+  appliedThroughLastEventSeq,
+  catchUpForRun,
+  closeCatchUp,
+  failCatchUp,
+  openCatchUp,
+  shouldOpenCatchUp,
+  type CatchUpMap,
+  type RestoreIntent,
+} from "./catchUpWindows";
 import { RunSurface } from "./RunSurface";
 import { PermissionPolicyControl } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
@@ -201,6 +212,7 @@ export function App() {
   const runProjectionRef = useRef(runProjection);
   runProjectionRef.current = runProjection;
   const reconcileRunsInFlightRef = useRef<Promise<{ ok: boolean; hasNonterminal: boolean }> | null>(null);
+  const [catchUpByRunId, setCatchUpByRunId] = useState<CatchUpMap>({});
   const socketRef = useRef<HostSocket | null>(null);
   // Keep the transport subscription stable while the render callback evolves.
   // Recreating HostSocket on every projection/toast update can create an
@@ -688,7 +700,18 @@ export function App() {
       if (runEvent.payload.kind === "run_started") {
         bindNormalizedRun(runEvent.runId, runEvent.sessionId);
       }
-      setRunProjection((prev) => reduceRunEvent(prev, runEvent));
+      // Sequential live envelopes must reduce from the latest snapshot, not
+      // a batched updater. Dock pending is rebuilt from durable evidence.
+      const next = reduceRunEvent(runProjectionRef.current, runEvent);
+      runProjectionRef.current = next;
+      setRunProjection(next);
+      const nextRun = next.runsById[runEvent.runId];
+      if (
+        nextRun &&
+        (runEvent.payload.kind === "decision_request" || runEvent.payload.kind === "activity_update")
+      ) {
+        setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+      }
       if (runEvent.payload.kind === "run_terminal") {
         setRunStartedAt(null);
         setRunPhase(null);
@@ -1262,7 +1285,7 @@ export function App() {
           // owned run from the authoritative journal before clearing the
           // reconnect/unknown chrome; failures remain visible and retry on
           // the next transport reopen.
-          void reconcileOwnedRuns().then(({ ok, hasNonterminal }) => {
+          void restoreOwnedRuns("disconnect_restore").then(({ ok, hasNonterminal }) => {
             if (!ok) return;
             if (!hasNonterminal) {
               setRunStartedAt(null);
@@ -1302,6 +1325,46 @@ export function App() {
     };
   }, [boot, markDisconnectedActivity]);
 
+  const restoreOwnedRunJournal = useCallback(async (
+    run: NonNullable<RunProjection["runsById"][string]>,
+    intent: RestoreIntent,
+  ) => {
+    const openWindow = shouldOpenCatchUp(intent);
+    if (openWindow) setCatchUpByRunId((m) => openCatchUp(m, run.runId));
+    try {
+      const after = intent === "explicit_reconnect" ? 0 : run.lastEventSeq;
+      const replay = await api.runState(run.runId, run.sessionId, after);
+      const next = reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events);
+      const nextRun = next.runsById[run.runId];
+      runProjectionRef.current = next;
+      setRunProjection(next);
+      if (nextRun) setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+      if (openWindow) {
+        const applied = nextRun?.lastEventSeq ?? 0;
+        if (appliedThroughLastEventSeq(applied, replay.run.lastEventSeq)) {
+          setCatchUpByRunId((m) => closeCatchUp(m, run.runId));
+        }
+      }
+      return { ok: true as const, run: replay.run };
+    } catch {
+      if (openWindow) setCatchUpByRunId((m) => failCatchUp(m, run.runId));
+      return { ok: false as const, run: null };
+    }
+  }, []);
+
+  const restoreOwnedRuns = useCallback(async (intent: RestoreIntent): Promise<{ ok: boolean; hasNonterminal: boolean }> => {
+    const runs = runProjectionRef.current.runOrder
+      .map((id) => runProjectionRef.current.runsById[id])
+      .filter((run): run is NonNullable<typeof run> => Boolean(run));
+    if (!runs.length) return { ok: true, hasNonterminal: false };
+    const results = await Promise.allSettled(runs.map((run) => restoreOwnedRunJournal(run, intent)));
+    const ok = results.every((result) => result.status === "fulfilled" && result.value.ok);
+    const hasNonterminal = results.some((result) =>
+      result.status === "fulfilled" && result.value.ok && result.value.run?.state !== "terminal",
+    );
+    return { ok, hasNonterminal };
+  }, [restoreOwnedRunJournal]);
+
   const reconcileOwnedRuns = useCallback(async (): Promise<{ ok: boolean; hasNonterminal: boolean }> => {
     if (reconcileRunsInFlightRef.current) return reconcileRunsInFlightRef.current;
     const task = (async () => {
@@ -1310,9 +1373,8 @@ export function App() {
         .filter((run): run is NonNullable<typeof run> => Boolean(run));
       if (!runs.length) return { ok: true, hasNonterminal: false };
       const results = await Promise.allSettled(runs.map(async (run) => {
-        // GET is the authority after a host replacement. Use the reducer's
-        // cursor for idempotent replay; never infer a terminal from transport
-        // liveness and never recreate the socket from this projection update.
+        // Health-poll reconcile is incremental completeness — it must not
+        // open a File changes catch-up window (W3).
         const replay = await api.runState(run.runId, run.sessionId, run.lastEventSeq);
         setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
         return replay.run;
@@ -1387,13 +1449,8 @@ export function App() {
   // but the WebSocket subscription was not yet attached.
   useEffect(() => {
     if (boot !== "ready") return;
-    const runs = runProjection.runOrder.map((id) => runProjection.runsById[id]).filter(Boolean);
-    for (const run of runs) {
-      void api.runState(run.runId, run.sessionId, run.lastEventSeq).then((replay) => {
-        setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
-      }).catch(() => undefined);
-    }
-  }, [boot]);
+    void restoreOwnedRuns("boot_hydrate");
+  }, [boot, restoreOwnedRuns]);
 
   const refreshFiles = useCallback(async () => {
     try {
@@ -1702,6 +1759,8 @@ export function App() {
           /* optional */
         }
         setBoot("ready");
+      } else {
+        void restoreOwnedRuns("explicit_reconnect");
       }
       return;
     }
@@ -1711,7 +1770,7 @@ export function App() {
     if (terminalAttempt || cameFromFailureCard) {
       setBoot("error");
     }
-  }, [boot, clearBootTimers, refreshBuildInfo]);
+  }, [boot, clearBootTimers, refreshBuildInfo, restoreOwnedRuns]);
 
   const openPath = useCallback(async (p: string) => {
     const trimmed = p.trim();
@@ -3773,7 +3832,7 @@ export function App() {
                   <>
                     {runProjection.runOrder.map((id) => {
                       const run = runProjection.runsById[id];
-                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} /> : null;
+                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} /> : null;
                     })}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">

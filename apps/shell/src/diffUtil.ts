@@ -1,3 +1,17 @@
+/** Line class for the existing colorized unified-diff treatment. */
+export function unifiedDiffLineClass(line: string): string {
+  let cls = "diff-line";
+  if (line.startsWith("+") && !line.startsWith("+++")) cls += " plus";
+  else if (line.startsWith("-") && !line.startsWith("---")) cls += " minus";
+  else if (line.startsWith("@@")) cls += " hunk";
+  else if (line.startsWith("diff ") || line.startsWith("---") || line.startsWith("+++")) cls += " meta";
+  return cls;
+}
+
+export function unifiedDiffLines(diff: string): string[] {
+  return diff.replace(/\r\n/g, "\n").split("\n");
+}
+
 /** Split a simple unified diff into before/after line lists for side-by-side. */
 export function splitUnifiedDiff(diff: string): {
   before: string[];
