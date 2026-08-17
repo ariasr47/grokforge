@@ -68,6 +68,7 @@ export type ToolRunEvent = {
   autoApplied?: boolean;
   editId?: string | null;
   diff?: string | null;
+  path?: string | null;
   recovery?: null | { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" };
 };
 export function isValidToolRunEvent(value: unknown): value is ToolRunEvent {

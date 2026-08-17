@@ -337,12 +337,15 @@ export class GrokAcpServer {
     });
   }
 
-  private waitEdit(edit: PendingEdit, owner?: RunOwner): Promise<"accept" | "reject"> {
+  private waitEdit(edit: PendingEdit, owner?: RunOwner, callId?: string): Promise<"accept" | "reject"> {
     this.notify("file_edit", {
       id: edit.id,
+      editId: edit.id,
       path: edit.path,
       diff: edit.diff,
       status: "proposed",
+      toolCallId: callId,
+      invocationId: callId,
     }, owner);
     return new Promise((resolve, reject) => {
       this.editWaiters.set(edit.id, { resolve, reject });
@@ -648,7 +651,7 @@ export class GrokAcpServer {
     if (priorCall) { if (priorCall.args !== normalizedArgs) return JSON.stringify({error:"tool_call_id_reused_with_different_arguments"}); return priorCall.result; }
 
     const capability = session.capability;
-    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, recovery: extra.recovery ?? null }, executionOwner);
+    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null }, executionOwner);
     this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
 
     const perm = toolPermissionKind(name);
@@ -794,7 +797,7 @@ export class GrokAcpServer {
         session.permissionMode === "bypass_permissions",
       );
       session.pendingEdits.set(editId, edit);
-      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" ? "accept" : await this.waitEdit(edit, executionOwner);
+      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" ? "accept" : await this.waitEdit(edit, executionOwner, call.id);
       if (action === "accept") {
         const lease = await this.mutation.acquire(this.workspaceRoot, call.id);
         try {
@@ -823,7 +826,7 @@ export class GrokAcpServer {
           status: "accepted",
         });
         const automaticallyApplied = session.permissionMode === "bypass_permissions" || authorization.decision === "auto";
-        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility, autoApplied: automaticallyApplied, editId: edit.id, diff: edit.diff, recovery: { kind: "guarded_revert", available: true, status: "available" } });
+        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility, autoApplied: automaticallyApplied, editId: edit.id, diff: edit.diff, path: edit.path, recovery: { kind: "guarded_revert", available: true, status: "available" } });
         this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
       session.pendingEdits.delete(editId);
@@ -838,7 +841,7 @@ export class GrokAcpServer {
         path: edit.path,
         status: "rejected",
       });
-      emitTerminal(out, false);
+      emitTerminal(out, false, { editId: edit.id, diff: edit.diff, path: edit.path });
       return out;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
