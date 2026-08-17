@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { AgentSession, retainActivityAfterDiff } from "./session.js";
+import { AgentSession, retainActivityAfterDiff, retainActivityAfterRecovery } from "./session.js";
 import { TRUSTED_COMMAND_CLASS_CATALOG } from "./trusted-command-classes.js";
 import type { PermissionDecision } from "@grokforge/acp-client";
 import {
@@ -841,7 +841,20 @@ const server = http.createServer(async (req, res) => {
       const body=JSON.parse((await readBody(req))||"{}") as {sessionId?:string;runId?:string;editId?:string};
       if(!body.sessionId||!body.runId||!body.editId){sendContractError(res,400,"invalid_request","recovery ownership fields required");return;}
       const owner=sessionFor(body.sessionId,false); if(!owner||!owner.getRun(body.runId,body.sessionId)){sendContractError(res,404,"edit_not_found","Edit not found");return;}
-      try { const result=await editJournal.revert(body.editId,{runId:body.runId}); const activity={activityId:body.editId,invocationId:"",name:"edit",lifecycle:"terminal",execution:"executed",status:result.ok?"succeeded":"failed",input:null,output:null,error:result.ok?null:"Edit not reverted",diff:result.entry.diff,policy:owner.getRun(body.runId,body.sessionId)!.policy,automaticEligibility:"text_edit",autoApplied:true,command:null,editId:body.editId,recovery:{kind:"guarded_revert",available:true,status:result.ok?"reverted":"conflict"}}; if(!result.ok){sendContractError(res,409,"recovery_conflict","Edit not reverted",{activity});} else sendJson(res,200,{ok:true,activity}); } catch (e) { const code=(e as any)?.code; if(code==="recovery_not_owned"){sendContractError(res,409,"recovery_unavailable","Edit is not available for this run");} else sendContractError(res,404,"edit_not_found","Edit not found"); }
+      try {
+        const result=await editJournal.revert(body.editId,{runId:body.runId});
+        const run=owner.getRun(body.runId,body.sessionId)!;
+        const prior=await owner.findActivityForEdit(body.runId,body.sessionId,body.editId,result.entry.invocationId);
+        const activity=retainActivityAfterRecovery(prior,{
+          editId:body.editId,
+          status:result.ok?"reverted":"conflict",
+          fallbackDiff:typeof result.entry.diff==="string"?result.entry.diff:null,
+          policy:run.policy,
+        });
+        await owner.appendActivity(body.runId,activity);
+        if(!result.ok){sendContractError(res,409,"recovery_conflict","Edit not reverted",{activity});}
+        else sendJson(res,200,{ok:true,activity});
+      } catch (e) { const code=(e as any)?.code; if(code==="recovery_not_owned"){sendContractError(res,409,"recovery_unavailable","Edit is not available for this run");} else sendContractError(res,404,"edit_not_found","Edit not found"); }
       return;
     }
 

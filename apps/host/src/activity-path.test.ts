@@ -4,6 +4,7 @@ import {
   activityRecordFromProposedEdit,
   activityRecordFromToolRun,
   retainActivityAfterDiff,
+  retainActivityAfterRecovery,
 } from "./session.js";
 
 const policy = {
@@ -135,4 +136,85 @@ test("retainActivityAfterDiff keeps proposed full diff on accept", () => {
   assert.equal(retained.path, "acc.txt");
   assert.equal(retained.editId, "edit-acc");
   assert.equal(retained.status, "succeeded");
+});
+
+test("retainActivityAfterRecovery keeps path and diff when reverted", () => {
+  const prior = activityRecordFromToolRun(
+    {
+      type: "tool_run",
+      schemaVersion: 2,
+      activityId: "a-rec",
+      toolCallId: "inv-rec",
+      lifecycle: "terminal",
+      execution: "executed",
+      status: "succeeded",
+      name: "write_file",
+      input: { path: "trusted.txt" },
+      summary: null,
+      command: null,
+      output: "ok",
+      error: null,
+      reasonCode: null,
+      reason: null,
+      shellDisplayName: null,
+      detailAvailable: true,
+      automaticEligibility: "text_edit",
+      autoApplied: true,
+      editId: "edit-rec",
+      diff: "--- a/trusted.txt\n+++ b/trusted.txt\n+trusted",
+      path: "trusted.txt",
+      recovery: { kind: "guarded_revert", available: true, status: "available" },
+    } as any,
+    policy,
+  );
+  const retained = retainActivityAfterRecovery(prior, {
+    editId: "edit-rec",
+    status: "reverted",
+    fallbackDiff: "--- a/trusted.txt\n+++ b/trusted.txt\n+other",
+    policy,
+  });
+  assert.equal(retained.path, "trusted.txt");
+  assert.equal(retained.diff, prior.diff);
+  assert.equal(retained.recovery?.status, "reverted");
+  assert.equal(retained.autoApplied, true);
+});
+
+test("retainActivityAfterRecovery keeps stored diff on conflict", () => {
+  const prior = activityRecordFromToolRun(
+    {
+      type: "tool_run",
+      schemaVersion: 2,
+      activityId: "a-con",
+      toolCallId: "inv-con",
+      lifecycle: "terminal",
+      execution: "executed",
+      status: "succeeded",
+      name: "write_file",
+      input: { path: "c.txt" },
+      summary: null,
+      command: null,
+      output: "ok",
+      error: null,
+      reasonCode: null,
+      reason: null,
+      shellDisplayName: null,
+      detailAvailable: true,
+      automaticEligibility: "text_edit",
+      autoApplied: true,
+      editId: "edit-con",
+      diff: "--- a/c.txt\n+++ b/c.txt\n+orig",
+      path: "c.txt",
+      recovery: { kind: "guarded_revert", available: true, status: "available" },
+    } as any,
+    policy,
+  );
+  const retained = retainActivityAfterRecovery(prior, {
+    editId: "edit-con",
+    status: "conflict",
+    fallbackDiff: "--- a/c.txt\n+++ b/c.txt\n+orig",
+    policy,
+  });
+  assert.equal(retained.path, "c.txt");
+  assert.equal(retained.diff, prior.diff);
+  assert.equal(retained.recovery?.status, "conflict");
 });

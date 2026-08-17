@@ -184,6 +184,40 @@ export function retainActivityAfterDiff(
   };
 }
 
+export function retainActivityAfterRecovery(
+  prior: ActivityRecord | null | undefined,
+  input: {
+    editId: string;
+    status: "reverted" | "conflict";
+    fallbackDiff: string | null;
+    policy: PolicySnapshot;
+  },
+): ActivityRecord {
+  return {
+    activityId: prior?.activityId ?? input.editId,
+    invocationId: prior?.invocationId ?? "",
+    name: prior?.name ?? "edit",
+    lifecycle: "terminal",
+    execution: "executed",
+    status: input.status === "reverted" ? "succeeded" : "failed",
+    input: prior?.input ?? null,
+    output: prior?.output ?? null,
+    error: input.status === "reverted" ? null : "Edit not reverted",
+    diff: prior?.diff ?? input.fallbackDiff,
+    path: prior?.path ?? null,
+    policy: input.policy,
+    automaticEligibility: prior?.automaticEligibility ?? "text_edit",
+    autoApplied: prior?.autoApplied === true,
+    command: prior?.command ?? null,
+    editId: input.editId,
+    recovery: {
+      kind: "guarded_revert",
+      available: prior?.recovery?.available ?? true,
+      status: input.status,
+    },
+  };
+}
+
 export function classifyToolRunLog(event: Extract<AcpUiEvent, { type: "tool_run" }>): { message: "tool_not_executed" | "tool_failed" | null; fields: Record<string, unknown> } {
   if (event.lifecycle !== "terminal") return { message: null, fields: {} };
   if (event.execution === "not_executed" && event.status === "rejected") return { message: "tool_not_executed", fields: { toolCallId:event.toolCallId, command:event.command, reasonCode:event.reasonCode, reason:event.reason, shellDisplayName:event.shellDisplayName } };
