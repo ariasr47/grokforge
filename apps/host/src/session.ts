@@ -38,7 +38,7 @@ import { recordCompletedConversation } from "./shell-history.js";
 import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./executionEnvironment.js";
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
-import type { RunEventEnvelope, RunSnapshot } from "./run-types.js";
+import type { ActivityRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot } from "./run-types.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
 import {
@@ -96,6 +96,30 @@ export type BusEvent =
   | { type: "effort_applied"; selected: EffortLevel; applied: EffortLevel; model: string };
 
 export type Listener = (event: BusEvent) => void;
+
+export function activityRecordFromToolRun(
+  ev: Extract<AcpUiEvent, { type: "tool_run" }>,
+  policy: PolicySnapshot,
+): ActivityRecord {
+  return {
+    activityId: ev.activityId,
+    invocationId: ev.toolCallId,
+    name: ev.name ?? "tool",
+    lifecycle: ev.lifecycle,
+    execution: ev.execution,
+    status: ev.status,
+    input: ev.input,
+    output: ev.output,
+    error: ev.error ?? ev.reason ?? ev.reasonCode,
+    diff: ev.diff ?? null,
+    policy,
+    automaticEligibility: ev.automaticEligibility ?? "not_eligible",
+    autoApplied: ev.autoApplied === true,
+    command: typeof ev.command === "string" ? ev.command : null,
+    editId: ev.editId ?? null,
+    recovery: ev.recovery ?? null,
+  };
+}
 
 export function classifyToolRunLog(event: Extract<AcpUiEvent, { type: "tool_run" }>): { message: "tool_not_executed" | "tool_failed" | null; fields: Record<string, unknown> } {
   if (event.lifecycle !== "terminal") return { message: null, fields: {} };
@@ -542,7 +566,7 @@ export class AgentSession {
             name: ev.name,
             sessionId: this.sessionId,
           });
-          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const activity={activityId:ev.activityId,invocationId:ev.toolCallId,name:ev.name??"tool",lifecycle:ev.lifecycle,execution:ev.execution,status:ev.status,input:ev.input,output:ev.output,error:ev.error ?? ev.reason ?? ev.reasonCode,diff:ev.diff??null,policy:run.policy,automaticEligibility:ev.automaticEligibility??"not_eligible",autoApplied:ev.autoApplied===true,editId:ev.editId??null,recovery:ev.recovery??null}; const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined); if(envelope){ return;} } }
+          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const activity=activityRecordFromToolRun(ev, run.policy); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined); if(envelope){ return;} } }
         }
         if (ev.type === "tool_run" && ev.lifecycle === "terminal" && ev.execution === "executed") {
           const name = toolNames.get(ev.toolCallId) || "tool";
