@@ -2,6 +2,10 @@ import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } 
 import type { ChatMessage } from "./messageBlocks";
 import { toolRunStats } from "./messageBlocks";
 import { displayToolName } from "./toolFormat";
+import { isListAutoExecuted } from "./trustedCommandProvenance";
+
+const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
+const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
 
 function looksLikePath(s: string): boolean {
   if (!s || s.length > 260) return false;
@@ -54,6 +58,12 @@ const ToolRow = memo(function ToolRow({
       ? (tool.toolMeta.activityEvent.input as { path: string }).path
       : null;
   const pathHint = looksLikePath(summary) ? summary : inputPath && looksLikePath(inputPath) ? inputPath : null;
+  const command = tool.toolMeta?.command ?? tool.toolMeta?.activityEvent?.command ?? null;
+  const listAuto = isListAutoExecuted({
+    execution: execution ?? tool.toolMeta?.activityEvent?.execution ?? null,
+    automaticEligibility: tool.toolMeta?.activityEvent?.automaticEligibility,
+    autoApplied: tool.toolMeta?.activityEvent?.autoApplied,
+  });
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
   // Peek: first ~40 lines of output when expanded
@@ -85,6 +95,10 @@ const ToolRow = memo(function ToolRow({
           <span className="tool-row-summary" title={summary}>
             {summary}
           </span>
+        ) : command ? (
+          <span className="tool-row-summary" title={command}>
+            {command}
+          </span>
         ) : null}
         <span className={`tool-row-status ${status}`}>
           {status === "pending" ? (
@@ -100,6 +114,11 @@ const ToolRow = memo(function ToolRow({
           {open ? "▾" : "▸"}
         </span>
       </button>
+      {listAuto ? (
+        <span className="chip tool-list-auto" title={LIST_AUTO_TOOLTIP}>
+          {LIST_AUTO_CHIP}
+        </span>
+      ) : null}
       {pathHint && onOpenPath ? (
         <div className="tool-row-actions">
           <button

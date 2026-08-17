@@ -344,6 +344,41 @@ export type ToolReasonCode =
   | "shell_dialect_incompatible"
   | "leading_command_unresolved";
 
+export type TrustedCommandClassId =
+  | "npm"
+  | "npx"
+  | "cargo"
+  | "git:status"
+  | "git:diff"
+  | "git:log"
+  | "git:show";
+
+export type TrustedCommandClassCatalogEntry = {
+  id: TrustedCommandClassId;
+  label: string;
+};
+
+export type TrustedCommandClassesFallbackReason = "missing" | "invalid" | "unreadable" | null;
+
+export type TrustedCommandClassesView = {
+  status: "confirmed";
+  workspace: string;
+  classes: TrustedCommandClassId[];
+  revision: string;
+  source: "saved" | "fallback";
+  fallbackReason: TrustedCommandClassesFallbackReason;
+  savedForWorkspace: boolean;
+  catalog: TrustedCommandClassCatalogEntry[];
+};
+
+export type AutomaticEligibility =
+  | "read"
+  | "fixed_inspection"
+  | "text_edit"
+  | "bypass"
+  | "trusted_command_class"
+  | "not_eligible";
+
 export type ToolRunEvent = {
   schemaVersion: 2;
   type: "tool_run";
@@ -362,6 +397,8 @@ export type ToolRunEvent = {
   reason: string | null;
   shellDisplayName: string | null;
   detailAvailable: boolean;
+  automaticEligibility?: AutomaticEligibility;
+  autoApplied?: boolean;
 };
 
 /**
@@ -446,6 +483,24 @@ export const api = {
   cancelRun: (sessionId: string, runId: string) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/cancel", { method: "POST", body: JSON.stringify({ sessionId, runId }) }),
   workspacePolicy: (workspace: string) => json<{ policy: Record<string, unknown> }>(`/api/workspace-policy?workspace=${encodeURIComponent(workspace)}`),
   saveWorkspacePolicy: (body: { sessionId: string; workspace: string; mode: "review" | "trusted_workspace" }) => json<{ policy: Record<string, unknown> }>("/api/workspace-policy", { method: "POST", body: JSON.stringify(body) }),
+  trustedCommandClassCatalog: () =>
+    json<{ catalog: TrustedCommandClassCatalogEntry[] }>(
+      "/api/trusted-command-class-catalog",
+    ),
+  trustedCommandClasses: (workspace: string) =>
+    json<{ classes: TrustedCommandClassesView }>(
+      `/api/trusted-command-classes?workspace=${encodeURIComponent(workspace)}`,
+    ),
+  saveTrustedCommandClasses: (body: {
+    sessionId: string;
+    workspace: string;
+    classes: TrustedCommandClassId[];
+    expectedRevision: string;
+  }) =>
+    json<{ classes: TrustedCommandClassesView }>("/api/trusted-command-classes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   sessionPermissionMode: (body: { sessionId: string; mode: "workspace" | "bypass_permissions"; activationToken?: string }) => json<{ sessionId: string; effectivePermissionMode: string; bypassPermissions: Record<string, unknown> }>("/api/session-permission-mode", { method: "POST", body: JSON.stringify(body) }),
   runPermission: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; decision: "allow_once" | "allow_session" | "deny" }) => json<{ ok: boolean }>("/api/permission", { method: "POST", body: JSON.stringify(body) }),
   runDiff: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; editId: string; action: "accept" | "reject" }) => json<{ ok: boolean }>("/api/diff", { method: "POST", body: JSON.stringify(body) }),

@@ -619,6 +619,30 @@ html[data-motion="calm"] .brand-mark {
 .policy-heading { display:flex; justify-content:space-between; gap:8px; align-items:center; }
 .policy-option { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; padding:8px; }
 .policy-option small { grid-column:2; color:var(--muted); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.trusted-classes-control { margin-top:12px; }
+.trusted-classes-helper,
+.trusted-classes-status { margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
+.trusted-classes-confirmed,
+.class-catalog { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.trusted-classes-control .class-chip { font-family:var(--mono); }
+.trusted-classes-control .class-chip-draft { border-style:dashed; color:var(--text); }
+.trusted-classes-control .class-remove { color:var(--danger); min-height:0; padding:2px 8px; }
+.trusted-classes-catalog { border:0; margin:0; padding:0; min-inline-size:0; }
+.activity-command { margin:8px 0 0; }
+.activity-command code,
+.tool-list-auto { font-family:var(--mono); }
+.tool-list-auto { margin:4px 12px 0; }
 
 .transcript {
   flex: 1;

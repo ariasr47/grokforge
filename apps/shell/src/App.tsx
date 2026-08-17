@@ -9,11 +9,13 @@ import {
   pickFolderNative,
   pollHostHealth,
   restartDesktopHost,
+  ApiError,
   type DesktopHostStatus,
   type EffortLevel,
   type ProductMode,
   type PublicState,
   type ServerEvent,
+  type TrustedCommandClassesView,
 } from "./api";
 import {
   DIAGNOSTICS_REVEAL_MS,
@@ -112,6 +114,8 @@ import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduc
 import { RunSurface } from "./RunSurface";
 import { PermissionPolicyControl } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
+import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
+import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
 
 type View = "chat" | "settings";
 type BootPhase = "booting" | "ready" | "error";
@@ -236,6 +240,8 @@ export function App() {
   const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
   const [histIdx, setHistIdx] = useState(-1);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [classesView, setClassesView] = useState<TrustedCommandClassesView | null>(null);
+  const [classesStatus, setClassesStatus] = useState<TrustedCommandClassesStatus>("no_workspace");
   const [sessionList, setSessionList] = useState<ChatSession[]>([]);
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     listPinnedWorkspaces(),
@@ -908,6 +914,7 @@ export function App() {
             detailAvailable: toolEvent.detailAvailable,
             reasonCode: toolEvent.reasonCode,
             reason: toolEvent.reason,
+            command: toolEvent.command,
           },
         };
         if (idx >= 0) {
@@ -1400,6 +1407,34 @@ export function App() {
   useEffect(() => {
     if (state?.workspace && hostOk) void refreshFiles();
   }, [state?.workspace, hostOk, refreshFiles]);
+
+  useEffect(() => {
+    if (!state?.workspace) {
+      setClassesView(null);
+      setClassesStatus("no_workspace");
+      return;
+    }
+    if (!hostOk) {
+      setClassesStatus("offline");
+      return;
+    }
+    let cancelled = false;
+    setClassesStatus("loading");
+    void api.trustedCommandClasses(state.workspace).then(
+      (res) => {
+        if (cancelled) return;
+        setClassesView(res.classes);
+        setClassesStatus("confirmed");
+      },
+      () => {
+        if (cancelled) return;
+        setClassesStatus("unconfirmed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [state?.workspace, hostOk]);
 
   // AC-U5 — with `owned: false` no restart/reconnect affordance renders
   // anywhere (dev-shell-only state; unreachable in a packaged prod build).
@@ -3233,6 +3268,55 @@ export function App() {
                         if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
                         const result = await api.saveWorkspacePolicy({ sessionId, workspace: state.workspace, mode });
                         if (state) applyState({ ...state, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
+                      }}
+                    />
+                    <TrustedCommandClassesControl
+                      key={state?.workspace ?? "no-workspace"}
+                      status={
+                        !state?.workspace
+                          ? "no_workspace"
+                          : !hostOk
+                            ? "offline"
+                            : classesStatus
+                      }
+                      policyMode={
+                        policy?.effectiveMode === "trusted_workspace"
+                          ? "trusted_workspace"
+                          : policy?.effectiveMode === "review"
+                            ? "review"
+                            : null
+                      }
+                      confirmed={classesView ?? {
+                        classes: [],
+                        revision: "fallback",
+                        source: "fallback",
+                        fallbackReason: "missing",
+                        savedForWorkspace: false,
+                        catalog: [],
+                      }}
+                      onSave={async (classes, expectedRevision) => {
+                        if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
+                        try {
+                          const result = await api.saveTrustedCommandClasses({
+                            sessionId,
+                            workspace: state.workspace,
+                            classes,
+                            expectedRevision,
+                          });
+                          setClassesView(result.classes);
+                          toast.push("Trusted command classes saved.", "success");
+                        } catch (e) {
+                          if (e instanceof ApiError && e.code === "class_revision_conflict") {
+                            try {
+                              const fresh = await api.trustedCommandClasses(state.workspace);
+                              setClassesView(fresh.classes);
+                            } catch {
+                              /* keep last confirmed */
+                            }
+                          }
+                          const code = e instanceof ApiError ? e.code : "class_save_failed";
+                          throw Object.assign(e instanceof Error ? e : new Error("save failed"), { code });
+                        }
                       }}
                     />
                     {sessionId && <BypassPermissionsControl

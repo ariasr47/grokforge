@@ -1,9 +1,37 @@
 // Shared network-boundary fake host for flow-integration tests (SPEC §7 /
 // spire-tech-flow-integration-tests: mock the network boundary only — real
 // session store, real mode reducer, real React tree).
-import type { DesktopHostStatus } from "./api";
-import type { PublicState } from "./api";
+import type {
+  DesktopHostStatus,
+  PublicState,
+  TrustedCommandClassCatalogEntry,
+  TrustedCommandClassId,
+  TrustedCommandClassesView,
+} from "./api";
 import type { DesktopCommand } from "./desktopBridge";
+
+const TRUSTED_CLASS_CATALOG: TrustedCommandClassCatalogEntry[] = [
+  { id: "npm", label: "npm" },
+  { id: "npx", label: "npx" },
+  { id: "cargo", label: "cargo" },
+  { id: "git:status", label: "git status" },
+  { id: "git:diff", label: "git diff" },
+  { id: "git:log", label: "git log" },
+  { id: "git:show", label: "git show" },
+];
+
+function emptyClassesView(workspace: string): TrustedCommandClassesView {
+  return {
+    status: "confirmed",
+    workspace,
+    classes: [],
+    revision: "fallback",
+    source: "fallback",
+    fallbackReason: "missing",
+    savedForWorkspace: false,
+    catalog: TRUSTED_CLASS_CATALOG,
+  };
+}
 
 /**
  * desktop-self-host F1 — the Tauri IPC boundary is the second (and only
@@ -104,6 +132,8 @@ export interface FakeHost {
   calls: FetchCall[];
   fetchImpl: typeof fetch;
   callsTo: (pathIncludes: string) => FetchCall[];
+  trustedClasses: Map<string, TrustedCommandClassesView>;
+  nextClassSaveError: { status: number; code: string } | null;
 }
 
 const BASE_STATE: PublicState = {
@@ -147,6 +177,8 @@ export interface FakeHostOptions {
    * shell's fix is proven to hold even when the engine half has NOT landed.
    */
   omitPriorConversationsOnMutatingResponses?: boolean;
+  trustedClasses?: TrustedCommandClassesView;
+  classSaveError?: { status: number; code: string } | null;
 }
 
 export function createFakeHost(
@@ -156,6 +188,11 @@ export function createFakeHost(
   const state: PublicState = { ...BASE_STATE, ...overrides };
   const calls: FetchCall[] = [];
   const files = opts.files ?? {};
+  const trustedClasses = new Map<string, TrustedCommandClassesView>();
+  if (opts.trustedClasses && overrides.workspace) {
+    trustedClasses.set(overrides.workspace, opts.trustedClasses);
+  }
+  let nextClassSaveError = opts.classSaveError ?? null;
 
   function snapshot(): PublicState {
     return { ...state };
@@ -256,6 +293,68 @@ export function createFakeHost(
         ? { cancelled: true, path: null }
         : { cancelled: opts.pickFolderPath === null, path: opts.pickFolderPath };
     }
+    if (path === "/api/trusted-command-class-catalog") {
+      return { catalog: TRUSTED_CLASS_CATALOG };
+    }
+    if (path === "/api/trusted-command-classes" && method === "GET") {
+      const workspace = search?.get("workspace") ?? "";
+      if (!workspace || workspace === ".") {
+        return {
+          __error: true,
+          status: 400,
+          error: "Workspace must be an absolute directory",
+          code: "invalid_workspace",
+          retryable: false,
+          runId: null,
+        };
+      }
+      return { classes: trustedClasses.get(workspace) ?? emptyClassesView(workspace) };
+    }
+    if (path === "/api/trusted-command-classes" && method === "POST") {
+      const workspace = typeof body?.workspace === "string" ? body.workspace : "";
+      if (!workspace || workspace === ".") {
+        return {
+          __error: true,
+          status: 400,
+          error: "Invalid workspace or classes request",
+          code: "invalid_workspace",
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (nextClassSaveError) {
+        const err = nextClassSaveError;
+        nextClassSaveError = null;
+        if (err.code === "class_revision_conflict") {
+          const current = trustedClasses.get(workspace) ?? emptyClassesView(workspace);
+          trustedClasses.set(workspace, { ...current, revision: `fresh-${Date.now()}` });
+        }
+        return {
+          __error: true,
+          status: err.status,
+          error: err.code === "run_active" ? "Run is active" : "Class revision conflict",
+          code: err.code,
+          retryable: false,
+          runId: null,
+        };
+      }
+      const incoming = Array.isArray(body?.classes) ? body.classes : [];
+      const classes = incoming.filter((id): id is TrustedCommandClassId =>
+        TRUSTED_CLASS_CATALOG.some((entry) => entry.id === id),
+      );
+      const saved: TrustedCommandClassesView = {
+        status: "confirmed",
+        workspace,
+        classes,
+        revision: `rev-${Date.now()}`,
+        source: "saved",
+        fallbackReason: null,
+        savedForWorkspace: true,
+        catalog: TRUSTED_CLASS_CATALOG,
+      };
+      trustedClasses.set(workspace, saved);
+      return { classes: saved };
+    }
     if (path === "/api/permission" && method === "POST") return { ok: true };
     if (path === "/api/diff" && method === "POST") return { ok: true };
     if (path === "/api/policy") return { policy: {} };
@@ -291,12 +390,18 @@ export function createFakeHost(
     const body = bodyText ? (JSON.parse(bodyText) as Record<string, unknown>) : undefined;
     calls.push({ method, path: url.pathname, body });
     const json = await route(method, url.pathname, body, url.searchParams);
-    const notFound = Boolean((json as { __notFound?: boolean })?.__notFound);
+    const record = json as { __notFound?: boolean; __error?: boolean; status?: number };
+    const notFound = Boolean(record.__notFound);
+    const errored = Boolean(record.__error);
+    const status = notFound ? 404 : errored ? (record.status ?? 400) : 200;
+    const payload = notFound ? { error: "not found" } : errored
+      ? { error: (json as { error?: string }).error, code: (json as { code?: string }).code, retryable: (json as { retryable?: boolean }).retryable ?? false, runId: (json as { runId?: string | null }).runId ?? null }
+      : json;
     return {
-      ok: !notFound,
-      status: notFound ? 404 : 200,
-      statusText: notFound ? "Not Found" : "OK",
-      text: async () => JSON.stringify(notFound ? { error: "not found" } : json),
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: status >= 200 && status < 300 ? "OK" : "Error",
+      text: async () => JSON.stringify(payload),
     } as Response;
   }) as typeof fetch;
 
@@ -305,6 +410,13 @@ export function createFakeHost(
     calls,
     fetchImpl,
     callsTo: (pathIncludes: string) => calls.filter((c) => c.path.includes(pathIncludes)),
+    trustedClasses,
+    get nextClassSaveError() {
+      return nextClassSaveError;
+    },
+    set nextClassSaveError(value) {
+      nextClassSaveError = value;
+    },
   };
 }
 

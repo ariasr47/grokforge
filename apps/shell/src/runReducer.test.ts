@@ -16,3 +16,10 @@ test("snapshots remain immutable after event",()=>{let a=reduceRunEvent(initialR
 test("two sessions retain independent runs",()=>{let a=reduceRunEvent(initialRunProjection(),started(snap("s1","r1"))); a=reduceRunEvent(a,started(snap("s2","r2"))); assert.deepEqual(a.runOrder,["r1","r2"]);});
 test("terminal projection cannot be downgraded by a late admission snapshot",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"answered",finalAnswer:"ok",answerVouched:true,failure:null,terminalAt:""},2)); const b=mergeRunSnapshot(a,{...snap(),state:"running"}); assert.equal(b.runsById.r1.state,"terminal"); assert.equal(b.runsById.r1.finalAnswer,"ok");});
 test("terminal admission snapshot upgrades admitted projection without losing identity",()=>{let a=mergeRunSnapshot(initialRunProjection(),snap()); const b=mergeRunSnapshot(a,{...snap(),state:"terminal",terminalKind:"answered",finalAnswer:"ok",answerVouched:true,lastEventSeq:2}); assert.equal(b.runsById.r1.state,"terminal"); assert.equal(b.runsById.r1.acceptedPrompt,"prompt"); assert.equal(b.runsById.r1.lastEventSeq,0);});
+test("activity_update copies original command and defaults missing command to null",()=>{
+  let a=reduceRunEvent(initialRunProjection(),started());
+  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a1",invocationId:"i1",name:"run_shell",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,policy:{},automaticEligibility:"trusted_command_class",autoApplied:true,command:"npm test",editId:null,recovery:null}},2));
+  assert.equal(a.runsById.r1.activities.a1.command,"npm test");
+  a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a2",invocationId:"i2",name:"read_file",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,policy:{},automaticEligibility:"read",autoApplied:false,command:undefined as unknown as string,editId:null,recovery:null}},3));
+  assert.equal(a.runsById.r1.activities.a2.command,null);
+});
