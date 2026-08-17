@@ -56,6 +56,7 @@ export interface Session {
   sessionShell: boolean;
   capability: ExecutionEnvironmentCapability;
   permissionMode?: "review" | "trusted_workspace" | "bypass_permissions";
+  trustedCommandClasses?: string[];
 }
 
 /** Cap agent context growth during long dogfood sessions (system + recent turns). */
@@ -179,6 +180,7 @@ export class GrokAcpServer {
             sessionShell: false,
             capability: this.capability,
             permissionMode: "review",
+            trustedCommandClasses: [],
           });
           this.respond(id ?? null, {
             sessionId,
@@ -209,6 +211,12 @@ export class GrokAcpServer {
             re === "low" || re === "medium" || re === "high" ? re : undefined;
           const effectiveMode = String((params?.policy as {effectiveMode?:unknown} | undefined)?.effectiveMode ?? "review");
           if (effectiveMode === "review" || effectiveMode === "trusted_workspace" || effectiveMode === "bypass_permissions") session.permissionMode = effectiveMode;
+          const classes = Array.isArray(params?.trustedCommandClasses)
+            ? (params.trustedCommandClasses as unknown[]).filter(
+                (id): id is string => typeof id === "string",
+              )
+            : [];
+          session.trustedCommandClasses = classes;
           // Seed prior UI history once if agent only has system message
           const hist = params?.history;
           if (Array.isArray(hist) && session.messages.length <= 1) {

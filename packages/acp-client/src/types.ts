@@ -64,7 +64,7 @@ export type HostExecutionProfile =
   | { status: "unavailable"; platform: string; osFamily: "windows" | "macos" | "linux" | "unsupported"; executable: null; argvPrefix: readonly []; displayName: null; dialect: null; pathSeparator: "\\" | "/"; syntax: null; reasonCode: "shell_resolution_failed" | "unsupported_platform"; reason: string };
 export type ToolRunEvent = {
   type: "tool_run"; schemaVersion: 2; activityId: string; toolCallId: string; lifecycle: "pending" | "terminal"; execution: null | "executed" | "not_executed"; status: "running" | "succeeded" | "failed" | "rejected"; name: string | null; input: unknown | null; summary: string | null; command: string | null; output: string | null; error: string | null; reasonCode: ToolReasonCode | null; reason: string | null; shellDisplayName: string | null; detailAvailable: boolean;
-  automaticEligibility?: "read" | "fixed_inspection" | "text_edit" | "bypass" | "not_eligible";
+  automaticEligibility?: "read" | "fixed_inspection" | "text_edit" | "bypass" | "trusted_command_class" | "not_eligible";
   autoApplied?: boolean;
   editId?: string | null;
   diff?: string | null;
@@ -92,6 +92,8 @@ export interface PromptOptions {
   runId?: string;
   connectionGeneration?: number;
   policy?: Record<string, unknown>;
+  /** Frozen Trusted command-class ids for this generation (host-owned). */
+  trustedCommandClasses?: readonly string[];
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
 }
 

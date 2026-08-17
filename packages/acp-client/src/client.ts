@@ -139,6 +139,7 @@ export class StdioAcpClient implements AcpClient {
       reasoning_effort: opts?.reasoning_effort,
       history: opts?.history,
       policy: opts?.policy,
+      trustedCommandClasses: opts?.trustedCommandClasses ?? [],
     });
   }
 

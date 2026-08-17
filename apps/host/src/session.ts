@@ -869,6 +869,7 @@ export class AgentSession {
         runId: this.activeRunId ?? "",
         connectionGeneration: this.connectionGeneration,
         policy: workspacePolicy,
+        trustedCommandClasses: this.trustedClassesSnapshot.slice(),
       });
     } catch (e) {
       this.pendingFallback = null;
