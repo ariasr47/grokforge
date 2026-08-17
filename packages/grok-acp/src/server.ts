@@ -657,10 +657,23 @@ export class GrokAcpServer {
     const inspectionPath = inspection ? fixedInspectionPath(inspection) : undefined;
     const confined = perm === "shell" ? (inspectionPath ? await this.confinedTarget(inspectionPath) : true) : await this.confinedTarget(String(args.path ?? ""));
     const authorization = this.authorization.authorize(
-      perm === "read" ? { kind: "read", path: String(args.path ?? "") } :
-        perm === "shell" && inspection ? { kind: "inspection", path: String(args.path ?? "") } :
-        perm === "shell" ? { kind: "shell" } : { kind: "text_edit", regularText: (typeof args.content === "string" ? !args.content.includes("\0") : typeof args.patch === "string" && !args.patch.includes("\0")), exists: true },
-      { mode: session.permissionMode ?? "review", confined, inspection: inspection ? command : undefined },
+      perm === "read"
+        ? { kind: "read", path: String(args.path ?? "") }
+        : perm === "shell" && inspection
+          ? { kind: "inspection", path: String(args.path ?? ""), command }
+          : perm === "shell"
+            ? { kind: "shell", command }
+            : {
+                kind: "text_edit",
+                regularText: (typeof args.content === "string" ? !args.content.includes("\0") : typeof args.patch === "string" && !args.patch.includes("\0")),
+                exists: true,
+              },
+      {
+        mode: session.permissionMode ?? "review",
+        confined,
+        inspection: inspection ? command : undefined,
+        trustedCommandClasses: session.trustedCommandClasses ?? [],
+      },
     );
     if (authorization.decision === "refuse") {
       const msg = JSON.stringify({ error: authorization.reason ?? "Tool refused" });
@@ -678,13 +691,13 @@ export class GrokAcpServer {
       if (perm === "shell") {
         if (parseProtectedDelete(command, this.workspaceRoot)) {
           const msg = JSON.stringify({ execution: "not_executed", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target" });
-          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target" });
+          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target", automaticEligibility: "not_eligible", autoApplied: false });
           return msg;
         }
         const preflight = await preflightShell(capability, String(args.command ?? ""));
         if (preflight.disposition === "reject") {
           const msg = JSON.stringify({ execution: "not_executed", reasonCode: preflight.reasonCode, command: preflight.command, reason: preflight.reason, shellDisplayName: preflight.shellDisplayName });
-          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason });
+          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason, automaticEligibility: "not_eligible", autoApplied: false });
           return msg;
         }
         if (!session.sessionShell && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
@@ -739,7 +752,20 @@ export class GrokAcpServer {
         } catch {
           /* keep ok */
         }
-        emitTerminal(out, ok, { automaticEligibility: authorization.automaticEligibility, autoApplied: session.permissionMode === "bypass_permissions" });
+        const listAuto =
+          authorization.decision === "auto" &&
+          authorization.automaticEligibility === "trusted_command_class";
+        const bypassAuto = session.permissionMode === "bypass_permissions";
+        emitTerminal(out, ok, {
+          automaticEligibility: bypassAuto
+            ? "bypass"
+            : listAuto
+              ? "trusted_command_class"
+              : authorization.automaticEligibility === "fixed_inspection"
+                ? "fixed_inspection"
+                : "not_eligible",
+          autoApplied: bypassAuto || listAuto,
+        });
         this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
 
