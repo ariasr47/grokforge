@@ -98,9 +98,13 @@ export type BusEvent =
 export type Listener = (event: BusEvent) => void;
 
 export function activityRecordFromToolRun(
-  ev: Extract<AcpUiEvent, { type: "tool_run" }>,
+  ev: Extract<AcpUiEvent, { type: "tool_run" }> & { path?: string | null },
   policy: PolicySnapshot,
 ): ActivityRecord {
+  const path =
+    typeof (ev as { path?: unknown }).path === "string" && (ev as { path: string }).path.length > 0
+      ? (ev as { path: string }).path
+      : null;
   return {
     activityId: ev.activityId,
     invocationId: ev.toolCallId,
@@ -112,6 +116,7 @@ export function activityRecordFromToolRun(
     output: ev.output,
     error: ev.error ?? ev.reason ?? ev.reasonCode,
     diff: ev.diff ?? null,
+    path,
     policy,
     automaticEligibility: ev.automaticEligibility ?? "not_eligible",
     autoApplied: ev.autoApplied === true,
