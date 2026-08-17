@@ -13,6 +13,21 @@ export class RunJournal {
   async admit(run:RunSnapshot):Promise<void>{await this.serial(`${run.sessionId}/${run.runId}`,async()=>{const d=this.dir(run.sessionId,run.runId);await fs.mkdir(d,{recursive:true});const events=path.join(d,"events.jsonl");const eh=await fs.open(events,"w");await eh.sync();await eh.close();const target=path.join(d,"meta.json"),tmp=`${target}.${process.pid}.tmp`;const mh=await fs.open(tmp,"w");await mh.writeFile(JSON.stringify(run),"utf8");await mh.sync();await mh.close();await fs.rename(tmp,target);await this.syncDir(d);})}
   private async appendUnlocked(event:Omit<RunEventEnvelope,"eventSeq"|"occurredAt"> & Partial<Pick<RunEventEnvelope,"occurredAt">>):Promise<RunEventEnvelope>{const d=this.dir(event.sessionId,event.runId),file=path.join(d,"events.jsonl");let raw=await fs.readFile(file,"utf8").catch(()=>"");if(raw&&!raw.endsWith("\n")){const boundary=raw.lastIndexOf("\n")+1;await fs.truncate(file,boundary);raw=raw.slice(0,boundary);const h=await fs.open(file,"r+");await h.sync();await h.close();}const prior=await this.replay(event.sessionId,event.runId).catch(error=>{if((error as Error).message==="journal_corrupt")throw error;return [];});if(prior.some(e=>e.type==="run_terminal"))throw Object.assign(new Error("run terminal"),{code:"run_terminal"});const seq=prior.at(-1)?.eventSeq??0;const full={...event,eventSeq:seq+1,occurredAt:event.occurredAt||new Date().toISOString(),schemaVersion:1 as const};const fh=await fs.open(file,"a");try{await fh.writeFile(JSON.stringify(full)+"\n","utf8");await fh.sync();}finally{await fh.close();}return full}
   async append(event:Omit<RunEventEnvelope,"eventSeq"|"occurredAt"> & Partial<Pick<RunEventEnvelope,"occurredAt">>):Promise<RunEventEnvelope>{return this.serial(`${event.sessionId}/${event.runId}`,()=>this.fileLock(event.sessionId,event.runId,()=>this.appendUnlocked(event)))}
+  async appendAfterTerminal(event:Omit<RunEventEnvelope,"eventSeq"|"occurredAt"> & Partial<Pick<RunEventEnvelope,"occurredAt">>):Promise<RunEventEnvelope>{
+    if(event.type!=="activity_update"||event.payload.kind!=="activity_update") throw Object.assign(new Error("only settlement activity may follow terminal"),{code:"run_terminal"});
+    return this.serial(`${event.sessionId}/${event.runId}`,()=>this.fileLock(event.sessionId,event.runId,async()=>{
+      const d=this.dir(event.sessionId,event.runId),file=path.join(d,"events.jsonl");
+      let raw=await fs.readFile(file,"utf8").catch(()=>"");
+      if(raw&&!raw.endsWith("\n")){const boundary=raw.lastIndexOf("\n")+1;await fs.truncate(file,boundary);raw=raw.slice(0,boundary);const h=await fs.open(file,"r+");await h.sync();await h.close();}
+      const prior=await this.replay(event.sessionId,event.runId).catch(error=>{if((error as Error).message==="journal_corrupt")throw error;return [];});
+      if(!prior.some(e=>e.type==="run_terminal")) throw Object.assign(new Error("run not terminal"),{code:"run_not_terminal"});
+      const seq=prior.at(-1)?.eventSeq??0;
+      const full={...event,eventSeq:seq+1,occurredAt:event.occurredAt||new Date().toISOString(),schemaVersion:1 as const};
+      const fh=await fs.open(file,"a");
+      try{await fh.writeFile(JSON.stringify(full)+"\n","utf8");await fh.sync();}finally{await fh.close();}
+      return full;
+    }));
+  }
   async appendTerminal(event:Omit<RunEventEnvelope,"eventSeq"|"occurredAt"> & Partial<Pick<RunEventEnvelope,"occurredAt">>):Promise<RunEventEnvelope|null>{
     return this.serial(`${event.sessionId}/${event.runId}`,()=>this.fileLock(event.sessionId,event.runId,async()=>{const prior=await this.replay(event.sessionId,event.runId);if(prior.some(e=>e.type==="run_terminal"))return null;return await this.appendUnlocked(event);}));
   }

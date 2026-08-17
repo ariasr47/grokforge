@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activityRecordFromProposedEdit, activityRecordFromToolRun } from "./session.js";
+import {
+  activityRecordFromProposedEdit,
+  activityRecordFromToolRun,
+  retainActivityAfterDiff,
+} from "./session.js";
 
 const policy = {
   workspace: "w",
@@ -91,4 +95,44 @@ test("activityRecordFromProposedEdit journals path, full diff, and editId", () =
   assert.equal(activity.lifecycle, "pending");
   assert.equal(activity.autoApplied, false);
   assert.ok(activity.diff && activity.diff.includes("+one"));
+});
+
+test("retainActivityAfterDiff keeps proposed path, editId, and full diff on reject", () => {
+  const prior = activityRecordFromProposedEdit({
+    editId: "edit-keep",
+    invocationId: "inv-keep",
+    path: "keep.txt",
+    diff: "--- a/keep.txt\n+++ b/keep.txt\n@@ -0,0 +1 @@\n+kept",
+    policy,
+  });
+  const retained = retainActivityAfterDiff(prior, {
+    editId: "edit-keep",
+    invocationId: "inv-keep",
+    action: "reject",
+    policy,
+  });
+  assert.equal(retained.diff, prior.diff);
+  assert.equal(retained.path, "keep.txt");
+  assert.equal(retained.editId, "edit-keep");
+  assert.equal(retained.status, "rejected");
+});
+
+test("retainActivityAfterDiff keeps proposed full diff on accept", () => {
+  const prior = activityRecordFromProposedEdit({
+    editId: "edit-acc",
+    invocationId: "inv-acc",
+    path: "acc.txt",
+    diff: "--- a/acc.txt\n+++ b/acc.txt\n@@ -0,0 +1 @@\n+accepted",
+    policy,
+  });
+  const retained = retainActivityAfterDiff(prior, {
+    editId: "edit-acc",
+    invocationId: "inv-acc",
+    action: "accept",
+    policy,
+  });
+  assert.equal(retained.diff, prior.diff);
+  assert.equal(retained.path, "acc.txt");
+  assert.equal(retained.editId, "edit-acc");
+  assert.equal(retained.status, "succeeded");
 });

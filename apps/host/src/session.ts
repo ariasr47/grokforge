@@ -154,6 +154,36 @@ export function activityRecordFromProposedEdit(input: {
   };
 }
 
+export function retainActivityAfterDiff(
+  prior: ActivityRecord | null | undefined,
+  input: {
+    editId: string;
+    invocationId: string;
+    action: "accept" | "reject";
+    policy: PolicySnapshot;
+  },
+): ActivityRecord {
+  return {
+    activityId: prior?.activityId ?? input.editId,
+    invocationId: input.invocationId,
+    name: prior?.name ?? "write_file",
+    lifecycle: "terminal",
+    execution: "executed",
+    status: input.action === "accept" ? "succeeded" : "rejected",
+    input: prior?.input ?? null,
+    output: prior?.output ?? null,
+    error: null,
+    diff: prior?.diff ?? null,
+    path: prior?.path ?? null,
+    policy: input.policy,
+    automaticEligibility: prior?.automaticEligibility ?? "not_eligible",
+    autoApplied: false,
+    command: null,
+    editId: input.editId,
+    recovery: null,
+  };
+}
+
 export function classifyToolRunLog(event: Extract<AcpUiEvent, { type: "tool_run" }>): { message: "tool_not_executed" | "tool_failed" | null; fields: Record<string, unknown> } {
   if (event.lifecycle !== "terminal") return { message: null, fields: {} };
   if (event.execution === "not_executed" && event.status === "rejected") return { message: "tool_not_executed", fields: { toolCallId:event.toolCallId, command:event.command, reasonCode:event.reasonCode, reason:event.reason, shellDisplayName:event.shellDisplayName } };
@@ -1058,6 +1088,30 @@ export class AgentSession {
   getRun(runId: string, clientSessionId?: string): RunSnapshot | undefined {
     const run = this.runCoordinator.get(runId);
     return run && (!clientSessionId || run.sessionId === clientSessionId) ? run : undefined;
+  }
+
+  async findActivityForEdit(runId: string, sessionId: string, editId: string, invocationId?: string): Promise<ActivityRecord | null> {
+    const result = await this.replayRun(runId, sessionId, 0);
+    let byEdit: ActivityRecord | null = null;
+    let byInv: ActivityRecord | null = null;
+    for (const event of result.events) {
+      if (event.type !== "activity_update" || event.payload.kind !== "activity_update") continue;
+      const activity = event.payload.activity;
+      if (editId && activity.editId === editId) byEdit = activity;
+      else if (invocationId && activity.invocationId === invocationId) byInv = activity;
+    }
+    return byEdit ?? byInv;
+  }
+
+  async appendActivity(runId: string, activity: ActivityRecord): Promise<void> {
+    try {
+      await this.runCoordinator.appendOwnedEvent(runId, { kind: "activity_update", activity }, "activity_update");
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      const message = error instanceof Error ? error.message : String(error);
+      if (code !== "run_terminal" && !/not active|run terminal/.test(message)) throw error;
+      await this.runCoordinator.appendSettlementActivity(runId, activity);
+    }
   }
   getActiveRunId(): string | null { return this.activeRunId; }
   async replayRun(runId: string, clientSessionId: string, after = 0) {

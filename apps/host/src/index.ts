@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { AgentSession } from "./session.js";
+import { AgentSession, retainActivityAfterDiff } from "./session.js";
 import { TRUSTED_COMMAND_CLASS_CATALOG } from "./trusted-command-classes.js";
 import type { PermissionDecision } from "@grokforge/acp-client";
 import {
@@ -808,7 +808,15 @@ const server = http.createServer(async (req, res) => {
       try {
         const run=owner.getRun(body.runId); if(!run || run.sessionId!==body.sessionId) throw Object.assign(new Error("no pending edit"),{code:"decision_not_found"});
         const settled = await owner.diffAction(body.editId, body.action,{sessionId:run.sessionId,runId:body.runId,connectionGeneration:run.connectionGeneration}, body.invocationId);
-        sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"diff",status:settled,title:"Edit",detail:"",expiresAt:new Date().toISOString(),policy:run.policy}, activity:{activityId:body.editId,invocationId:body.invocationId,name:"edit",lifecycle:"terminal",execution:"executed",status:body.action==="accept"?"succeeded":"rejected",input:null,output:null,error:null,diff:null,policy:run.policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:body.editId,recovery:null} });
+        const prior = await owner.findActivityForEdit(body.runId, body.sessionId, body.editId, body.invocationId);
+        const activity = retainActivityAfterDiff(prior, {
+          editId: body.editId,
+          invocationId: body.invocationId,
+          action: body.action,
+          policy: run.policy,
+        });
+        await owner.appendActivity(body.runId, activity);
+        sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"diff",status:settled,title:"Edit",detail:"",expiresAt:new Date().toISOString(),policy:run.policy}, activity });
       } catch (e) {
         const code=(e as any)?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,"no pending edit");
       }

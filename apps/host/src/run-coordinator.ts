@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { RunJournal } from "./run-journal.js";
-import type { RunSnapshot, RunEventEnvelope, TerminalKind, FailureView, PolicySnapshot, ModelSnapshot } from "./run-types.js";
+import type { ActivityRecord, RunSnapshot, RunEventEnvelope, TerminalKind, FailureView, PolicySnapshot, ModelSnapshot } from "./run-types.js";
 
 const LEGAL:Record<RunSnapshot["state"],Set<RunSnapshot["state"]>>={admitted:new Set(["running","cancelling","terminal"]),running:new Set(["waiting_for_decision","recovering","cancelling","terminal"]),waiting_for_decision:new Set(["running","cancelling","terminal"]),recovering:new Set(["running","cancelling","terminal"]),cancelling:new Set(["terminal"]),terminal:new Set()};
 export class RunCoordinator {
@@ -79,5 +79,26 @@ export class RunCoordinator {
     });
   }
   async cancel(runId:string){const run=this.active.get(runId);if(!run)return; if(run.state!=="terminal"){await this.appendOwnedEvent(runId,{kind:"run_state",state:"cancelling",liveness:null},"run_state");}return run}
-  async replay(sessionId:string,runId:string,after=0){let run=this.active.get(runId);if(!run){try{run=await this.journal.snapshot(sessionId,runId);}catch{run=undefined;}}if(!run||run.sessionId!==sessionId)throw Object.assign(new Error("run not found"),{code:"run_not_found"});const allEvents=await this.journal.replay(sessionId,runId,0);const events=allEvents.filter(e=>e.eventSeq>after);const terminal=allEvents.find(e=>e.type==="run_terminal");if(terminal){const p=terminal.payload as any;run={...run,state:"terminal",terminalKind:p.terminalKind,finalAnswer:p.finalAnswer,answerVouched:p.answerVouched,failure:p.failure,lastEventSeq:terminal.eventSeq,updatedAt:p.terminalAt};this.active.set(runId,run);this.owners.delete(sessionId);this.answers.delete(runId);}return {run,events}}
+  async replay(sessionId:string,runId:string,after=0){let run=this.active.get(runId);if(!run){try{run=await this.journal.snapshot(sessionId,runId);}catch{run=undefined;}}if(!run||run.sessionId!==sessionId)throw Object.assign(new Error("run not found"),{code:"run_not_found"});const allEvents=await this.journal.replay(sessionId,runId,0);const events=allEvents.filter(e=>e.eventSeq>after);const terminal=allEvents.find(e=>e.type==="run_terminal");if(terminal){const p=terminal.payload as any;const last=allEvents.at(-1);run={...run,state:"terminal",terminalKind:p.terminalKind,finalAnswer:p.finalAnswer,answerVouched:p.answerVouched,failure:p.failure,lastEventSeq:last?.eventSeq??terminal.eventSeq,updatedAt:p.terminalAt};this.active.set(runId,run);this.owners.delete(sessionId);this.answers.delete(runId);}return {run,events}}
+  async appendSettlementActivity(runId:string,activity:ActivityRecord):Promise<RunEventEnvelope>{
+    return this.withRunMutationLock(runId,async()=>{
+      let run=this.active.get(runId);
+      if(!run){
+        const owned=[...this.active.values()].find(item=>item.runId===runId);
+        run=owned;
+      }
+      if(!run){
+        for(const snapshot of await this.journal.listSnapshots()){
+          if(snapshot.runId===runId){run=snapshot;break;}
+        }
+      }
+      if(!run) throw Object.assign(new Error("run not found"),{code:"run_not_found"});
+      const event=await this.journal.appendAfterTerminal({schemaVersion:1,type:"activity_update",sessionId:run.sessionId,runId,connectionGeneration:run.connectionGeneration,payload:{kind:"activity_update",activity}});
+      run={...run,lastEventSeq:event.eventSeq,updatedAt:event.occurredAt};
+      this.active.set(runId,run);
+      await this.journal.update(run);
+      this.publish(event);
+      return event;
+    });
+  }
 }
