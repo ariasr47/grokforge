@@ -3417,6 +3417,9 @@ html[data-density="compact"] .run-footer {
   background: rgba(125, 255, 232, 0.08);
 }
 .rich-choice-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 13px;
 }
@@ -3775,6 +3778,57 @@ html[data-density="compact"] .run-footer {
   font-size: 11px;
   color: var(--muted);
   font-family: var(--mono);
+}
+.rich-download {
+  flex-wrap: wrap;
+}
+.rich-download .btn {
+  margin-left: auto;
+}
+.rich-map,
+.rich-embed,
+.rich-image {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.rich-map-frame,
+.rich-embed-frame {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.rich-map-frame {
+  height: 220px;
+}
+.rich-embed-frame {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 180px;
+}
+.rich-map-open {
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.rich-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+.rich-image figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rich-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Message bubble polish */

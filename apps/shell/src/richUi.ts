@@ -29,6 +29,7 @@ export type RichBlock =
         id?: string;
         label: string;
         description?: string;
+        recommended?: boolean;
       }>;
     }
   | {
@@ -82,6 +83,39 @@ export type RichBlock =
       name: string;
       path?: string;
       note?: string;
+    }
+  | {
+      type: "download";
+      name: string;
+      mime?: string;
+      content?: string;
+      href?: string;
+      note?: string;
+    }
+  | {
+      type: "map";
+      query: string;
+      label?: string;
+      lat?: number;
+      lng?: number;
+      zoom?: number;
+    }
+  | {
+      type: "image";
+      src: string;
+      alt?: string;
+      caption?: string;
+    }
+  | {
+      type: "actions";
+      title?: string;
+      items: Array<{ label: string; href?: string; value?: string }>;
+    }
+  | {
+      type: "embed";
+      provider: "youtube" | "vimeo";
+      id: string;
+      title?: string;
     };
 
 export type RichDocument = {
@@ -99,6 +133,24 @@ function str(v: unknown, max = 4000): string {
 function toneOf(v: unknown): RichTone {
   const t = str(v, 20);
   return TONES.has(t) ? (t as RichTone) : "info";
+}
+
+function httpsUrl(v: unknown, max = 2000): string | undefined {
+  const s = str(v, max).trim();
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:") return undefined;
+    if (!u.hostname.includes(".")) return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function finiteNum(v: unknown, min: number, max: number): number | undefined {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(min, Math.min(max, n));
 }
 
 function sanitizeBlock(raw: unknown): RichBlock | null {
@@ -161,12 +213,14 @@ function sanitizeBlock(raw: unknown): RichBlock | null {
             id: str(x.id, 64) || `opt-${i}`,
             label,
             description: str(x.description ?? x.body, 500) || undefined,
+            recommended: x.recommended === true ? true : undefined,
           };
         })
         .filter(Boolean) as Array<{
         id?: string;
         label: string;
         description?: string;
+        recommended?: boolean;
       }>;
       if (!options.length) return null;
       return {
@@ -350,6 +404,90 @@ function sanitizeBlock(raw: unknown): RichBlock | null {
         note: str(o.note ?? o.body, 400) || undefined,
       };
     }
+    case "download":
+    case "attachment": {
+      const name = str(o.name ?? o.filename, 200);
+      if (!name) return null;
+      const href = httpsUrl(o.href ?? o.url);
+      const content = str(o.content ?? o.text, 80_000) || undefined;
+      if (!href && !content) return null;
+      const mime = str(o.mime ?? o.contentType, 80) || undefined;
+      return {
+        type: "download",
+        name,
+        mime: mime || undefined,
+        content,
+        href,
+        note: str(o.note ?? o.body, 400) || undefined,
+      };
+    }
+    case "map":
+    case "place": {
+      const lat = finiteNum(o.lat ?? o.latitude, -90, 90);
+      const lng = finiteNum(o.lng ?? o.lon ?? o.longitude, -180, 180);
+      const query =
+        str(o.query ?? o.q ?? o.address ?? o.label, 400) ||
+        (lat != null && lng != null ? `${lat},${lng}` : "");
+      if (!query) return null;
+      return {
+        type: "map",
+        query,
+        label: str(o.label ?? o.title, 200) || undefined,
+        lat,
+        lng,
+        zoom: finiteNum(o.zoom, 1, 20),
+      };
+    }
+    case "image":
+    case "img": {
+      const src = httpsUrl(o.src ?? o.url ?? o.href);
+      if (!src) return null;
+      return {
+        type: "image",
+        src,
+        alt: str(o.alt ?? o.title, 200) || undefined,
+        caption: str(o.caption ?? o.body, 400) || undefined,
+      };
+    }
+    case "actions":
+    case "buttons": {
+      const itemsIn = Array.isArray(o.items) ? o.items : Array.isArray(o.actions) ? o.actions : [];
+      const items = itemsIn
+        .slice(0, 6)
+        .map((it) => {
+          if (!it || typeof it !== "object") return null;
+          const x = it as Record<string, unknown>;
+          const label = str(x.label ?? x.title ?? x.text, 80);
+          if (!label) return null;
+          return {
+            label,
+            href: httpsUrl(x.href ?? x.url),
+            value: str(x.value ?? x.choice, 400) || undefined,
+          };
+        })
+        .filter(Boolean) as Array<{ label: string; href?: string; value?: string }>;
+      if (!items.length) return null;
+      return {
+        type: "actions",
+        title: str(o.title ?? o.prompt, 200) || undefined,
+        items,
+      };
+    }
+    case "embed":
+    case "video": {
+      const providerRaw = str(o.provider ?? o.service, 20).toLowerCase();
+      const provider = providerRaw === "vimeo" ? "vimeo" : providerRaw === "youtube" ? "youtube" : "";
+      if (!provider) return null;
+      const id = str(o.id ?? o.videoId, 32);
+      if (provider === "youtube" && !/^[A-Za-z0-9_-]{6,20}$/.test(id)) return null;
+      if (provider === "vimeo" && !/^[0-9]{6,12}$/.test(id)) return null;
+      return {
+        type: "embed",
+        provider,
+        id,
+        title: str(o.title, 200) || undefined,
+      };
+    }
     default:
       return null;
   }
@@ -373,6 +511,102 @@ export function parseRichDocumentProgressive(raw: string): RichDocument | null {
   // Remove trailing commas before } or ]
   candidate = candidate.replace(/,\s*([\]}])/g, "$1");
   return parseRichDocument(candidate);
+}
+
+/** Walk a `{` and return the balanced object slice if it is a rich document. */
+export function extractJsonObject(
+  s: string,
+  braceIndex: number,
+): { json: string; end: number } | null {
+  if (s[braceIndex] !== "{") return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = braceIndex; i < s.length; i++) {
+    const c = s[i]!;
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{") depth += 1;
+    else if (c === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const json = s.slice(braceIndex, i + 1);
+        if (!parseRichDocument(json)) return null;
+        return { json, end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+const UNFENCED_MARKER = /^(grok-ui|grokui|rich-ui)\s*\{/i;
+
+/**
+ * Models often emit `grok-ui { ... }` as prose instead of a ```grok-ui fence.
+ * Lift complete documents into fences so the markdown parser can render them.
+ * Already-fenced blocks and JSON inside other fences are left untouched.
+ */
+export function liftUnfencedRichUi(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    if (src.startsWith("```", i)) {
+      const nl = src.indexOf("\n", i);
+      const close = src.indexOf("\n```", i + 3);
+      if (nl === -1 || close === -1) {
+        out += src.slice(i);
+        break;
+      }
+      const end = close + 4;
+      out += src.slice(i, end);
+      i = end;
+      continue;
+    }
+
+    const rest = src.slice(i);
+    const marker = UNFENCED_MARKER.exec(rest);
+    if (marker && marker.index === 0) {
+      const braceAt = i + marker[0].length - 1;
+      const extracted = extractJsonObject(src, braceAt);
+      if (extracted) {
+        out += `\n\n\`\`\`grok-ui\n${extracted.json}\n\`\`\`\n\n`;
+        i = extracted.end;
+        while (i < src.length && (src[i] === " " || src[i] === "\t")) i += 1;
+        continue;
+      }
+    }
+
+    if (src[i] === "{") {
+      const peek = src.slice(i, i + 220);
+      if (/"version"\s*:\s*1/.test(peek) && /"blocks"\s*:/.test(peek)) {
+        const extracted = extractJsonObject(src, i);
+        if (extracted) {
+          out += `\n\n\`\`\`grok-ui\n${extracted.json}\n\`\`\`\n\n`;
+          i = extracted.end;
+          while (i < src.length && (src[i] === " " || src[i] === "\t")) i += 1;
+          continue;
+        }
+      }
+    }
+
+    out += src[i];
+    i += 1;
+  }
+  return out;
 }
 
 /** Parse fenced grok-ui / ui JSON into a sanitized document. */

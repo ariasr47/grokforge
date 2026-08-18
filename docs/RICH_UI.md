@@ -34,18 +34,30 @@ Here is a short intro in normal markdown.
 
 Language tags accepted: `grok-ui`, `grokui`, `ui`, `rich-ui`.
 
+The shell also lifts an unfenced `grok-ui { ... }` dump (or a bare `{ "version": 1, "blocks": ... }` object) into this fence so sloppy model output still renders.
+
 ## Components
 
 | type | Purpose |
 |------|---------|
 | `callout` | Highlight note (`tone`: info/success/warn/danger/neutral) |
 | `carousel` | Swipeable decision/info cards + “Choose this” |
-| `choices` | Grid of clickable options |
+| `choices` / `decision` | Grid of clickable options (`recommended: true` optional) |
 | `steps` | Numbered procedure |
 | `kv` | Key/value rows |
 | `compare` | Simple table |
 | `metrics` | Big numbers |
 | `tabs` | Labeled panels |
+| `progress` | 0–100 bar |
+| `timeline` | Dated events |
+| `quote` | Pull quote |
+| `checklist` | Static checklist |
+| `file` | Path chip (inspect, not download) |
+| `download` | Save text content, or https file link |
+| `map` / `place` | Embedded Google Map from `query` or lat/lng — never a raw iframe src |
+| `image` | https image |
+| `actions` | https buttons and/or composer choices |
+| `embed` | YouTube/Vimeo by id only |
 
 ## Security
 

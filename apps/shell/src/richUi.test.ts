@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isRichUiLang, parseRichDocument } from "./richUi.js";
+import {
+  isRichUiLang,
+  liftUnfencedRichUi,
+  parseRichDocument,
+} from "./richUi.js";
 
 describe("isRichUiLang", () => {
   it("accepts grok-ui aliases", () => {
@@ -56,5 +60,122 @@ describe("parseRichDocument", () => {
     if (doc!.blocks[0]!.type === "choices") {
       assert.ok(doc!.blocks[0].options.length <= 8);
     }
+  });
+
+  it("accepts map, download, image, actions, and embed", () => {
+    const doc = parseRichDocument(
+      JSON.stringify({
+        blocks: [
+          { type: "map", query: "Tokyo Tower", label: "Tokyo" },
+          {
+            type: "download",
+            name: "notes.txt",
+            content: "hello",
+            mime: "text/plain",
+          },
+          {
+            type: "image",
+            src: "https://example.com/a.png",
+            alt: "A",
+          },
+          {
+            type: "actions",
+            items: [
+              { label: "Open", href: "https://example.com/x" },
+              { label: "Pick me", value: "yes" },
+            ],
+          },
+          { type: "embed", provider: "youtube", id: "dQw4w9WgXcQ" },
+        ],
+      }),
+    );
+    assert.ok(doc);
+    assert.deepEqual(
+      doc!.blocks.map((b) => b.type),
+      ["map", "download", "image", "actions", "embed"],
+    );
+  });
+
+  it("rejects javascript image src, raw iframe src, and junk embed ids", () => {
+    const doc = parseRichDocument(
+      JSON.stringify({
+        blocks: [
+          { type: "image", src: "javascript:alert(1)" },
+          { type: "map", src: "https://evil.example/embed" },
+          { type: "embed", provider: "youtube", id: "../../x" },
+          { type: "download", name: "x", href: "http://insecure.example/a" },
+        ],
+      }),
+    );
+    assert.equal(doc, null);
+  });
+
+  it("keeps recommended on a decision option", () => {
+    const doc = parseRichDocument(
+      JSON.stringify({
+        blocks: [
+          {
+            type: "decision",
+            prompt: "Ship?",
+            options: [
+              { label: "Yes", recommended: true },
+              { label: "Hold" },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.ok(doc);
+    if (doc!.blocks[0]!.type === "choices") {
+      assert.equal(doc!.blocks[0].options[0]!.recommended, true);
+      assert.equal(doc!.blocks[0].options[1]!.recommended, undefined);
+    }
+  });
+});
+
+describe("liftUnfencedRichUi", () => {
+  it("lifts inline grok-ui {json} into a fence so mixed prose still parses", () => {
+    const payload = {
+      version: 1,
+      blocks: [
+        {
+          type: "metrics",
+          title: "Quick verdict",
+          items: [{ label: "Demand", value: "Real", hint: "People already pay" }],
+        },
+        {
+          type: "callout",
+          tone: "warn",
+          title: "The blocker is not the UI",
+          body: "Official APIs do not give those lists.",
+        },
+      ],
+    };
+    const src =
+      "The idea is real demand. grok-ui " +
+      JSON.stringify(payload) +
+      "  ## Judgment\n**The job is proven.**";
+    const lifted = liftUnfencedRichUi(src);
+    assert.match(lifted, /```grok-ui\n\{/);
+    assert.ok(lifted.includes("## Judgment"));
+    assert.ok(lifted.includes("The idea is real demand."));
+    assert.ok(!lifted.includes("grok-ui {"));
+  });
+
+  it("leaves already-fenced grok-ui alone and does not lift JSON inside other fences", () => {
+    const fenced =
+      "Intro\n\n```grok-ui\n" +
+      JSON.stringify({ blocks: [{ type: "callout", body: "hi" }] }) +
+      "\n```\n";
+    assert.equal(liftUnfencedRichUi(fenced), fenced);
+
+    const code =
+      "```js\nconst x = { \"version\": 1, \"blocks\": [{ \"type\": \"callout\", \"body\": \"no\" }] };\n```";
+    assert.equal(liftUnfencedRichUi(code), code);
+  });
+
+  it("does not lift an incomplete grok-ui object", () => {
+    const src = 'Hello grok-ui { "version": 1, "blocks": [';
+    assert.equal(liftUnfencedRichUi(src), src);
   });
 });

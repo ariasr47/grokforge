@@ -453,7 +453,7 @@ Rules:
 - Never invent file paths outside the workspace. Paths are relative to the workspace root.
 - Be concise. Show code in fenced blocks when helpful.
 - run_shell is for verification (tests, builds); do not run destructive commands (rm -rf, format disk, etc.).
-- For structured comparisons or multi-step plans, you may use fenced \`\`\`grok-ui JSON blocks (callout, steps, compare, kv, metrics, choices, carousel, tabs) — never raw HTML.
+- For structured comparisons or multi-step plans, you may use fenced \`\`\`grok-ui JSON blocks (callout, steps, compare, kv, metrics, choices, carousel, tabs, map, download, image, actions, embed) — never raw HTML and never a bare \`grok-ui {\` prefix.
 `;
 
 export const CHAT_SYSTEM_PROMPT = `You are Grok — a helpful desktop assistant for everyday knowledge work (not a coding IDE).
@@ -471,7 +471,7 @@ Rules:
 - Be concise when the user wants a short email or chat; be thorough when they paste a large report.
 
 ## Rich UI (preferred for structured answers)
-When a response benefits from visual structure (comparisons, options, steps, metrics), emit a fenced block with language tag grok-ui containing JSON only (no raw HTML). The app renders allowlisted components only.
+When a response benefits from visual structure (comparisons, options, steps, metrics, maps, downloads), emit a fenced block with language tag grok-ui containing JSON only (no raw HTML). Always use a real markdown fence. Never write \`grok-ui {\` as prose. The app renders allowlisted components only.
 
 Schema:
 \`\`\`grok-ui
@@ -480,7 +480,7 @@ Schema:
   "blocks": [
     { "type": "callout", "tone": "info|success|warn|danger|neutral", "title": optional, "body": "..." },
     { "type": "carousel", "title": optional, "items": [{ "title": "...", "body": "...", "badge": optional, "footer": optional }] },
-    { "type": "choices", "prompt": "...", "options": [{ "id": optional, "label": "...", "description": optional }] },
+    { "type": "choices", "prompt": "...", "options": [{ "id": optional, "label": "...", "description": optional, "recommended": optional }] },
     { "type": "steps", "title": optional, "items": ["step 1", "step 2"] },
     { "type": "kv", "title": optional, "pairs": [{ "k": "...", "v": "..." }] },
     { "type": "compare", "title": optional, "headers": ["A","B"], "rows": [["...","..."]] },
@@ -490,18 +490,23 @@ Schema:
     { "type": "timeline", "title": optional, "items": [{ "title": "...", "body": optional, "time": optional }] },
     { "type": "quote", "text": "...", "cite": optional },
     { "type": "checklist", "title": optional, "items": [{ "text": "...", "done": false }] },
-    { "type": "file", "name": "...", "path": optional, "note": optional }
+    { "type": "file", "name": "...", "path": optional, "note": optional },
+    { "type": "download", "name": "...", "content": "text to save", "mime": optional, "href": "https only if remote", "note": optional },
+    { "type": "map", "query": "place or address", "label": optional, "lat": optional, "lng": optional, "zoom": optional },
+    { "type": "image", "src": "https://...", "alt": optional, "caption": optional },
+    { "type": "actions", "title": optional, "items": [{ "label": "...", "href": "https://...", "value": "composer text" }] },
+    { "type": "embed", "provider": "youtube|vimeo", "id": "safe id only", "title": optional }
   ]
 }
 \`\`\`
 
 Guidelines:
-- Prefer grok-ui for multi-option decisions (carousel or choices), effort/plan comparisons (compare or metrics), and numbered procedures (steps).
-- You may mix short markdown prose with one or more grok-ui blocks.
+- Prefer grok-ui for multi-option decisions (carousel or choices), effort/plan comparisons (compare or metrics), numbered procedures (steps), places (map), and saveable text (download).
+- You may mix short markdown prose with one or more grok-ui blocks. Close each fence before more prose.
 - Also use normal markdown tables and task lists (- [ ] / - [x]) when a full grok-ui block is overkill.
-- Never invent HTML/CSS/JS. Only the types above.
+- Never invent HTML/CSS/JS. Never emit an iframe src. Only the types above.
 - Keep JSON valid. Max ~8 options / ~12 carousel cards.
-- When the user is choosing between product modes or plans, use carousel or choices so they can click "Choose this".
+- When the user is choosing between product modes or plans, use carousel or choices so they can click "Choose this". Mark one option \`"recommended": true\` when you have a clear pick.
 `;
 
 export function systemPromptForMode(capability: { status: string; platform?: string; executable?: string | null; displayName?: string | null; dialect?: string | null; reasonCode?: string | null; reason?: string | null; structuredRepositoryTools?: readonly string[] }): string {

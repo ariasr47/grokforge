@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   isRichUiLang,
+  liftUnfencedRichUi,
   parseRichDocument,
   parseRichDocumentProgressive,
 } from "./richUi";
@@ -219,7 +220,7 @@ function parseBlocks(src: string): Block[] {
       continue;
     }
 
-    const hm = line.match(/^(#{1,4})\s+(.+)$/);
+    const hm = line.match(/^\s{0,3}(#{1,4})\s+(.+)$/);
     if (hm) {
       blocks.push({ type: "h", level: hm[1]!.length, text: hm[2]! });
       i += 1;
@@ -285,7 +286,7 @@ function parseBlocks(src: string): Block[] {
       i < lines.length &&
       lines[i]!.trim() &&
       !lines[i]!.startsWith("```") &&
-      !lines[i]!.startsWith("#") &&
+      !/^\s{0,3}#{1,4}\s+/.test(lines[i]!) &&
       !/^\s*[-*]\s+/.test(lines[i]!) &&
       !/^\s*\d+\.\s+/.test(lines[i]!) &&
       !lines[i]!.startsWith("> ") &&
@@ -305,7 +306,7 @@ export function parseMarkdownBlocks(text: string): Block[] {
   const key = hashKey(text);
   const hit = blockCache.get(key);
   if (hit) return hit;
-  const blocks = parseBlocks(text);
+  const blocks = parseBlocks(liftUnfencedRichUi(text));
   blockCache.set(key, blocks);
   return blocks;
 }

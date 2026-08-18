@@ -112,7 +112,12 @@ const Choices = memo(function Choices({
             className="rich-choice"
             onClick={() => onChoose?.(opt.label, opt.description)}
           >
-            <span className="rich-choice-label">{opt.label}</span>
+            <span className="rich-choice-label">
+              {opt.label}
+              {opt.recommended ? (
+                <span className="rich-badge">Recommended</span>
+              ) : null}
+            </span>
             {opt.description ? (
               <span className="rich-choice-desc">{opt.description}</span>
             ) : null}
@@ -356,6 +361,176 @@ const FileChip = memo(function FileChip({
   );
 });
 
+function saveTextFile(name: string, content: string, mime?: string) {
+  const blob = new Blob([content], { type: mime || "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.rel = "noreferrer";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const DownloadCard = memo(function DownloadCard({
+  block,
+}: {
+  block: Extract<RichBlock, { type: "download" }>;
+}) {
+  return (
+    <div className="rich-file rich-download">
+      <span className="rich-file-icon" aria-hidden>
+        ⬇
+      </span>
+      <div>
+        <div className="rich-file-name">{block.name}</div>
+        {block.note ? <div className="rich-file-meta">{block.note}</div> : null}
+      </div>
+      {block.content != null ? (
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => saveTextFile(block.name, block.content!, block.mime)}
+        >
+          Download
+        </button>
+      ) : block.href ? (
+        <a
+          className="btn ghost"
+          href={block.href}
+          download={block.name}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          Download
+        </a>
+      ) : null}
+    </div>
+  );
+});
+
+function mapsEmbedSrc(query: string, zoom?: number): string {
+  const u = new URL("https://www.google.com/maps");
+  u.searchParams.set("q", query);
+  u.searchParams.set("output", "embed");
+  if (zoom != null) u.searchParams.set("z", String(zoom));
+  return u.toString();
+}
+
+function mapsOpenHref(query: string): string {
+  const u = new URL("https://www.google.com/maps/search/");
+  u.searchParams.set("api", "1");
+  u.searchParams.set("query", query);
+  return u.toString();
+}
+
+const MapCard = memo(function MapCard({
+  block,
+}: {
+  block: Extract<RichBlock, { type: "map" }>;
+}) {
+  const src = mapsEmbedSrc(block.query, block.zoom);
+  return (
+    <figure className="rich-map">
+      {block.label ? <figcaption className="rich-section-title">{block.label}</figcaption> : null}
+      <iframe
+        className="rich-map-frame"
+        title={block.label || `Map of ${block.query}`}
+        src={src}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+      />
+      <a
+        className="rich-map-open"
+        href={mapsOpenHref(block.query)}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
+        Open in Google Maps
+      </a>
+    </figure>
+  );
+});
+
+const ImageCard = memo(function ImageCard({
+  block,
+}: {
+  block: Extract<RichBlock, { type: "image" }>;
+}) {
+  return (
+    <figure className="rich-image">
+      <img src={block.src} alt={block.alt || ""} loading="lazy" />
+      {block.caption ? <figcaption>{block.caption}</figcaption> : null}
+    </figure>
+  );
+});
+
+const Actions = memo(function Actions({
+  block,
+  onChoose,
+}: {
+  block: Extract<RichBlock, { type: "actions" }>;
+  onChoose?: Props["onChoose"];
+}) {
+  return (
+    <div className="rich-actions" role="group" aria-label={block.title || "Actions"}>
+      {block.title ? <div className="rich-section-title">{block.title}</div> : null}
+      <div className="rich-actions-row">
+        {block.items.map((it, i) =>
+          it.href ? (
+            <a
+              key={i}
+              className="btn ghost"
+              href={it.href}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {it.label}
+            </a>
+          ) : (
+            <button
+              key={i}
+              type="button"
+              className="btn primary"
+              onClick={() => onChoose?.(it.label, it.value)}
+            >
+              {it.label}
+            </button>
+          ),
+        )}
+      </div>
+    </div>
+  );
+});
+
+function embedSrc(provider: "youtube" | "vimeo", id: string): string {
+  if (provider === "vimeo") return `https://player.vimeo.com/video/${id}`;
+  return `https://www.youtube-nocookie.com/embed/${id}`;
+}
+
+const EmbedCard = memo(function EmbedCard({
+  block,
+}: {
+  block: Extract<RichBlock, { type: "embed" }>;
+}) {
+  return (
+    <figure className="rich-embed">
+      {block.title ? <figcaption className="rich-section-title">{block.title}</figcaption> : null}
+      <iframe
+        className="rich-embed-frame"
+        title={block.title || `${block.provider} video`}
+        src={embedSrc(block.provider, block.id)}
+        loading="lazy"
+        allow="encrypted-media; picture-in-picture"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      />
+    </figure>
+  );
+});
+
 function renderBlock(
   block: RichBlock,
   key: number,
@@ -388,6 +563,16 @@ function renderBlock(
       return <Checklist key={key} block={block} />;
     case "file":
       return <FileChip key={key} block={block} />;
+    case "download":
+      return <DownloadCard key={key} block={block} />;
+    case "map":
+      return <MapCard key={key} block={block} />;
+    case "image":
+      return <ImageCard key={key} block={block} />;
+    case "actions":
+      return <Actions key={key} block={block} onChoose={onChoose} />;
+    case "embed":
+      return <EmbedCard key={key} block={block} />;
     default:
       return null;
   }

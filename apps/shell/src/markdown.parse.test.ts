@@ -41,6 +41,27 @@ describe("parseMarkdownBlocks", () => {
     assert.ok(blocks.some((b) => b.type === "rich"));
   });
 
+  it("parses unfenced grok-ui {json} dumps as rich, not a text dump", () => {
+    const src =
+      "charge for it. grok-ui " +
+      JSON.stringify({
+        version: 1,
+        blocks: [
+          {
+            type: "metrics",
+            title: "Quick verdict",
+            items: [{ label: "Demand", value: "Real" }],
+          },
+        ],
+      }) +
+      "  ## Judgment\n**The job-to-be-done is proven.**";
+    const blocks = parseMarkdownBlocks(src);
+    assert.ok(blocks.some((b) => b.type === "rich"));
+    assert.ok(blocks.some((b) => b.type === "h" && b.text.includes("Judgment")));
+    const dump = blocks.find((b) => b.type === "p" && b.text.includes('"version"'));
+    assert.equal(dump, undefined);
+  });
+
   it("caches repeated parses", () => {
     const src = "# Hello\n\nWorld";
     parseMarkdownBlocks(src);
