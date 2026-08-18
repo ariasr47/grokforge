@@ -704,16 +704,39 @@ export class GrokAcpServer {
           return msg;
         }
         if (!session.sessionShell && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
-          const decision = await this.waitPermission(
-            call.id,
-            "shell",
-            `Run: ${String(args.command ?? "")}`,
-            executionOwner,
-          );
+          let decision: string;
+          try {
+            decision = await this.waitPermission(
+              call.id,
+              "shell",
+              `Run: ${String(args.command ?? "")}`,
+              executionOwner,
+            );
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message === "cancelled") {
+              const msg = JSON.stringify({ error: "User denied shell permission", execution: "not_executed" });
+              emitTerminal(msg, false, {
+                execution: "not_executed",
+                status: "rejected",
+                reasonCode: "authorization_refused",
+                reason: "cancelled",
+                automaticEligibility: authorization.automaticEligibility,
+              });
+              return msg;
+            }
+            throw err;
+          }
           if (decision === "allow_session") session.sessionShell = true;
           if (decision === "deny" || decision === "cancelled") {
-            const msg = JSON.stringify({ error: "User denied shell permission" });
-            emitTerminal(msg, false);
+            const msg = JSON.stringify({ error: "User denied shell permission", execution: "not_executed" });
+            emitTerminal(msg, false, {
+              execution: "not_executed",
+              status: "rejected",
+              reasonCode: "authorization_refused",
+              reason: decision === "cancelled" ? "cancelled" : "User denied shell permission",
+              automaticEligibility: authorization.automaticEligibility,
+            });
             return msg;
           }
         }
