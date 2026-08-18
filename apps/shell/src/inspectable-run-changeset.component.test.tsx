@@ -228,7 +228,8 @@ test("catch-up failed shows load-failure copy, not empty (AC-23)", () => {
       catchUp={{ phase: "failed", message: FILE_CHANGES_LOAD_FAILURE }}
     />,
   );
-  assert.equal(screen.getByRole("alert").textContent, FILE_CHANGES_LOAD_FAILURE);
+  const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+  assert.equal(within(section).getByRole("alert").textContent, FILE_CHANGES_LOAD_FAILURE);
   assert.equal(screen.queryByText("a.txt"), null);
 });
 
