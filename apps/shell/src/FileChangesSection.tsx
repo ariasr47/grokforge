@@ -76,7 +76,12 @@ function PathRow({
 }) {
   const conflict = member.settlement === "conflict" || flash === "conflict";
   const reverted = member.settlement === "reverted" || flash === "reverted";
-  const chipKind = conflict ? null : reverted ? "reverted" : member.settlement;
+  const chipKind: Exclude<RunChangeMember["settlement"], "conflict"> | null =
+    conflict || member.settlement === "conflict"
+      ? null
+      : reverted
+        ? "reverted"
+        : member.settlement;
   const showRevert = member.recoveryAvailable && !conflict && !reverted && !revertPending;
   const [expanded, setExpanded] = useState(true);
   return (

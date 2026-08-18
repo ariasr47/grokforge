@@ -50,6 +50,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     output: "ok",
     error: null,
     diff: null,
+    path: null,
     policy: { effectiveMode: "trusted_workspace" },
     automaticEligibility: "trusted_command_class",
     autoApplied: true,
