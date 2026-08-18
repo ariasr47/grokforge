@@ -91,6 +91,23 @@ rl.on("line", (line) => {
           }, 100);
           return;
         }
+        if (FIXTURE === "plan-empty") {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "Nothing to change in this workspace." } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "plan-multi") {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "- Update `src/a.ts` to export helper\n- Create apps/shell/src/b.tsx for UI" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "plan-write-attempt") {
+          write({ jsonrpc: "2.0", method: "tool_run", params: { schemaVersion: 2, type: "tool_run", activityId: "plan-write", toolCallId: "plan-write", lifecycle: "pending", execution: null, status: "running", name: "write_file", input: { path: "mutated.txt", content: "nope" }, summary: null, command: null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: "Command Prompt (cmd.exe)", detailAvailable: true } });
+          write({ jsonrpc: "2.0", method: "tool_run", params: { schemaVersion: 2, type: "tool_run", activityId: "plan-write", toolCallId: "plan-write", lifecycle: "terminal", execution: "not_executed", status: "rejected", name: "write_file", input: { path: "mutated.txt", content: "nope" }, summary: null, command: null, output: "{\"error\":\"Plan phase refuses mutations\",\"execution\":\"not_executed\",\"reasonCode\":\"plan_phase_refused\"}", error: null, reasonCode: "plan_phase_refused", reason: "Plan phase: edits and non-inspection shell are not executed", shellDisplayName: "Command Prompt (cmd.exe)", detailAvailable: true } });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "Would change: src/blocked.ts" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
         if (FIXTURE === "provider-silence") {
           write({ jsonrpc: "2.0", method: "run_phase", params: { phase: "reasoning", detail: "Provider connected" } });
           write({ jsonrpc: "2.0", method: "run_phase", params: { phase: "waiting_model", detail: "Recovering provider transport…" } });

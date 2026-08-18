@@ -27,6 +27,15 @@ import {
 import { LaunchFailureCard, canRetryEngine } from "./LaunchFailureCard";
 import { ModeSwitch } from "./ModeSwitch";
 import { EffortControl } from "./EffortControl";
+import { PlanArmControl } from "./PlanArmControl";
+import {
+  PLAN_ARM_BLOCKED_UNVOUCHED,
+  PLAN_LIVE_FOOTER,
+  PLAN_LIVE_STATUS,
+  planArmFailureCopy,
+  projectPlanArm,
+} from "./planArm";
+import { isLivePlanning } from "./runPlanSection";
 import {
   isOnboardingDone,
   loadFirstRun,
@@ -43,7 +52,7 @@ import {
 } from "./toolFormat";
 import { type PendingDiff } from "./DiffPanel";
 import { type PermissionReq } from "./PermissionCard";
-import { ActionDock } from "./ActionDock";
+import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
   createSession,
@@ -226,6 +235,9 @@ export function App() {
   const [shellAllowlist, setShellAllowlist] = useState(true);
   const [permissions, setPermissions] = useState<PermissionReq[]>([]);
   const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
+  const [planArmError, setPlanArmError] = useState<string | null>(null);
+  const [planSettling, setPlanSettling] = useState(false);
+  const [planDecisionError, setPlanDecisionError] = useState<string | null>(null);
   const [activeDiffId, setActiveDiffId] = useState<string | null>(null);
   const [oauth, setOauth] = useState<OAuthPending | null>(null);
   const [forceOpenFailedTools, setForceOpenFailedTools] = useState(false);
@@ -1521,6 +1533,31 @@ export function App() {
   busyRef.current = busy;
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
+  const livePlanning = Boolean(activeRun && isLivePlanning(activeRun));
+  const pendingPlanDecision = useMemo(() => {
+    for (const id of runProjection.runOrder) {
+      const run = runProjection.runsById[id];
+      if (!run || run.sessionId !== sessionId) continue;
+      const decision = Object.values(run.decisions).find(
+        (d) => d.kind === "plan" && d.status === "pending",
+      );
+      if (!decision) continue;
+      return {
+        run,
+        decision,
+        empty: (run.plan?.proposedMembers.length ?? 0) === 0,
+      };
+    }
+    return null;
+  }, [runProjection, sessionId]);
+  const planArm = projectPlanArm({
+    mode: productMode,
+    workspace: state?.workspace ?? null,
+    connected,
+    planEngagement: state?.planEngagement,
+    busyOther: Boolean(activeRun && !isLivePlanning(activeRun)),
+    armError: planArmError,
+  });
   const effortLevel: EffortLevel =
     state?.effort === "fast" ||
     state?.effort === "expert" ||
@@ -1682,11 +1719,33 @@ export function App() {
     [reportError],
   );
 
+  const setPlanEngagementUi = useCallback(
+    async (engaged: boolean) => {
+      const previous = stateRef.current?.planEngagement?.engaged ? "Plan" : "Execute";
+      try {
+        const s = await api.setPlanEngagement(engaged);
+        applyState(s);
+        setPlanArmError(null);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "plan_engagement_unvouched") {
+          setPlanArmError(null);
+          reportError(PLAN_ARM_BLOCKED_UNVOUCHED);
+          return;
+        }
+        setPlanArmError(planArmFailureCopy(previous));
+      }
+    },
+    [reportError],
+  );
+
   const sendDisabledReason = useMemo(() => {
     if (!connected) return "Engine offline — try again to send";
     if (productMode === "code" && !state?.workspace)
       return "Open a project folder first";
     if (!state?.hasApiKey) return "Sign in or add an API key in Settings";
+    if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
+      return PLAN_ARM_BLOCKED_UNVOUCHED;
+    }
     if (runProjection.runOrder.some((id) => {
       const run = runProjection.runsById[id];
       return run?.sessionId === sessionId && run.state !== "terminal";
@@ -1694,7 +1753,7 @@ export function App() {
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
     if (!draft.trim()) return "Type a message to send";
     return null;
-  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, runProjection, sessionId, draft]);
+  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, runProjection, sessionId, draft]);
   const overview = useMemo(
     () =>
       computeOverview(
@@ -2333,6 +2392,10 @@ export function App() {
         });
         return;
       }
+      if (mode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
+        reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
+        return;
+      }
       setDraft("");
       setHistIdx(-1);
       setAtSuggestions([]);
@@ -2450,6 +2513,14 @@ export function App() {
         setRunPhase(null);
         setRunStartedAt(null);
         setAwaitingNextTurn(true);
+        if (err instanceof ApiError && err.code === "plan_engagement_unvouched") {
+          reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
+          return;
+        }
+        if (err instanceof ApiError && err.code === "plan_decision_pending") {
+          reportError(err.message || "plan_decision_pending", { source: "prompt" });
+          return;
+        }
         reportError(err instanceof Error ? err.message : String(err));
       }
     },
@@ -2458,6 +2529,7 @@ export function App() {
       sessionId,
       state?.workspace,
       state?.mode,
+      state?.planEngagement,
       state?.permissionPolicy,
       effortLevel,
       reportError,
@@ -2470,6 +2542,29 @@ export function App() {
   const send = useCallback(async () => {
     await sendText(draft);
   }, [draft, sendText]);
+
+  const settlePlan = useCallback(
+    async (action: "accept" | "keep_planning") => {
+      if (!pendingPlanDecision) return;
+      setPlanSettling(true);
+      setPlanDecisionError(null);
+      try {
+        await api.runPlan({
+          sessionId: pendingPlanDecision.run.sessionId,
+          runId: pendingPlanDecision.run.runId,
+          requestId: pendingPlanDecision.decision.requestId,
+          invocationId: pendingPlanDecision.decision.invocationId,
+          connectionGeneration: pendingPlanDecision.run.connectionGeneration,
+          action,
+        });
+      } catch (e) {
+        setPlanDecisionError(PLAN_DECISION_FAILURE);
+      } finally {
+        setPlanSettling(false);
+      }
+    },
+    [pendingPlanDecision],
+  );
 
   const retryLastUser = useCallback(
     (_id: string, content: string) => {
@@ -3752,7 +3847,7 @@ export function App() {
               <RunStatusBar
                 busy={busy || Boolean(runStartedAt)}
                 phase={runPhase}
-                phaseDetail={runPhaseDetail}
+                phaseDetail={livePlanning ? PLAN_LIVE_STATUS : runPhaseDetail}
                 runStartedAt={runStartedAt}
                 effortLabel={
                   effortLevel !== "auto" ? `Effort: ${effortLevel}` : null
@@ -3760,6 +3855,7 @@ export function App() {
                 modelLabel={state?.appliedModel || state?.model || null}
                 permissionPending={permissions.length > 0}
                 diffCount={diffQueue.length}
+                planning={livePlanning}
                 onJumpPermission={() =>
                   document
                     .getElementById("perm-card")
@@ -3772,9 +3868,9 @@ export function App() {
                 }
                 onCancel={requestCancel}
               />
-              {(openingWs || runFooter) && (
+              {(openingWs || runFooter || livePlanning) && (
                 <div className="run-footer" role="status">
-                  {openingWs ? "Opening workspace…" : runFooter}
+                  {openingWs ? "Opening workspace…" : livePlanning ? PLAN_LIVE_FOOTER : runFooter}
                 </div>
               )}
 
@@ -3893,6 +3989,17 @@ export function App() {
                   void api.oauthCancel();
                   setOauth(null);
                 }}
+                planDecision={
+                  pendingPlanDecision
+                    ? {
+                        empty: pendingPlanDecision.empty,
+                        settling: planSettling,
+                        error: planDecisionError,
+                      }
+                    : null
+                }
+                onPlanAccept={() => void settlePlan("accept")}
+                onPlanKeepPlanning={() => void settlePlan("keep_planning")}
               />
 
               <div
@@ -4008,6 +4115,13 @@ export function App() {
                     onChange={(e) => void setEffortUi(e)}
                     disabled={!connected}
                   />
+                  {productMode === "code" ? (
+                    <PlanArmControl
+                      projection={planArm}
+                      onToggle={(engaged) => void setPlanEngagementUi(engaged)}
+                      onRetry={() => void setPlanEngagementUi(true)}
+                    />
+                  ) : null}
                   <span className="composer-meta">
                     {productMode === "chat"
                       ? "Chat"
@@ -4035,17 +4149,19 @@ export function App() {
                     {sendDisabledReason}
                   </div>
                 ) : null}
-                {(busy || runStartedAt) && (
+                {(busy || runStartedAt || livePlanning) && (
                   <div className="composer-thinking" role="status">
                     <span className="run-dot" />
-                    {runPhaseDetail ||
-                      (runPhase === "reasoning"
-                        ? "Thinking aloud…"
-                        : runPhase === "tools"
-                          ? "Using tools…"
-                          : runPhase === "writing"
-                            ? "Writing answer…"
-                            : "Grok is working — see status bar above. Cancel if stuck.")}
+                    {livePlanning
+                      ? `${PLAN_LIVE_STATUS} · ${PLAN_LIVE_FOOTER}`
+                      : runPhaseDetail ||
+                        (runPhase === "reasoning"
+                          ? "Thinking aloud…"
+                          : runPhase === "tools"
+                            ? "Using tools…"
+                            : runPhase === "writing"
+                              ? "Writing answer…"
+                              : "Grok is working — see status bar above. Cancel if stuck.")}
                   </div>
                 )}
               </div>

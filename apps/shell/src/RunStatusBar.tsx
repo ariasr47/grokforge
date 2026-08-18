@@ -21,6 +21,8 @@ interface Props {
   onJumpPermission?: () => void;
   onJumpDiff?: () => void;
   onCancel?: () => void;
+  /** Live Planning chrome — only when the live run's executionPhase === "plan". */
+  planning?: boolean;
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -51,6 +53,7 @@ export function RunStatusBar({
   onJumpPermission,
   onJumpDiff,
   onCancel,
+  planning = false,
 }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -59,12 +62,13 @@ export function RunStatusBar({
     return () => clearInterval(t);
   }, [busy, runStartedAt]);
 
-  if (!busy && !permissionPending && diffCount === 0) return null;
+  if (!busy && !permissionPending && diffCount === 0 && !planning) return null;
 
   const elapsed =
     busy && runStartedAt ? formatElapsed(Math.max(0, now - runStartedAt)) : null;
-  const phaseText =
-    phase && phase !== "done"
+  const phaseText = planning
+    ? "Planning"
+    : phase && phase !== "done"
       ? PHASE_LABEL[phase] || phase
       : busy
         ? "Agent running…"
@@ -87,6 +91,9 @@ export function RunStatusBar({
             </span>
           </span>
         )}
+        {planning ? (
+          <span className="run-meta">Plan · no edits applied</span>
+        ) : null}
         {busy && (effortLabel || modelLabel) && (
           <span className="run-meta">
             {[effortLabel, modelLabel].filter(Boolean).join(" · ")}

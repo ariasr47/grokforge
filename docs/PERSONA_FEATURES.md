@@ -48,10 +48,12 @@ Repo Q&A · multi-step fix · staged diffs · shell verify · @file context · m
 | **Binary-safe read_file** | No garbage from PDF/binaries in tools |
 
 ### Still gaps
-1. Real multi-hunk diffs  
-2. Structured test/typecheck panel  
-3. Git status/diff tools (beyond shell)  
+1. Plan before write (chosen 2026-08-18 — `plan-mode`)
+2. Project instructions (`AGENTS.md` / `CLAUDE.md` equivalent)
+3. Git status/diff/PR tools (beyond shell)
 4. Patch apply robustness  
+
+Shipped since this list was written: File changes (multi-hunk inspect), Verify (test/typecheck panel).
 
 ---
 

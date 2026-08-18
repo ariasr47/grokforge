@@ -57,6 +57,7 @@ export interface Session {
   capability: ExecutionEnvironmentCapability;
   permissionMode?: "review" | "trusted_workspace" | "bypass_permissions";
   trustedCommandClasses?: string[];
+  executionPhase?: "plan" | "execute";
 }
 
 /** Cap agent context growth during long dogfood sessions (system + recent turns). */
@@ -97,7 +98,7 @@ export class GrokAcpServer {
   private abort: AbortController | null = null;
   private cancelled = false;
   private capability: ExecutionEnvironmentCapability | null = null;
-  private activeRuns = new Map<string, { owner: RunOwner; abort: AbortController; cancelled: boolean }>();
+  private activeRuns = new Map<string, { owner: RunOwner; abort: AbortController; cancelled: boolean; executionPhase: "plan" | "execute" }>();
   private activeOwner: RunOwner | null = null;
   private readonly authorization = new AuthorizationBroker();
   private readonly completedToolCalls = new Map<string,{args:string;result:string}>();
@@ -217,6 +218,7 @@ export class GrokAcpServer {
               )
             : [];
           session.trustedCommandClasses = classes;
+          session.executionPhase = params?.executionPhase === "plan" ? "plan" : "execute";
           // Seed prior UI history once if agent only has system message
           const hist = params?.history;
           if (Array.isArray(hist) && session.messages.length <= 1) {
@@ -240,7 +242,7 @@ export class GrokAcpServer {
           this.respond(id ?? null, { ok: true, accepted: true });
           const owner = { sessionId, runId, connectionGeneration };
           const controller = new AbortController();
-          this.activeRuns.set(sessionId, { owner, abort: controller, cancelled: false });
+          this.activeRuns.set(sessionId, { owner, abort: controller, cancelled: false, executionPhase: session.executionPhase ?? "execute" });
           void this.runPrompt(session, prompt, { model, reasoning_effort, owner, signal: controller.signal }).finally(() => this.activeRuns.delete(sessionId));
           break;
         }
@@ -653,6 +655,30 @@ export class GrokAcpServer {
     const capability = session.capability;
     const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null }, executionOwner);
     this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
+
+    const fromRun = executionOwner
+      ? [...this.activeRuns.values()].find((r) => r.owner.runId === executionOwner.runId)
+      : this.activeRuns.get(session.id);
+    const phase = fromRun?.executionPhase ?? session.executionPhase ?? "execute";
+    if (phase === "plan") {
+      const isRead = name === "read_file" || name === "list_dir" || name === "grep";
+      const isInspection = name === "run_shell" && compileFixedInspection(String(args.command ?? "")) != null;
+      if (!isRead && !isInspection) {
+        const msg = JSON.stringify({
+          error: "Plan phase refuses mutations",
+          execution: "not_executed",
+          reasonCode: "plan_phase_refused",
+        });
+        emitTerminal(msg, false, {
+          execution: "not_executed",
+          status: "rejected",
+          reasonCode: "plan_phase_refused",
+          reason: "Plan phase: edits and non-inspection shell are not executed",
+          automaticEligibility: "not_eligible",
+        });
+        return msg;
+      }
+    }
 
     const perm = toolPermissionKind(name);
     const command = name === "run_shell" ? String(args.command ?? "") : "";

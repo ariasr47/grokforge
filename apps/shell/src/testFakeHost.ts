@@ -140,6 +140,7 @@ export interface FakeHost {
   trustedClasses: Map<string, TrustedCommandClassesView>;
   runJournals: Map<string, FakeRunJournal>;
   nextClassSaveError: { status: number; code: string } | null;
+  pendingPlanDecision: boolean;
 }
 
 const BASE_STATE: PublicState = {
@@ -163,6 +164,7 @@ const BASE_STATE: PublicState = {
   priorConversations: false,
   permissionPolicy: { status: "confirmed", workspace: "", storedMode: null, effectiveMode: "review", source: "default", revision: "default", fallbackReason: null, savedForWorkspace: false },
   bypassPermissions: { unlocked: false, available: false, activeForSession: false, blockedReason: "unlock_required", confirmationVersion: null },
+  planEngagement: { engaged: false, vouched: true },
 };
 
 export interface FakeHostOptions {
@@ -187,6 +189,10 @@ export interface FakeHostOptions {
   classSaveError?: { status: number; code: string } | null;
   /** GET /api/runs/{runId} bodies keyed by runId. */
   runJournals?: Record<string, FakeRunJournal>;
+  /** When true, omit planEngagement from state snapshots (older-host / AC-28). */
+  omitPlanEngagement?: boolean;
+  /** Scripted POST /api/prompt refuse. */
+  promptRefuse?: { status: number; code: string; error: string } | null;
 }
 
 export function createFakeHost(
@@ -202,9 +208,15 @@ export function createFakeHost(
   }
   const runJournals = new Map<string, FakeRunJournal>(Object.entries(opts.runJournals ?? {}));
   let nextClassSaveError = opts.classSaveError ?? null;
+  let nextPromptRefuse = opts.promptRefuse ?? null;
+  let pendingPlanDecision = false;
 
   function snapshot(): PublicState {
-    return { ...state };
+    const snap = { ...state };
+    if (opts.omitPlanEngagement) {
+      delete (snap as Partial<PublicState>).planEngagement;
+    }
+    return snap;
   }
 
   /** Snapshot for a state-mutating POST response — see
@@ -259,7 +271,92 @@ export function createFakeHost(
       return mutatingSnapshot();
     }
     if (path === "/api/prompt" && method === "POST") {
+      if (nextPromptRefuse) {
+        const err = nextPromptRefuse;
+        nextPromptRefuse = null;
+        return {
+          __error: true,
+          status: err.status,
+          error: err.error,
+          code: err.code,
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (state.mode === "code" && (!state.planEngagement || state.planEngagement.vouched === false)) {
+        return {
+          __error: true,
+          status: 409,
+          error: "Plan engagement cannot be vouched",
+          code: "plan_engagement_unvouched",
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (pendingPlanDecision && state.mode === "code") {
+        return {
+          __error: true,
+          status: 409,
+          error: "A plan decision is still pending",
+          code: "plan_decision_pending",
+          retryable: false,
+          runId: null,
+        };
+      }
       state.busy = true;
+      return { ok: true };
+    }
+    if (path === "/api/plan-engagement" && method === "POST") {
+      if (state.mode === "chat") {
+        return {
+          __error: true,
+          status: 400,
+          error: "Plan is not applicable in Chat",
+          code: "plan_not_applicable",
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (!state.planEngagement || state.planEngagement.vouched === false) {
+        return {
+          __error: true,
+          status: 409,
+          error: "Plan engagement cannot be vouched",
+          code: "plan_engagement_unvouched",
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (typeof body?.engaged !== "boolean") {
+        return {
+          __error: true,
+          status: 400,
+          error: "engaged required",
+          code: "invalid_request",
+          retryable: false,
+          runId: null,
+        };
+      }
+      if (body.engaged === false) pendingPlanDecision = false;
+      state.planEngagement = { engaged: body.engaged, vouched: true };
+      return mutatingSnapshot();
+    }
+    if (path === "/api/plan" && method === "POST") {
+      const action = body?.action;
+      if (action !== "accept" && action !== "keep_planning") {
+        return {
+          __error: true,
+          status: 400,
+          error: "invalid plan action",
+          code: "invalid_request",
+          retryable: false,
+          runId: null,
+        };
+      }
+      pendingPlanDecision = false;
+      if (action === "accept" && state.planEngagement) {
+        state.planEngagement = { engaged: false, vouched: true };
+      }
       return { ok: true };
     }
     if (path === "/api/settings" && method === "POST") {
@@ -432,6 +529,12 @@ export function createFakeHost(
     },
     set nextClassSaveError(value) {
       nextClassSaveError = value;
+    },
+    get pendingPlanDecision() {
+      return pendingPlanDecision;
+    },
+    set pendingPlanDecision(value: boolean) {
+      pendingPlanDecision = value;
     },
   };
 }

@@ -57,6 +57,54 @@ test("activity_update retains first-class path with diff and editId", () => {
   assert.equal(a.runsById.r1.activities.a1.editId, "e1");
   assert.ok(a.runsById.r1.activities.a1.diff?.includes("+hi"));
 });
+test("run_started carries executionPhase; plan_record folds into run projection", () => {
+  const s = snap();
+  s.executionPhase = "plan";
+  let a = reduceRunEvent(initialRunProjection(), started(s));
+  assert.equal(a.runsById.r1.executionPhase, "plan");
+  assert.equal(a.runsById.r1.plan ?? null, null);
+  a = reduceRunEvent(a, event({
+    kind: "plan_record",
+    plan: {
+      runId: "r1",
+      sessionId: "s1",
+      connectionGeneration: 1,
+      status: "ready",
+      body: "Update `src/a.ts` and `apps/shell/src/b.tsx`.",
+      proposedMembers: [
+        { path: "src/a.ts", summary: "Update helper" },
+        { path: "apps/shell/src/b.tsx", summary: "Create UI" },
+      ],
+      policy: { effectiveMode: "review" },
+      executionPhase: "plan",
+    },
+  }, 2));
+  assert.equal(a.runsById.r1.plan?.status, "ready");
+  assert.equal(a.runsById.r1.plan?.proposedMembers.length, 2);
+  assert.equal(a.runsById.r1.plan?.proposedMembers[0]?.path, "src/a.ts");
+  a = reduceRunEvent(a, event({
+    kind: "decision_request",
+    request: {
+      requestId: "plan-1",
+      invocationId: "inv-plan",
+      kind: "plan",
+      status: "pending",
+      title: "Review plan",
+      detail: "",
+      expiresAt: null,
+      policy: { effectiveMode: "review" },
+    },
+  }, 3));
+  assert.equal(a.runsById.r1.decisions["plan-1"]?.kind, "plan");
+  assert.equal(a.runsById.r1.decisions["plan-1"]?.status, "pending");
+  assert.equal(a.runsById.r1.decisions["plan-1"]?.expiresAt, null);
+});
+
+test("missing executionPhase on old journals is not plan", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  assert.equal(a.runsById.r1.executionPhase, undefined);
+});
+
 test("activity_update defaults missing path to null", () => {
   let a = reduceRunEvent(initialRunProjection(), started());
   a = reduceRunEvent(

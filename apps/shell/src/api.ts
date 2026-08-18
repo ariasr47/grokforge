@@ -182,6 +182,12 @@ export function wsUrl(): string | null {
 export type ProductMode = "chat" | "code";
 export type EffortLevel = "auto" | "fast" | "expert" | "heavy";
 
+/** Session-scoped next-send preference. Bound as PublicState.planEngagement. */
+export type PlanEngagementView = {
+  engaged: boolean;
+  vouched: boolean;
+};
+
 export interface PublicState {
   workspace: string | null;
   workspaceName: string | null;
@@ -228,6 +234,12 @@ export interface PublicState {
     confirmationVersion: number | null;
   };
   shellCapability: ShellCapabilityView;
+  /**
+   * Always present on a current host. Optional on the type so older hosts /
+   * restore holes can omit it. Projection treats missing as unvouched —
+   * never invent `{ engaged: false, vouched: true }`.
+   */
+  planEngagement?: PlanEngagementView;
 }
 
 export type ShellCapabilityView =
@@ -615,6 +627,23 @@ export const api = {
     json<PublicState>("/api/effort", {
       method: "POST",
       body: JSON.stringify({ effort }),
+    }),
+  setPlanEngagement: (engaged: boolean) =>
+    json<PublicState>("/api/plan-engagement", {
+      method: "POST",
+      body: JSON.stringify({ engaged }),
+    }),
+  runPlan: (body: {
+    sessionId: string;
+    runId: string;
+    requestId: string;
+    invocationId: string;
+    connectionGeneration: number;
+    action: "accept" | "keep_planning";
+  }) =>
+    json<{ ok: boolean }>("/api/plan", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   setChatRoot: (path: string | null) =>
     json<PublicState>("/api/chat-root", {

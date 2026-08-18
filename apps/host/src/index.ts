@@ -686,6 +686,21 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (method === "POST" && url.pathname === "/api/plan-engagement") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { engaged?: boolean; sessionId?: string };
+      const owner = sessionFor(body.sessionId) || session;
+      try {
+        if (typeof body.engaged !== "boolean") throw Object.assign(new Error("engaged required"), { code: "invalid_request" });
+        const state = owner.setPlanEngagement(body.engaged);
+        sendState(res, origin, state);
+      } catch (e) {
+        const code = (e as { code?: string })?.code ?? "invalid_request";
+        const status = code === "plan_engagement_unvouched" ? 409 : code === "plan_not_applicable" ? 400 : 400;
+        sendContractError(res, status, code, e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+
     if (method === "POST" && url.pathname === "/api/chat-root") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
         path?: string | null;
@@ -729,7 +744,12 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, legacyPrompt ? 200 : 202, legacyPrompt ? { ok: true } : { accepted: true, run });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        const busy = (e as any)?.code === "run_active" || /busy/i.test(message);
+        const code = (e as { code?: string })?.code;
+        if (code === "plan_engagement_unvouched" || code === "plan_decision_pending") {
+          sendContractError(res, 409, code, message);
+          return;
+        }
+        const busy = code === "run_active" || /busy/i.test(message);
         sendContractError(res,busy?409:400,busy?"run_active":"invalid_request",message, busy ? { activeRunId: ownedSession.getActiveRunId() } : {});
       }
       return;
@@ -791,6 +811,30 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"permission",status:settled,title:"Permission",detail:"",expiresAt:new Date().toISOString(),policy:run.policy} });
       } catch (e) {
         const code=(e as any)?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,"no pending permission");
+      }
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/api/plan") {
+      const body = JSON.parse((await readBody(req)) || "{}") as {
+        sessionId?: string; runId?: string; requestId?: string; invocationId?: string;
+        connectionGeneration?: number; action?: "accept" | "keep_planning";
+      };
+      if (!body.sessionId || !body.runId || !body.requestId || !body.invocationId || !Number.isInteger(body.connectionGeneration) || (body.action !== "accept" && body.action !== "keep_planning")) {
+        sendContractError(res,400,"invalid_request","plan ownership fields required");
+        return;
+      }
+      const owner=sessionFor(body.sessionId,false) ?? (session.getState().session?.sessionId===body.sessionId?session:null); if(!owner){sendContractError(res,404,"run_not_found","Run not found");return;}
+      try {
+        const settled = await owner.planAction(body.requestId, body.action, {
+          sessionId: body.sessionId,
+          runId: body.runId,
+          connectionGeneration: body.connectionGeneration!,
+        }, body.invocationId);
+        const run = owner.getRun(body.runId, body.sessionId);
+        sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"plan",status:settled,title:"Plan",detail:"",expiresAt:null,policy:run?.policy??null} });
+      } catch (e) {
+        const code=(e as {code?:string})?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,e instanceof Error?e.message:"no pending plan");
       }
       return;
     }

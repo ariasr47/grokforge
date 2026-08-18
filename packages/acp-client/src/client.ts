@@ -140,6 +140,7 @@ export class StdioAcpClient implements AcpClient {
       history: opts?.history,
       policy: opts?.policy,
       trustedCommandClasses: opts?.trustedCommandClasses ?? [],
+      executionPhase: opts?.executionPhase ?? "execute",
     });
   }
 

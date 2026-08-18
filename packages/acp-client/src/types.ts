@@ -58,7 +58,7 @@ export interface AgentSpawnConfig {
   executionProfile: HostExecutionProfile;
 }
 
-export type ToolReasonCode = "shell_resolution_failed" | "unsupported_platform" | "shell_dialect_incompatible" | "leading_command_unresolved" | "protected_recursive_delete" | "outside_workspace" | "authorization_refused";
+export type ToolReasonCode = "shell_resolution_failed" | "unsupported_platform" | "shell_dialect_incompatible" | "leading_command_unresolved" | "protected_recursive_delete" | "outside_workspace" | "authorization_refused" | "plan_phase_refused";
 export type HostExecutionProfile =
   | { status: "available"; platform: string; osFamily: "windows" | "macos" | "linux"; executable: string; argvPrefix: readonly string[]; displayName: string; dialect: "cmd" | "posix"; pathSeparator: "\\" | "/"; syntax: { quoting: string; chaining: string; redirection: string } }
   | { status: "unavailable"; platform: string; osFamily: "windows" | "macos" | "linux" | "unsupported"; executable: null; argvPrefix: readonly []; displayName: null; dialect: null; pathSeparator: "\\" | "/"; syntax: null; reasonCode: "shell_resolution_failed" | "unsupported_platform"; reason: string };
@@ -77,7 +77,7 @@ export function isValidToolRunEvent(value: unknown): value is ToolRunEvent {
   const required = ["schemaVersion", "type", "activityId", "toolCallId", "lifecycle", "execution", "status", "name", "input", "summary", "command", "output", "error", "reasonCode", "reason", "shellDisplayName", "detailAvailable"];
   if (required.some((key) => !(key in e)) || e.schemaVersion !== 2 || e.type !== "tool_run" || typeof e.activityId !== "string" || !e.activityId || typeof e.toolCallId !== "string" || !e.toolCallId || typeof e.detailAvailable !== "boolean") return false;
   if (!["name", "summary", "command", "output", "error", "reasonCode", "reason", "shellDisplayName"].every((key) => e[key] === null || typeof e[key] === "string")) return false;
-  const reasonCodes = new Set(["shell_resolution_failed", "unsupported_platform", "shell_dialect_incompatible", "leading_command_unresolved", "protected_recursive_delete", "outside_workspace", "authorization_refused"]);
+  const reasonCodes = new Set(["shell_resolution_failed", "unsupported_platform", "shell_dialect_incompatible", "leading_command_unresolved", "protected_recursive_delete", "outside_workspace", "authorization_refused", "plan_phase_refused"]);
   if (e.lifecycle === "pending") return e.execution === null && e.status === "running" && e.output === null && e.error === null && e.reasonCode === null && e.reason === null;
   if (e.lifecycle !== "terminal") return false;
   if (e.execution === "not_executed") return e.status === "rejected" && (e.name === "run_shell" ? typeof e.command === "string" && !!e.command : e.command === null) && typeof e.reasonCode === "string" && reasonCodes.has(e.reasonCode) && typeof e.reason === "string" && !!e.reason && e.error === null;
@@ -96,6 +96,8 @@ export interface PromptOptions {
   /** Frozen Trusted command-class ids for this generation (host-owned). */
   trustedCommandClasses?: readonly string[];
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  /** Snapshotted at host admit; immutable for this run ownership. */
+  executionPhase?: "plan" | "execute";
 }
 
 export interface AcpClient {

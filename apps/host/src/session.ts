@@ -38,7 +38,9 @@ import { recordCompletedConversation } from "./shell-history.js";
 import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./executionEnvironment.js";
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
-import type { ActivityRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot } from "./run-types.js";
+import { randomUUID } from "node:crypto";
+import type { ActivityRecord, DecisionKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
+import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
 import {
@@ -253,7 +255,10 @@ export interface PublicState {
   session: { sessionId:string; activeRunId:string|null; effectivePermissionMode:"review"|"trusted_workspace"|"bypass_permissions" } | null;
   permissionPolicy: { status:"confirmed"; workspace:string; storedMode:"review"|"trusted_workspace"|null; effectiveMode:"review"|"trusted_workspace"; source:"default"|"saved"|"fallback"; revision:string; fallbackReason:"missing"|"invalid"|"unreadable"|null; savedForWorkspace:boolean };
   bypassPermissions: { unlocked:boolean; available:boolean; activeForSession:boolean; blockedReason:"managed_disabled"|"local_attestation_required"|"unlock_required"|null; confirmationVersion:number|null };
+  planEngagement: PlanEngagementView;
 }
+
+export type PlanEngagementView = { engaged: boolean; vouched: boolean };
 
 export class AgentSession {
   private client: StdioAcpClient | null = null;
@@ -288,7 +293,10 @@ export class AgentSession {
   }
   private activeRunId: string | null = null;
   private connectionGeneration = 0;
-  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:"permission"|"diff";status:"pending"|"accepted"|"declined"|"expired";expiresAt:number}>();
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number}>();
+  private planEngaged = false;
+  private planEngagementVouched = true;
+  private lastReadyPlanRunId: string | null = null;
   /** Serialize restarts so concurrent mode switches don't null the client mid-start. */
   private restartChain: Promise<PublicState> | null = null;
   /**
@@ -310,7 +318,7 @@ export class AgentSession {
 
   constructor(stableSessionId?: string) {
     this.stableClientSessionId = stableSessionId ?? null;
-    this.runHydration = this.runCoordinator.hydrate(stableSessionId).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
+    this.runHydration = this.runCoordinator.hydrate(stableSessionId).then(() => this.restorePlanDecisions()).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
     this.cfg = loadConfig();
     if (!this.cfg.mode) this.cfg.mode = "chat";
     if (!this.cfg.effort) this.cfg.effort = "auto";
@@ -319,6 +327,7 @@ export class AgentSession {
     } else if (this.cfg.lastWorkspace && fs.existsSync(this.cfg.lastWorkspace)) {
       this.workspace = this.cfg.lastWorkspace;
     }
+    if (process.env.GROKFORGE_PLAN_UNVOUCHED === "1") this.planEngagementVouched = false;
     this.ready = this.hydrateWorkspacePolicy(this.workspace);
   }
 
@@ -402,10 +411,62 @@ export class AgentSession {
       session: this.stableClientSessionId ? { sessionId: this.stableClientSessionId, activeRunId: this.activeRunId, effectivePermissionMode: this.bypassActive ? "bypass_permissions" : (this.policyView?.effectiveMode ?? "review") } : null,
       permissionPolicy: this.policyView ?? { status:"confirmed", workspace:this.workspace || "", storedMode:null, effectiveMode:"review", source:"fallback", revision:"fallback", fallbackReason:"missing", savedForWorkspace:false },
       bypassPermissions: this.bypassView(),
+      planEngagement: this.planEngagementView(),
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
     };
+  }
+
+  private planEngagementView(): PlanEngagementView {
+    if (this.cfg.mode !== "code") return { engaged: false, vouched: true };
+    return { engaged: this.planEngaged, vouched: this.planEngagementVouched };
+  }
+
+  setPlanEngagement(engaged: boolean): PublicState {
+    if (this.cfg.mode !== "code") {
+      throw Object.assign(new Error("Plan is not applicable in Chat"), { code: "plan_not_applicable" });
+    }
+    if (!this.planEngagementVouched) {
+      throw Object.assign(new Error("Plan engagement cannot be vouched"), { code: "plan_engagement_unvouched" });
+    }
+    if (!engaged) this.cancelPendingPlanDecision();
+    this.planEngaged = engaged;
+    this.broadcastState();
+    return this.getState();
+  }
+
+  /** Test seam: flipping vouched false→true clears engaged. */
+  setPlanEngagementVouched(vouched: boolean): PublicState {
+    const was = this.planEngagementVouched;
+    this.planEngagementVouched = vouched;
+    if (!was && vouched) this.planEngaged = false;
+    this.broadcastState();
+    return this.getState();
+  }
+
+  resolveExecutionPhaseForAdmit(mode: ProductMode = this.cfg.mode === "code" ? "code" : "chat"): "plan" | "execute" {
+    if (mode === "code") {
+      if (!this.planEngagementVouched) {
+        throw Object.assign(new Error("Plan engagement cannot be vouched"), { code: "plan_engagement_unvouched" });
+      }
+      if (this.hasPendingPlanDecision()) {
+        throw Object.assign(new Error("A plan decision is still pending"), { code: "plan_decision_pending" });
+      }
+    }
+    return mode === "code" && this.planEngaged && this.planEngagementVouched ? "plan" : "execute";
+  }
+
+  private hasPendingPlanDecision(): boolean {
+    for (const pending of this.pendingDecisions.values()) {
+      if (pending.kind === "plan" && pending.status === "pending") return true;
+    }
+    return false;
+  }
+
+  private isDecisionExpired(pending: { kind: DecisionKind; expiresAt: number } | undefined): boolean {
+    if (!pending || pending.kind === "plan" || pending.expiresAt <= 0) return false;
+    return pending.expiresAt < Date.now();
   }
 
   updateSettings(patch: {
@@ -754,6 +815,7 @@ export class AgentSession {
                   runId: this.activeRunId ?? "",
                   connectionGeneration: this.connectionGeneration,
                   policy: this.workspace ? await this.workspacePolicies.snapshot(this.workspace, this.bypassActive) : { workspace:"", storedMode:null, effectiveMode:"review" as const, source:"fallback" as const, revision:"fallback", fallbackReason:"missing" as const, snapshottedAt:new Date().toISOString() },
+                  executionPhase: this.runCoordinator.get(this.activeRunId ?? "")?.executionPhase ?? "execute",
                 })
                 .catch((e2) => {
                   this.pendingFallback = null;
@@ -801,6 +863,9 @@ export class AgentSession {
             const active = this.runCoordinator.get(this.activeRunId);
             const terminal = active?.state === "cancelling" ? "cancelled" : (ev.type === "done" && ev.reason !== "error" ? "answered" : "failed");
             const failureCode = ev.type === "error" ? ({missing_final_answer:"missing_final_answer",provider_liveness_timeout:"provider_liveness_exhausted",provider_liveness_exhausted:"provider_liveness_exhausted",auth_missing:"authentication_required",configuration_required:"configuration_required",execution_owner_lost:"execution_owner_lost"} as Record<string,any>)[ev.code] ?? "provider_unavailable" : null;
+            if (active?.executionPhase === "plan") {
+              await this.settlePlanPhase(active, terminal, this.runCoordinator.getAccumulatedAnswer(this.activeRunId) || null);
+            }
             await this.runCoordinator.finalize(this.activeRunId, terminal, null,
               ev.type === "error" ? { code: failureCode, message: ev.code === "missing_final_answer" ? "No final answer was produced." : "Provider execution failed.", retryable: true, recoveryAction: "retry_prompt" } : null);
             this.activeRunId = null;
@@ -929,6 +994,7 @@ export class AgentSession {
     this.cfg = loadConfig();
     this.stableClientSessionId = opts?.clientSessionId ?? this.stableClientSessionId;
     const mode = this.cfg.mode === "code" ? "code" : "chat";
+    const executionPhase = this.resolveExecutionPhaseForAdmit(mode);
     if (mode === "chat") {
       this.workspace = ensureChatRoot(this.cfg.chatRoot);
     } else if (!this.workspace) {
@@ -975,8 +1041,20 @@ export class AgentSession {
       connectionGeneration: this.connectionGeneration,
       policy: workspacePolicy,
       model: { requestedModel: this.cfg.model, appliedModel: modelsChain[0], selectionProvenance: this.cfg.modelSelectionProvenance },
+      executionPhase,
     });
     this.activeRunId = admitted.runId;
+    if (executionPhase === "plan") {
+      await this.runCoordinator.appendOwnedEvent(admitted.runId, {
+        kind: "plan_record",
+        plan: exploringPlanRecord({
+          runId: admitted.runId,
+          sessionId: admitted.sessionId,
+          connectionGeneration: admitted.connectionGeneration,
+          policy: admitted.policy,
+        }),
+      }, "plan_record").catch(() => undefined);
+    }
     this.broadcastState();
     log("debug", "prompt", {
       len: text.length,
@@ -1005,6 +1083,7 @@ export class AgentSession {
         connectionGeneration: this.connectionGeneration,
         policy: workspacePolicy,
         trustedCommandClasses: this.trustedClassesSnapshot.slice(),
+        executionPhase,
       });
     } catch (e) {
       this.pendingFallback = null;
@@ -1166,7 +1245,7 @@ export class AgentSession {
     if (ownership && !this.getRun(ownership.runId, ownership.sessionId)) throw Object.assign(new Error("decision not found"), {code:"decision_not_found"});
     const run = ownership ? this.runCoordinator.get(ownership.runId) : undefined;
     if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
-    const pending=this.pendingDecisions.get(id); const expired = !!pending && pending.expiresAt < Date.now(); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="permission"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
+    const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="permission"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
     await this.client.respondPermission(id, decision, ownership);
     log("debug","permission acknowledged",{id,decision,runId:ownership?.runId,sessionId:ownership?.sessionId});
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
@@ -1179,11 +1258,204 @@ export class AgentSession {
     if (ownership && !this.getRun(ownership.runId, ownership.sessionId)) throw Object.assign(new Error("decision not found"), {code:"decision_not_found"});
     const run = ownership ? this.runCoordinator.get(ownership.runId) : undefined;
     if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
-    const pending=this.pendingDecisions.get(id); const expired = !!pending && pending.expiresAt < Date.now(); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="diff"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
+    const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="diff"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
     await this.client.respondEdit(id, action, this.sessionId ?? undefined, ownership);
     if(pending) pending.status=action==="accept"?"accepted":"declined";
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"diff",status:action==="accept"?"accepted":"declined",title:"Edit",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     return action === "accept" ? "accepted" : "declined";
+  }
+
+  async planAction(
+    requestId: string,
+    action: "accept" | "keep_planning",
+    ownership: { sessionId: string; runId: string; connectionGeneration: number },
+    invocationId: string,
+  ): Promise<"accepted" | "kept_planning"> {
+    const pending = this.pendingDecisions.get(requestId);
+    if (action !== "accept" && action !== "keep_planning") {
+      throw Object.assign(new Error("invalid plan action"), { code: "invalid_request" });
+    }
+    if (
+      !pending ||
+      pending.kind !== "plan" ||
+      pending.status !== "pending" ||
+      pending.sessionId !== ownership.sessionId ||
+      pending.runId !== ownership.runId ||
+      pending.generation !== ownership.connectionGeneration ||
+      pending.invocationId !== invocationId
+    ) {
+      throw Object.assign(new Error("decision not found"), { code: "decision_not_found" });
+    }
+    let run = this.getRun(ownership.runId, ownership.sessionId);
+    if (!run) {
+      try { run = (await this.replayRun(ownership.runId, ownership.sessionId)).run; }
+      catch { throw Object.assign(new Error("decision not found"), { code: "decision_not_found" }); }
+    }
+    const status = action === "accept" ? "accepted" : "kept_planning";
+    pending.status = status;
+    if (action === "accept") this.planEngaged = false;
+    const plan = await this.latestPlanRecord(ownership.runId, ownership.sessionId);
+    const nextPlan: PlanRecord = {
+      runId: run.runId,
+      sessionId: run.sessionId,
+      connectionGeneration: run.connectionGeneration,
+      status,
+      body: plan?.body ?? null,
+      proposedMembers: plan?.proposedMembers ?? [],
+      policy: run.policy,
+      executionPhase: "plan",
+    };
+    await this.appendPlanSettlement(run.runId, nextPlan, {
+      requestId,
+      invocationId: pending.invocationId,
+      kind: "plan",
+      status,
+      title: planDecisionTitle(nextPlan.proposedMembers),
+      detail: "",
+      expiresAt: null,
+      policy: run.policy,
+    });
+    this.broadcastState();
+    return status;
+  }
+
+  private async latestPlanRecord(runId: string, sessionId: string): Promise<PlanRecord | null> {
+    try {
+      const replayed = await this.replayRun(runId, sessionId, 0);
+      let latest: PlanRecord | null = null;
+      for (const event of replayed.events) {
+        if (event.payload.kind === "plan_record") latest = event.payload.plan;
+      }
+      return latest;
+    } catch {
+      return null;
+    }
+  }
+
+  private async appendPlanSettlement(
+    runId: string,
+    plan: PlanRecord,
+    request: { requestId: string; invocationId: string; kind: "plan"; status: "accepted" | "kept_planning" | "cancelled"; title: string; detail: string; expiresAt: null; policy: PolicySnapshot },
+  ): Promise<void> {
+    const live = this.runCoordinator.get(runId);
+    if (live && live.state !== "terminal") {
+      await this.runCoordinator.appendOwnedEvent(runId, { kind: "plan_record", plan }, "plan_record").catch(() => undefined);
+      await this.runCoordinator.appendOwnedEvent(runId, { kind: "decision_request", request }, "decision_request").catch(() => undefined);
+      return;
+    }
+    await this.runCoordinator.appendAfterTerminalEvent(runId, { kind: "plan_record", plan }, "plan_record").catch(() => undefined);
+    await this.runCoordinator.appendAfterTerminalEvent(runId, { kind: "decision_request", request }, "decision_request").catch(() => undefined);
+  }
+
+  private async settlePlanPhase(run: RunSnapshot, terminalKind: TerminalKind, body: string | null): Promise<void> {
+    const record = terminalPlanRecord({
+      runId: run.runId,
+      sessionId: run.sessionId,
+      connectionGeneration: run.connectionGeneration,
+      policy: run.policy,
+      terminalKind,
+      body: body && body.trim() ? body : null,
+    });
+    if (record.status === "ready" && this.lastReadyPlanRunId && this.lastReadyPlanRunId !== run.runId) {
+      const prior = await this.latestPlanRecord(this.lastReadyPlanRunId, run.sessionId);
+      if (prior && (prior.status === "kept_planning" || prior.status === "ready")) {
+        await this.runCoordinator.appendAfterTerminalEvent(this.lastReadyPlanRunId, {
+          kind: "plan_record",
+          plan: { ...prior, status: "superseded" },
+        }, "plan_record").catch(() => undefined);
+      }
+    }
+    await this.runCoordinator.appendOwnedEvent(run.runId, { kind: "plan_record", plan: record }, "plan_record").catch(() => undefined);
+    if (record.status !== "ready") return;
+    this.lastReadyPlanRunId = run.runId;
+    const requestId = randomUUID();
+    this.pendingDecisions.set(requestId, {
+      sessionId: run.sessionId,
+      runId: run.runId,
+      generation: run.connectionGeneration,
+      invocationId: requestId,
+      kind: "plan",
+      status: "pending",
+      expiresAt: 0,
+    });
+    await this.runCoordinator.appendOwnedEvent(run.runId, {
+      kind: "decision_request",
+      request: {
+        requestId,
+        invocationId: requestId,
+        kind: "plan",
+        status: "pending",
+        title: planDecisionTitle(record.proposedMembers),
+        detail: record.body ?? "",
+        expiresAt: null,
+        policy: run.policy,
+      },
+    }, "decision_request").catch(() => undefined);
+  }
+
+  private cancelPendingPlanDecision(): void {
+    for (const [id, pending] of this.pendingDecisions) {
+      if (pending.kind !== "plan" || pending.status !== "pending") continue;
+      pending.status = "cancelled";
+      void this.latestPlanRecord(pending.runId, pending.sessionId).then(async (plan) => {
+        const run = this.getRun(pending.runId, pending.sessionId);
+        const policy = run?.policy ?? plan?.policy;
+        if (!policy) return;
+        await this.appendPlanSettlement(pending.runId, {
+          runId: pending.runId,
+          sessionId: pending.sessionId,
+          connectionGeneration: pending.generation,
+          status: "cancelled",
+          body: plan?.body ?? null,
+          proposedMembers: plan?.proposedMembers ?? [],
+          policy,
+          executionPhase: "plan",
+        }, {
+          requestId: id,
+          invocationId: pending.invocationId,
+          kind: "plan",
+          status: "cancelled",
+          title: "Planning cancelled",
+          detail: "",
+          expiresAt: null,
+          policy,
+        });
+      }).catch(() => undefined);
+    }
+  }
+
+  private async restorePlanDecisions(): Promise<void> {
+    const snapshots = await this.runCoordinator.listSnapshots();
+    const owned = this.stableClientSessionId
+      ? snapshots.filter((snap) => snap.sessionId === this.stableClientSessionId)
+      : snapshots;
+    for (const snap of owned) {
+      let replayed;
+      try { replayed = await this.runCoordinator.replay(snap.sessionId, snap.runId, 0); }
+      catch { continue; }
+      let latestPlan: PlanRecord | null = null;
+      let latestDecision: { requestId: string; invocationId: string; status: string } | null = null;
+      for (const event of replayed.events) {
+        if (event.payload.kind === "plan_record") latestPlan = event.payload.plan;
+        if (event.payload.kind === "decision_request" && event.payload.request.kind === "plan") {
+          latestDecision = event.payload.request;
+        }
+      }
+      if (latestPlan?.status === "kept_planning" || latestPlan?.status === "ready") {
+        this.lastReadyPlanRunId = snap.runId;
+      }
+      if (latestDecision?.status === "pending") {
+        this.pendingDecisions.set(latestDecision.requestId, {
+          sessionId: snap.sessionId,
+          runId: snap.runId,
+          generation: snap.connectionGeneration,
+          invocationId: latestDecision.invocationId,
+          kind: "plan",
+          status: "pending",
+          expiresAt: 0,
+        });
+      }
+    }
   }
 
   async startOAuth(): Promise<DeviceStart> {
