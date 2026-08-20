@@ -199,6 +199,7 @@ const server = http.createServer(async (req, res) => {
       if (requested && !owner) { sendContractError(res,404,"session_not_found","Session not found"); return; }
       await owner!.awaitReady();
       await owner!.refreshWorkspacePolicy();
+      await owner!.refreshProjectInstructionsPresence();
       sendState(res, origin, owner!.getState());
       return;
     }
@@ -980,6 +981,7 @@ wss.on("connection", (ws, req) => {
     const owner = initialOwner ?? session;
     await owner.awaitReady();
     await owner.refreshWorkspacePolicy();
+    await owner.refreshProjectInstructionsPresence();
     wsSend(ws, {
       schemaVersion: 1,
       type: "state",
@@ -1039,6 +1041,7 @@ wss.on("connection", (ws, req) => {
       try {
         switch (msg.type) {
           case "get_state":
+            await session.refreshProjectInstructionsPresence();
             wsSend(ws, { schemaVersion: 1, type: "state", state: stampState(session.getState(), wsOrigin) });
             break;
           case "open_workspace":

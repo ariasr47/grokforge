@@ -49,6 +49,7 @@ import {
   type TrustedCommandClassesView,
 } from "./trusted-command-classes.js";
 import { BypassActivation } from "./bypass-activation.js";
+import { resolveProjectInstructions } from "./project-instructions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -256,9 +257,17 @@ export interface PublicState {
   permissionPolicy: { status:"confirmed"; workspace:string; storedMode:"review"|"trusted_workspace"|null; effectiveMode:"review"|"trusted_workspace"; source:"default"|"saved"|"fallback"; revision:string; fallbackReason:"missing"|"invalid"|"unreadable"|null; savedForWorkspace:boolean };
   bypassPermissions: { unlocked:boolean; available:boolean; activeForSession:boolean; blockedReason:"managed_disabled"|"local_attestation_required"|"unlock_required"|null; confirmationVersion:number|null };
   planEngagement: PlanEngagementView;
+  projectInstructions: ProjectInstructionsPresenceView;
 }
 
 export type PlanEngagementView = { engaged: boolean; vouched: boolean };
+
+/** Workspace recipe presence for the bound root. Always present on PublicState. */
+export type ProjectInstructionsPresenceView = {
+  status: "present" | "absent" | "failed";
+  path: string | null;
+  vouched: boolean;
+};
 
 export class AgentSession {
   private client: StdioAcpClient | null = null;
@@ -297,6 +306,9 @@ export class AgentSession {
   private planEngaged = false;
   private planEngagementVouched = true;
   private lastReadyPlanRunId: string | null = null;
+  private projectInstructionsCache: ProjectInstructionsPresenceView = { status: "absent", path: null, vouched: true };
+  private projectInstructionsProbeRoot: string | null = null;
+  private projectInstructionsVouched = true;
   /** Serialize restarts so concurrent mode switches don't null the client mid-start. */
   private restartChain: Promise<PublicState> | null = null;
   /**
@@ -328,7 +340,8 @@ export class AgentSession {
       this.workspace = this.cfg.lastWorkspace;
     }
     if (process.env.GROKFORGE_PLAN_UNVOUCHED === "1") this.planEngagementVouched = false;
-    this.ready = this.hydrateWorkspacePolicy(this.workspace);
+    if (process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED === "1") this.projectInstructionsVouched = false;
+    this.ready = this.hydrateWorkspacePolicy(this.workspace).then(() => this.refreshProjectInstructionsPresence());
   }
 
   private async hydrateWorkspacePolicy(workspace: string | null): Promise<void> {
@@ -412,6 +425,7 @@ export class AgentSession {
       permissionPolicy: this.policyView ?? { status:"confirmed", workspace:this.workspace || "", storedMode:null, effectiveMode:"review", source:"fallback", revision:"fallback", fallbackReason:"missing", savedForWorkspace:false },
       bypassPermissions: this.bypassView(),
       planEngagement: this.planEngagementView(),
+      projectInstructions: this.projectInstructionsView(),
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
@@ -421,6 +435,53 @@ export class AgentSession {
   private planEngagementView(): PlanEngagementView {
     if (this.cfg.mode !== "code") return { engaged: false, vouched: true };
     return { engaged: this.planEngaged, vouched: this.planEngagementVouched };
+  }
+
+  private projectInstructionsView(): ProjectInstructionsPresenceView {
+    if (this.cfg.mode !== "code" || !this.workspace) {
+      return { status: "absent", path: null, vouched: true };
+    }
+    const vouched =
+      this.projectInstructionsVouched !== false &&
+      process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED !== "1";
+    const cache = this.projectInstructionsCache ?? { status: "absent" as const, path: null };
+    return {
+      status: cache.status,
+      path: cache.path,
+      vouched,
+    };
+  }
+
+  async refreshProjectInstructionsPresence(): Promise<void> {
+    if (process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED === "1") {
+      this.projectInstructionsVouched = false;
+    }
+    if (this.cfg.mode !== "code" || !this.workspace) {
+      this.projectInstructionsCache = { status: "absent", path: null, vouched: true };
+      this.projectInstructionsProbeRoot = null;
+      return;
+    }
+    const root = this.workspace;
+    if (this.projectInstructionsProbeRoot !== root) {
+      this.projectInstructionsCache = { status: "absent", path: null, vouched: false };
+      this.projectInstructionsProbeRoot = root;
+    }
+    const snap = await resolveProjectInstructions(root);
+    if (this.workspace !== root || this.cfg.mode !== "code") return;
+    this.projectInstructionsCache = {
+      status: snap.status,
+      path: snap.path,
+      vouched:
+        this.projectInstructionsVouched &&
+        process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED !== "1",
+    };
+  }
+
+  setProjectInstructionsVouched(vouched: boolean): PublicState {
+    this.projectInstructionsVouched = vouched;
+    this.projectInstructionsCache = { ...this.projectInstructionsCache, vouched };
+    this.broadcastState();
+    return this.getState();
   }
 
   setPlanEngagement(engaged: boolean): PublicState {
@@ -544,6 +605,7 @@ export class AgentSession {
     }
     log("info", "mode set", { mode: next, workspace: this.workspace });
     await this.restartAgent();
+    await this.refreshProjectInstructionsPresence();
     this.broadcastState();
     return this.getState();
   }
@@ -588,6 +650,8 @@ export class AgentSession {
     if (!st.isDirectory()) throw new Error("Path is not a directory");
 
     this.workspace = resolved;
+    this.projectInstructionsCache = { status: "absent", path: null, vouched: false };
+    this.projectInstructionsProbeRoot = resolved;
     // Hydrate the durable workspace policy before the first state snapshot. A
     // fresh AgentSession must never report fallback Review when a confirmed
     // policy already exists on disk.
@@ -610,6 +674,7 @@ export class AgentSession {
     audit("workspace_open", { path: resolved, mode: this.cfg.mode });
 
     await this.restartAgent();
+    await this.refreshProjectInstructionsPresence();
     this.broadcastState();
     return this.getState();
   }
@@ -715,6 +780,24 @@ export class AgentSession {
         eventChain = eventChain.then(async () => {
         // Ignore events from a disposed/replaced client
         if (this.client !== gen) return;
+        if (ev.type === "project_instructions" && this.activeRunId) {
+          const run = this.runCoordinator.get(this.activeRunId);
+          if (run) {
+            const voucher = {
+              runId: run.runId,
+              sessionId: run.sessionId,
+              connectionGeneration: run.connectionGeneration,
+              inclusion: ev.inclusion,
+              path: ev.inclusion === "not_included" ? null : ev.path,
+            };
+            await this.runCoordinator.appendOwnedEvent(
+              this.activeRunId,
+              { kind: "project_instructions", projectInstructions: voucher },
+              "project_instructions",
+            ).catch(() => undefined);
+          }
+          return;
+        }
         if (ev.type === "tool_run") {
           toolNames.set(ev.toolCallId, ev.name ?? "tool");
           const taxonomy = classifyToolRunLog(ev);

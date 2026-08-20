@@ -26,15 +26,24 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
   const agent = fixture === "all-events"
     ? path.join(root, "apps", "shell", "src", "test-support", "all-events-agent.mjs")
-    : path.join(root, "apps", "host", "src", "test-support", "fake-acp-agent.mjs");
+    : fixture === "live-turn-burst"
+      ? path.join(root, "apps", "host", "src", "test-support", "live-turn-burst-agent.mjs")
+      : fixture === "git-review-surface"
+        ? path.join(root, "apps", "host", "src", "test-support", "git-review-surface-agent.mjs")
+        : path.join(root, "apps", "host", "src", "test-support", "fake-acp-agent.mjs");
   const child = spawn(process.execPath, ["--import", "tsx", path.join(root, "apps", "host", "src", "index.ts")], {
     cwd: root,
     env: { ...process.env, XAI_API_KEY: "fixture-test-key", GROKFORGE_API_KEY: "fixture-test-key", GROKFORGE_PORT: String(actualPort), GROKFORGE_DATA_DIR: dataDir, GROKFORGE_AGENT_ENTRY: agent, GROKFORGE_FIXTURE: fixture },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const MAX_LOG = 64 * 1024;
   let output = "";
-  child.stdout?.on("data", (chunk) => { output += String(chunk); });
-  child.stderr?.on("data", (chunk) => { output += String(chunk); });
+  const appendLog = (chunk: unknown) => {
+    output += String(chunk);
+    if (output.length > MAX_LOG) output = output.slice(output.length - MAX_LOG);
+  };
+  child.stdout?.on("data", appendLog);
+  child.stderr?.on("data", appendLog);
   const baseUrl = `http://127.0.0.1:${actualPort}`;
   // Browser-mounted joined flows consume the same resolved port as the
   // production launcher instead of falling back to 8787.

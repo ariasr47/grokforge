@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
-import { createInterface } from "node:readline";
+import { createInterface, type Interface } from "node:readline";
 import { isValidToolRunEvent } from "./types.js";
 import type {
   AcpClient,
@@ -48,6 +48,7 @@ export class StdioAcpClient implements AcpClient {
   /** When true, process exit is expected (dispose) — do not emit agent_exited. */
   private closing = false;
   private activeOwnership: AcpOwnership | null = null;
+  private rl: Interface | null = null;
 
   constructor(private readonly config: AgentSpawnConfig) {}
 
@@ -89,6 +90,8 @@ export class StdioAcpClient implements AcpClient {
     });
 
     this.child.on("exit", (code, signal) => {
+      this.rl?.close();
+      this.rl = null;
       for (const [, p] of this.pending) {
         p.reject(new Error(`Agent exited (code=${code}, signal=${signal})`));
       }
@@ -105,8 +108,8 @@ export class StdioAcpClient implements AcpClient {
       this.emit({ type: "done", reason: "agent_exited" });
     });
 
-    const rl = createInterface({ input: this.child.stdout });
-    rl.on("line", (line) => this.handleLine(line));
+    this.rl = createInterface({ input: this.child.stdout });
+    this.rl.on("line", (line) => this.handleLine(line));
 
     await this.request("initialize", {
       protocolVersion: 1,
@@ -155,6 +158,8 @@ export class StdioAcpClient implements AcpClient {
 
   async dispose(): Promise<void> {
     this.closing = true;
+    this.rl?.close();
+    this.rl = null;
     const child = this.child;
     this.child = null;
     if (!child) {
@@ -382,6 +387,30 @@ export class StdioAcpClient implements AcpClient {
           reason: p.reason ? String(p.reason) : undefined,
         });
         break;
+      case "project_instructions":
+      case "agent/project_instructions": {
+        const status = p.status;
+        const inclusion = p.inclusion;
+        const ok =
+          p.schemaVersion === 1 &&
+          (status === "present" || status === "absent" || status === "failed") &&
+          (inclusion === "included" || inclusion === "not_included" || inclusion === "failed") &&
+          (p.path === null || typeof p.path === "string") &&
+          (p.bodyByteLength === null || typeof p.bodyByteLength === "number");
+        if (!ok) {
+          this.emit({ type: "agent_log", level: "warn", message: "Malformed project_instructions notification ignored." });
+          break;
+        }
+        this.emit({
+          type: "project_instructions",
+          schemaVersion: 1,
+          status,
+          inclusion,
+          path: (p.path as string | null) ?? null,
+          bodyByteLength: (p.bodyByteLength as number | null) ?? null,
+        });
+        break;
+      }
       case "agent_log":
         this.emit({ type:"agent_log", level:(p.level === "warn" || p.level === "info" ? p.level : "debug"), message:String(p.message ?? "") });
         break;

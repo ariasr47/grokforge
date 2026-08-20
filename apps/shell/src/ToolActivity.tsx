@@ -170,14 +170,13 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
   const open = forceOpen === true || intent !== "explicit_closed";
   const bodyRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{ identity: string | null; offset: number; atEnd: boolean } | null>(null);
+  const prevToolsRef = useRef(tools);
 
-  // Capture the user's viewport before row/detail reconciliation mutates the
-  // bounded body. Cleanup runs before the next DOM commit; the following
-  // layout effect restores the same identity/offset unless the user was at end.
-  useLayoutEffect(() => {
-    return () => {
-      const body = bodyRef.current;
-      if (!body) return;
+  // Snapshot the inner viewport from the pre-commit DOM (still the previous
+  // rows). Layout-effect cleanup runs after mutations, so it cannot see atEnd.
+  if (prevToolsRef.current !== tools) {
+    const body = bodyRef.current;
+    if (body) {
       const rows = Array.from(body.querySelectorAll<HTMLElement>(".tool-row"));
       const first = rows.find((row) => row.getBoundingClientRect().bottom > body.getBoundingClientRect().top);
       const bodyRect = body.getBoundingClientRect();
@@ -186,8 +185,9 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
         offset: first ? first.getBoundingClientRect().top - bodyRect.top : 0,
         atEnd: body.scrollHeight - body.scrollTop - body.clientHeight <= 2,
       };
-    };
-  }, [tools]);
+    }
+    prevToolsRef.current = tools;
+  }
 
   useLayoutEffect(() => {
     const anchor = scrollAnchorRef.current;

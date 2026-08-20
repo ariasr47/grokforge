@@ -30,6 +30,11 @@ import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
+import {
+  composeSystemWithRecipe,
+  inclusionFromStatus,
+  resolveProjectInstructions,
+} from "./project-instructions.js";
 
 type JsonRpcId = number | string | null;
 
@@ -238,9 +243,28 @@ export class GrokAcpServer {
             }
             trimSessionMessages(session.messages);
           }
+          const owner = { sessionId, runId, connectionGeneration };
+          if (process.env.GROKFORGE_MODE?.trim().toLowerCase() !== "chat") {
+            const snap = await resolveProjectInstructions(this.workspaceRoot);
+            const base = systemPromptForMode(session.capability);
+            const content = composeSystemWithRecipe(base, snap);
+            if (session.messages[0]?.role === "system") {
+              session.messages[0].content = content;
+            } else {
+              session.messages.unshift({ role: "system", content });
+            }
+            this.notify("project_instructions", {
+              schemaVersion: 1,
+              type: "project_instructions",
+              status: snap.status,
+              inclusion: inclusionFromStatus(snap.status),
+              path: snap.path,
+              bodyByteLength:
+                snap.status === "present" ? Buffer.byteLength(snap.body, "utf8") : null,
+            }, owner);
+          }
           // Respond immediately; run agent loop async
           this.respond(id ?? null, { ok: true, accepted: true });
-          const owner = { sessionId, runId, connectionGeneration };
           const controller = new AbortController();
           this.activeRuns.set(sessionId, { owner, abort: controller, cancelled: false, executionPhase: session.executionPhase ?? "execute" });
           void this.runPrompt(session, prompt, { model, reasoning_effort, owner, signal: controller.signal }).finally(() => this.activeRuns.delete(sessionId));

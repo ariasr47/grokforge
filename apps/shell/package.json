@@ -9,7 +9,7 @@
     "test:e2e-tool-activity": "node scripts/e2e-tool-activity.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "node --import tsx --import ./src/testEnv.ts --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
+    "test": "node --max-old-space-size=1024 --import tsx --import ./src/testEnv.ts --test --test-timeout=30000 \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev:channel": "tauri dev --config src-tauri/tauri.conf.dev.json",

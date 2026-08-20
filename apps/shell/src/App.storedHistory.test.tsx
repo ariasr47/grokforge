@@ -49,7 +49,9 @@ describe("F4 — stored-history branch of launch failure (AC-U6, AC-U7)", () => 
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
-    await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")));
+    await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")), {
+      timeout: 5000,
+    });
 
     // (a) the saved-conversations line renders
     assert.ok(
@@ -80,7 +82,9 @@ describe("F4 — stored-history branch of launch failure (AC-U6, AC-U7)", () => 
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
-    await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")));
+    await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")), {
+      timeout: 5000,
+    });
 
     assert.equal(
       screen.queryByText(

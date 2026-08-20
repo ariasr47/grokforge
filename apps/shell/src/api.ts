@@ -188,6 +188,13 @@ export type PlanEngagementView = {
   vouched: boolean;
 };
 
+/** Workspace recipe presence for the bound root. Bound as PublicState.projectInstructions. */
+export type ProjectInstructionsPresenceView = {
+  status: "present" | "absent" | "failed";
+  path: string | null;
+  vouched: boolean;
+};
+
 export interface PublicState {
   workspace: string | null;
   workspaceName: string | null;
@@ -240,6 +247,11 @@ export interface PublicState {
    * never invent `{ engaged: false, vouched: true }`.
    */
   planEngagement?: PlanEngagementView;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing field → composer treats as unvouched / loading — never invents a path.
+   */
+  projectInstructions?: ProjectInstructionsPresenceView;
 }
 
 export type ShellCapabilityView =
@@ -811,6 +823,7 @@ export class HostSocket {
   private onStatus?: (connected: boolean) => void;
   private attempt = 0;
   private cursors: Array<{ sessionId: string; runId: string; afterEventSeq: number }> = [];
+  private cursorKey = "";
 
   constructor(opts?: { onStatus?: (connected: boolean) => void }) {
     this.onStatus = opts?.onStatus;
@@ -861,6 +874,9 @@ export class HostSocket {
   }
 
   resume(cursors: Array<{ sessionId: string; runId: string; afterEventSeq: number }>): void {
+    const key = JSON.stringify(cursors);
+    if (key === this.cursorKey) return;
+    this.cursorKey = key;
     this.cursors = cursors;
     this.send({ type: "resume_runs", cursors });
   }

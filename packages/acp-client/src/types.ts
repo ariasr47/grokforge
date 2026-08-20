@@ -34,7 +34,15 @@ export type AcpUiEvent =
       status?: number;
     }
   | { type: "done"; reason?: string }
-  | { type: "agent_log"; level: "debug" | "info" | "warn"; message: string };
+  | { type: "agent_log"; level: "debug" | "info" | "warn"; message: string }
+  | {
+      type: "project_instructions";
+      schemaVersion: 1;
+      status: "present" | "absent" | "failed";
+      inclusion: "included" | "not_included" | "failed";
+      path: string | null;
+      bodyByteLength: number | null;
+    };
 
 export type AuthMode = "signed_out" | "api_key" | "sub_pool";
 

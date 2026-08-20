@@ -62,7 +62,9 @@ describe("F6 — terminal failure state after bounded recovery attempts (AC18)",
       globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
       render(<App />);
-      await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")));
+      await waitFor(() => assert.ok(document.querySelector(".launch-failure-card")), {
+        timeout: 5000,
+      });
       assert.equal(document.querySelector(".boot-spinner"), null);
 
       for (let i = 1; i <= 3; i++) {

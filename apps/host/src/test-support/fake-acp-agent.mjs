@@ -101,6 +101,57 @@ rl.on("line", (line) => {
           write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
           return;
         }
+        if (FIXTURE === "project-instructions-included") {
+          write({
+            jsonrpc: "2.0",
+            method: "project_instructions",
+            params: {
+              schemaVersion: 1,
+              type: "project_instructions",
+              status: "present",
+              inclusion: "included",
+              path: "CLAUDE.md",
+              bodyByteLength: 12,
+            },
+          });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok with recipe" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "project-instructions-failed") {
+          write({
+            jsonrpc: "2.0",
+            method: "project_instructions",
+            params: {
+              schemaVersion: 1,
+              type: "project_instructions",
+              status: "failed",
+              inclusion: "failed",
+              path: "AGENTS.md",
+              bodyByteLength: null,
+            },
+          });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok without recipe" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "project-instructions-absent") {
+          write({
+            jsonrpc: "2.0",
+            method: "project_instructions",
+            params: {
+              schemaVersion: 1,
+              type: "project_instructions",
+              status: "absent",
+              inclusion: "not_included",
+              path: null,
+              bodyByteLength: null,
+            },
+          });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok empty recipe" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
         if (FIXTURE === "plan-write-attempt") {
           write({ jsonrpc: "2.0", method: "tool_run", params: { schemaVersion: 2, type: "tool_run", activityId: "plan-write", toolCallId: "plan-write", lifecycle: "pending", execution: null, status: "running", name: "write_file", input: { path: "mutated.txt", content: "nope" }, summary: null, command: null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: "Command Prompt (cmd.exe)", detailAvailable: true } });
           write({ jsonrpc: "2.0", method: "tool_run", params: { schemaVersion: 2, type: "tool_run", activityId: "plan-write", toolCallId: "plan-write", lifecycle: "terminal", execution: "not_executed", status: "rejected", name: "write_file", input: { path: "mutated.txt", content: "nope" }, summary: null, command: null, output: "{\"error\":\"Plan phase refuses mutations\",\"execution\":\"not_executed\",\"reasonCode\":\"plan_phase_refused\"}", error: null, reasonCode: "plan_phase_refused", reason: "Plan phase: edits and non-inspection shell are not executed", shellDisplayName: "Command Prompt (cmd.exe)", detailAvailable: true } });

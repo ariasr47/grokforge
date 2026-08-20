@@ -91,6 +91,7 @@ function PathRow({
         open={expanded}
         onToggle={(ev) => {
           const nextOpen = (ev.currentTarget as HTMLDetailsElement).open;
+          if (nextOpen === expanded) return;
           setExpanded(nextOpen);
           if (member.settlement === "pending" && member.requestId && nextOpen) {
             onFocusDock?.(member.requestId);

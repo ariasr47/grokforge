@@ -2,6 +2,9 @@ export interface PermissionReq {
   id: string;
   kind: "write" | "shell";
   detail: string;
+  sessionId: string;
+  runId: string;
+  invocationId: string;
 }
 
 interface Props {

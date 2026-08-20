@@ -35,6 +35,8 @@ import {
   planArmFailureCopy,
   projectPlanArm,
 } from "./planArm";
+import { projectProjectInstructionsComposer } from "./projectInstructionsComposer";
+import { ProjectInstructionsStatus } from "./ProjectInstructionsStatus";
 import { isLivePlanning } from "./runPlanSection";
 import {
   isOnboardingDone,
@@ -120,7 +122,12 @@ import {
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
 import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
-import { mergePendingDiffs } from "./runChangeList";
+import {
+  hasDockOwnedPending,
+  mergePendingDiffs,
+  mergePendingPermissions,
+  railEvidenceFromRun,
+} from "./runChangeList";
 import {
   appliedThroughLastEventSeq,
   catchUpForRun,
@@ -302,7 +309,6 @@ export function App() {
   const nextActivityRunCounterRef = useRef(0);
   const liveActivityRunRef = useRef<LiveActivityRun | null>(null);
   const activityRevealRef = useRef<string | null>(null);
-  const activityOuterStickDisabledRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = state;
@@ -344,7 +350,6 @@ export function App() {
       eventEpochRef.current,
       `activity-run:${counter}`,
     );
-    activityOuterStickDisabledRef.current = false;
     streamBufRef.current?.reset();
     streamIdRef.current = null;
     thinkingIdRef.current = null;
@@ -489,10 +494,6 @@ export function App() {
     const el = transcriptRef.current;
     if (!el) return;
     const onScroll = () => {
-      if (activityOuterStickDisabledRef.current) {
-        stickToBottomRef.current = false;
-        return;
-      }
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       stickToBottomRef.current = gap < 96;
     };
@@ -680,16 +681,78 @@ export function App() {
       const wasFirstSight = run.acceptingFirstSight && !run.seen.has(identity);
       const stamp = stampFirstSight(run, identity);
       if (wasFirstSight && stamp) {
-        // Activity owns its bounded viewport. Once its first sight is painted,
-        // transcript mutations must not pull the outer scroll owner to bottom.
-        activityOuterStickDisabledRef.current = true;
-        stickToBottomRef.current = false;
         activityRevealRef.current = stamp.activityRunKey;
       }
       return stamp;
     },
     [],
   );
+
+  const applyRailEvidence = useCallback((nextRun: NonNullable<RunProjection["runsById"][string]>) => {
+    const evidence = railEvidenceFromRun(nextRun);
+    if (evidence.length === 0) return;
+    setMessages((prev) => {
+      let changed = false;
+      const next = prev.slice();
+      const identities = new Set(prev.map((m) => m.activityIdentity).filter((id): id is string => Boolean(id)));
+      for (const item of evidence) {
+        if (identities.has(item.identity)) continue;
+        if (next.some((m) => m.role === "system" && m.content === item.content)) continue;
+        const stamp = stampActivity(item.identity);
+        next.push({
+          id: `rail-${item.identity}`,
+          role: "system",
+          content: item.content,
+          activityIdentity: stamp?.activityIdentity ?? item.identity,
+          activityRunKey: stamp?.activityRunKey,
+          activityOrder: stamp?.activityOrder,
+        });
+        identities.add(item.identity);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [stampActivity]);
+  const applyRailEvidenceRef = useRef(applyRailEvidence);
+  applyRailEvidenceRef.current = applyRailEvidence;
+
+  const paintEnvelopeActivity = useCallback((activity: import("./runReducer").ActivityRecord) => {
+    const identity = `tool:${activity.activityId}:${activity.invocationId}`;
+    const stamp = stampActivity(identity);
+    if (!stamp) return;
+    const body = activity.output != null ? formatToolOutput(activity.output) : "";
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.role === "tool" && m.activityIdentity === identity);
+      const entry: ChatMessage = {
+        id: activity.activityId,
+        role: "tool",
+        content: body || (activity.input != null ? formatToolInput(activity.input) : ""),
+        activityIdentity: stamp.activityIdentity,
+        activityRunKey: stamp.activityRunKey,
+        activityOrder: stamp.activityOrder,
+        toolMeta: {
+          activityId: activity.activityId,
+          toolCallId: activity.invocationId,
+          name: activity.name,
+          summary: activity.command ?? activity.path ?? undefined,
+          ok: activity.execution === "executed" ? activity.status === "succeeded" : undefined,
+          done: activity.lifecycle === "terminal",
+          lifecycle: activity.lifecycle,
+          execution: activity.execution,
+          status: activity.status,
+          command: activity.command,
+        },
+      };
+      if (idx >= 0) {
+        const next = prev.slice();
+        next[idx] = { ...next[idx]!, ...entry, toolMeta: { ...next[idx]!.toolMeta, ...entry.toolMeta } };
+        return next;
+      }
+      return [...prev, entry];
+    });
+  }, [stampActivity]);
+  const paintEnvelopeActivityRef = useRef(paintEnvelopeActivity);
+  paintEnvelopeActivityRef.current = paintEnvelopeActivity;
 
   const markDisconnectedActivity = useCallback(() => {
     const run = liveActivityRunRef.current;
@@ -714,7 +777,9 @@ export function App() {
       }
       // Sequential live envelopes must reduce from the latest snapshot, not
       // a batched updater. Dock pending is rebuilt from durable evidence.
-      const next = reduceRunEvent(runProjectionRef.current, runEvent);
+      const prevProjection = runProjectionRef.current;
+      const next = reduceRunEvent(prevProjection, runEvent);
+      if (next === prevProjection) return;
       runProjectionRef.current = next;
       setRunProjection(next);
       const nextRun = next.runsById[runEvent.runId];
@@ -723,6 +788,11 @@ export function App() {
         (runEvent.payload.kind === "decision_request" || runEvent.payload.kind === "activity_update")
       ) {
         setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+        setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+        applyRailEvidenceRef.current(nextRun);
+        if (runEvent.payload.kind === "activity_update") {
+          paintEnvelopeActivityRef.current(runEvent.payload.activity);
+        }
       }
       if (runEvent.payload.kind === "run_terminal") {
         setRunStartedAt(null);
@@ -1002,7 +1072,17 @@ export function App() {
       if (!stamp) return;
       setPermissions((q) => {
         if (q.some((p) => p.id === ev.id)) return q;
-        return [...q, { id: ev.id, kind: ev.kind, detail: ev.detail }];
+        const owner = Object.values(runProjectionRef.current.runsById).find(
+          (r) => r.state !== "terminal",
+        );
+        return [...q, {
+          id: ev.id,
+          kind: ev.kind,
+          detail: ev.detail,
+          sessionId: owner?.sessionId ?? "",
+          runId: owner?.runId ?? "",
+          invocationId: ev.id,
+        }];
       });
       setMessages((prev) => {
         if (prev.some((m) => m.activityIdentity === stamp.activityIdentity)) return prev;
@@ -1350,7 +1430,11 @@ export function App() {
       const nextRun = next.runsById[run.runId];
       runProjectionRef.current = next;
       setRunProjection(next);
-      if (nextRun) setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+      if (nextRun) {
+        setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+        setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+        applyRailEvidenceRef.current(nextRun);
+      }
       if (openWindow) {
         const applied = nextRun?.lastEventSeq ?? 0;
         if (appliedThroughLastEventSeq(applied, replay.run.lastEventSeq)) {
@@ -1558,6 +1642,12 @@ export function App() {
     busyOther: Boolean(activeRun && !isLivePlanning(activeRun)),
     armError: planArmError,
   });
+  const projectInstructionsComposer = projectProjectInstructionsComposer({
+    mode: productMode,
+    workspace: state?.workspace ?? null,
+    connected,
+    projectInstructions: state?.projectInstructions,
+  });
   const effortLevel: EffortLevel =
     state?.effort === "fast" ||
     state?.effort === "expert" ||
@@ -1738,6 +1828,19 @@ export function App() {
     [reportError],
   );
 
+  const sessionHasNonTerminalRun = activeRun != null;
+  const sessionHasDockOwnedPending = useMemo(() => {
+    return runProjection.runOrder.some((id) => {
+      const run = runProjection.runsById[id];
+      return Boolean(run && run.sessionId === sessionId && hasDockOwnedPending(run));
+    });
+  }, [runProjection, sessionId]);
+  const turnReady =
+    !sessionHasNonTerminalRun &&
+    !sessionHasDockOwnedPending &&
+    awaitingNextTurn &&
+    visibleMessages.length > 0;
+
   const sendDisabledReason = useMemo(() => {
     if (!connected) return "Engine offline — try again to send";
     if (productMode === "code" && !state?.workspace)
@@ -1746,14 +1849,12 @@ export function App() {
     if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
       return PLAN_ARM_BLOCKED_UNVOUCHED;
     }
-    if (runProjection.runOrder.some((id) => {
-      const run = runProjection.runsById[id];
-      return run?.sessionId === sessionId && run.state !== "terminal";
-    })) return "A run is in progress";
+    if (sessionHasNonTerminalRun) return "A run is in progress";
+    if (sessionHasDockOwnedPending) return "Attention required";
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
     if (!draft.trim()) return "Type a message to send";
     return null;
-  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, runProjection, sessionId, draft]);
+  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft]);
   const overview = useMemo(
     () =>
       computeOverview(
@@ -2169,13 +2270,26 @@ export function App() {
     async (decision: "allow_once" | "allow_session" | "deny") => {
       const p = permissions[0];
       if (!p) return;
-      setPermissions((q) => q.filter((x) => x.id !== p.id));
-      if (decision === "allow_session") {
-        if (p.kind === "write") setSessionWrite(true);
-        if (p.kind === "shell") setSessionShell(true);
-      }
       try {
-        await api.permission(p.id, decision);
+        await api.runPermission({
+          sessionId: p.sessionId,
+          runId: p.runId,
+          requestId: p.id,
+          invocationId: p.invocationId,
+          decision,
+        });
+        if (decision === "allow_session") {
+          if (p.kind === "write") setSessionWrite(true);
+          if (p.kind === "shell") setSessionShell(true);
+        }
+        setPermissions((prev) => {
+          const owner = runProjectionRef.current.runsById[p.runId];
+          const stillPending = owner && Object.values(owner.decisions).some(
+            (d) => d.requestId === p.id && d.kind === "permission" && d.status === "pending",
+          );
+          if (stillPending) return prev;
+          return prev.filter((x) => x.id !== p.id);
+        });
         toast.push(
           decision === "deny"
             ? `Denied ${p.kind}`
@@ -2189,71 +2303,118 @@ export function App() {
     [permissions, reportError, toast],
   );
 
+  const settleOwnedDiff = useCallback(async (id: string, action: "accept" | "reject") => {
+    const owner = runProjectionRef.current.runOrder
+      .map((runId) => runProjectionRef.current.runsById[runId])
+      .find((run) => run && Object.values(run.decisions).some((d) => d.kind === "diff" && d.requestId === id));
+    const decision = owner
+      ? Object.values(owner.decisions).find((d) => d.kind === "diff" && d.requestId === id)
+      : undefined;
+    const activity = owner && decision
+      ? Object.values(owner.activities).find(
+          (a) => a.editId && (a.invocationId === decision.invocationId || a.editId === decision.requestId),
+        )
+      : undefined;
+    if (owner && decision && activity?.editId) {
+      await api.runDiff({
+        sessionId: owner.sessionId,
+        runId: owner.runId,
+        requestId: decision.requestId,
+        invocationId: decision.invocationId,
+        editId: activity.editId,
+        action,
+      });
+    } else {
+      await api.diff(id, action);
+    }
+    return Boolean(owner && decision && decision.status === "pending");
+  }, []);
+
   const acceptDiff = useCallback(async (id: string) => {
     try {
-      await api.diff(id, "accept");
-      setDiffQueue((q) => q.filter((d) => d.id !== id));
+      const envelopePending = await settleOwnedDiff(id, "accept");
+      if (!envelopePending) setDiffQueue((q) => q.filter((d) => d.id !== id));
+      else {
+        const latest = Object.values(runProjectionRef.current.runsById)
+          .flatMap((run) => Object.values(run.decisions))
+          .find((d) => d.requestId === id);
+        if (!latest || latest.status !== "pending") {
+          setDiffQueue((q) => q.filter((d) => d.id !== id));
+        }
+      }
       toast.push("Diff accepted", "success");
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err));
     }
-  }, [reportError, toast]);
+  }, [reportError, settleOwnedDiff, toast]);
 
   const rejectDiff = useCallback(async (id: string) => {
     try {
-      await api.diff(id, "reject");
-      setDiffQueue((q) => q.filter((d) => d.id !== id));
+      const envelopePending = await settleOwnedDiff(id, "reject");
+      if (!envelopePending) setDiffQueue((q) => q.filter((d) => d.id !== id));
+      else {
+        const latest = Object.values(runProjectionRef.current.runsById)
+          .flatMap((run) => Object.values(run.decisions))
+          .find((d) => d.requestId === id);
+        if (!latest || latest.status !== "pending") {
+          setDiffQueue((q) => q.filter((d) => d.id !== id));
+        }
+      }
       toast.push("Diff rejected", "info");
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err));
     }
-  }, [reportError, toast]);
+  }, [reportError, settleOwnedDiff, toast]);
 
   const acceptAllDiffs = useCallback(async () => {
     const ids = diffQueue.map((d) => d.id);
     let ok = 0;
     let fail = 0;
     const failed = new Set<string>();
+    const keepEnvelope = new Set<string>();
     for (const id of ids) {
       try {
-        await api.diff(id, "accept");
+        const envelopePending = await settleOwnedDiff(id, "accept");
         ok += 1;
+        if (envelopePending) keepEnvelope.add(id);
       } catch {
         fail += 1;
         failed.add(id);
       }
     }
-    setDiffQueue((q) => q.filter((d) => failed.has(d.id)));
+    setDiffQueue((q) => q.filter((d) => failed.has(d.id) || keepEnvelope.has(d.id)));
     toast.push(
       fail
         ? `Accepted ${ok}, failed ${fail}`
         : `Accepted ${ok} file${ok === 1 ? "" : "s"}`,
       fail ? "error" : "success",
     );
-  }, [diffQueue, toast]);
+  }, [diffQueue, settleOwnedDiff, toast]);
 
   const rejectAllDiffs = useCallback(async () => {
     const ids = diffQueue.map((d) => d.id);
     let ok = 0;
     let fail = 0;
     const failed = new Set<string>();
+    const keepEnvelope = new Set<string>();
     for (const id of ids) {
       try {
-        await api.diff(id, "reject");
+        const envelopePending = await settleOwnedDiff(id, "reject");
         ok += 1;
+        if (envelopePending) keepEnvelope.add(id);
       } catch {
         fail += 1;
         failed.add(id);
       }
     }
-    setDiffQueue((q) => q.filter((d) => failed.has(d.id)));
+    setDiffQueue((q) => q.filter((d) => failed.has(d.id) || keepEnvelope.has(d.id)));
     toast.push(
       fail
         ? `Rejected ${ok}, failed ${fail}`
         : `Rejected ${ok} file${ok === 1 ? "" : "s"}`,
       fail ? "error" : "info",
     );
-  }, [diffQueue, toast]);
+  }, [diffQueue, settleOwnedDiff, toast]);
 
   const openToolPath = useCallback(async (path: string) => {
     setPeek({ path, content: "Loading…" });
@@ -3928,7 +4089,7 @@ export function App() {
                   <>
                     {runProjection.runOrder.map((id) => {
                       const run = runProjection.runsById[id];
-                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} /> : null;
+                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} productMode={productMode} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} /> : null;
                     })}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
@@ -3949,9 +4110,7 @@ export function App() {
                       messages={visibleMessages}
                       busy={normalizedRunVisible ? false : busy || Boolean(runStartedAt)}
                       thinkingDetail={runPhaseDetail}
-                      showTurnDelimiter={
-                        awaitingNextTurn && visibleMessages.length > 0 && !busy
-                      }
+                      showTurnDelimiter={turnReady}
                       lastUserId={lastUserId}
                       lastAssistantId={lastAssistantId}
                       onRetryUser={retryLastUser}
@@ -4121,6 +4280,9 @@ export function App() {
                       onToggle={(engaged) => void setPlanEngagementUi(engaged)}
                       onRetry={() => void setPlanEngagementUi(true)}
                     />
+                  ) : null}
+                  {projectInstructionsComposer.state !== "absent_chat" ? (
+                    <ProjectInstructionsStatus projection={projectInstructionsComposer} />
                   ) : null}
                   <span className="composer-meta">
                     {productMode === "chat"

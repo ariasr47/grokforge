@@ -110,17 +110,23 @@ test("bypass active state is visibly exceptional and has an exit action", () => 
   assert.ok(screen.getByRole("status"));
   assert.ok(screen.getByRole("button", { name: "Exit Bypass permissions" }));
 });
+function assertFocused(control: Element, label: string): void {
+  // Never pass jsdom nodes to assert.equal — a failing inspect walks circular
+  // React-fiber refs and can fill tens of GB (desktop-self-host N-9 lesson).
+  assert.equal(document.activeElement === control, true, `${label} is not keyboard reachable`);
+}
+
 test("focus remains on native controls and statuses are text-labelled", () => {
   render(<PermissionPolicyControl status="saving" confirmedMode="trusted_workspace" />);
   const input = screen.getByRole("radio", { name: /Review/ }) as HTMLInputElement;
   input.focus();
-  assert.equal(document.activeElement, input);
+  assertFocused(input, "Review");
   assert.ok(screen.getByText(/Saving permission policy/i));
 });
 test("run actions are keyboard reachable and transition status is announced without delta chatter", async () => {
   const activity = { activityId: "a", invocationId: "i", name: "write", lifecycle: "terminal", execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "text_edit", autoApplied: true, editId: "edit-1", recovery: { kind: "guarded_revert", available: true, status: "available" } } as any;
   render(<RunSurface run={run({ activities: { a: activity }, state: "cancelling" })} />);
-  const recover = screen.getByRole("button", { name: "Revert edit" }); recover.focus(); assert.equal(document.activeElement, recover);
+  const recover = screen.getByRole("button", { name: "Revert edit" }); recover.focus(); assertFocused(recover, "Revert edit");
   assert.ok(screen.getByRole("status", { name: "" }));
   assert.ok(screen.getByText("Ending run…"));
   assert.equal(screen.queryByText(/reasoning_delta|answer_delta/), null);
@@ -164,7 +170,15 @@ test("all action controls retain visible focus and announcements transition with
   const activity = { activityId: "focus", invocationId: "focus-inv", name: "write", lifecycle: "terminal", execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "text_edit", autoApplied: true, editId: "focus-edit", recovery: { kind: "guarded_revert", available: true, status: "available" } } as any;
   const decision = { requestId: "perm", invocationId: "focus-inv", kind: "permission", status: "pending", title: "Approval needed · Review", detail: "Allow?", expiresAt: null, policy: {} } as any;
   const { rerender } = render(<RunSurface run={run({ activities: { focus: activity }, decisions: { perm: decision }, state: "running" })} />);
-  for (const name of ["Allow", "Decline", "Revert edit", "View diff"]) { const control = screen.getByRole("button", { name }); control.focus(); assert.equal(document.activeElement, control, `${name} is not keyboard reachable`); }
+  const allow = screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement;
+  const decline = screen.getByRole("button", { name: "Decline" }) as HTMLButtonElement;
+  assert.equal(allow.disabled, true, "RunSurface Allow is evidence-only");
+  assert.equal(decline.disabled, true, "RunSurface Decline is evidence-only");
+  for (const name of ["Revert edit", "View diff"]) {
+    const control = screen.getByRole("button", { name });
+    control.focus();
+    assertFocused(control, name);
+  }
   assert.ok(screen.getByRole("status"));
   rerender(<RunSurface run={run({ state: "running", reasoning: { one: "delta" }, activities: { focus: activity }, decisions: { perm: decision } })} />);
   assert.equal(screen.queryAllByRole("alert").length, 0, "reasoning deltas must not announce as alerts");
@@ -181,10 +195,13 @@ test("routes diff decisions with edit identity and prevents duplicate submits", 
   try {
     const activity = { activityId: "a", invocationId: "i", name: "write", lifecycle: "pending", execution: "executed", status: "running", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "none", autoApplied: false, editId: "edit-1", recovery: null } as any;
     render(<RunSurface run={run({ decisions: { d: { requestId: "d", invocationId: "i", kind: "diff", status: "pending", title: "Review edit", detail: "", expiresAt: null, policy: {} } }, activities: { a: activity } })} />);
-    const accept = screen.getByRole("button", { name: "Accept" });
+    const accept = screen.getByRole("button", { name: "Accept" }) as HTMLButtonElement;
+    const reject = screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement;
+    assert.equal(accept.disabled, true, "RunSurface Accept is evidence-only");
+    assert.equal(reject.disabled, true, "RunSurface Reject is evidence-only");
     fireEvent.click(accept); fireEvent.click(accept);
     await new Promise(r => setTimeout(r, 30));
-    assert.equal(calls, 1);
+    assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.runDiff = original; }
 });
 

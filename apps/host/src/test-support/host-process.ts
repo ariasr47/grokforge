@@ -57,13 +57,20 @@ export async function startHost(opts: {
     },
   );
 
+  // Cap captured logs: a leaked or chatty host used to concatenate unbounded
+  // stdout/stderr into the parent test process (the RAM balloon).
+  const MAX_LOG = 64 * 1024;
   let stderr = "";
   let stdout = "";
+  const appendLog = (prev: string, chunk: Buffer) => {
+    const next = prev + chunk.toString("utf8");
+    return next.length > MAX_LOG ? next.slice(next.length - MAX_LOG) : next;
+  };
   proc.stderr?.on("data", (c: Buffer) => {
-    stderr += c.toString("utf8");
+    stderr = appendLog(stderr, c);
   });
   proc.stdout?.on("data", (c: Buffer) => {
-    stdout += c.toString("utf8");
+    stdout = appendLog(stdout, c);
   });
 
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -94,47 +101,44 @@ export async function startHost(opts: {
 }
 
 export function stopProcess(proc: ChildProcess): Promise<void> {
-  return new Promise(resolve => {
-    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-    let settled=false; const done=()=>{if(!settled){settled=true;resolve();}};
-    proc.once("exit", done);
-    if (process.platform === "win32" && proc.pid) {
-      execFile("taskkill", ["/PID", String(proc.pid), "/T", "/F"], () => done());
-    } else { try { proc.kill(); } catch { done(); } }
-    setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} done(); }, 3000);
-  });
-}
-
-function stopHost(proc: ChildProcess, homeDir: string): Promise<void> {
   return new Promise((resolve) => {
-    const cleanup = () => {
-      try {
-        fs.rmSync(homeDir, { recursive: true, force: true });
-      } catch {
-        /* best effort */
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+    let settled = false;
+    const done = () => {
+      if (!settled) {
+        settled = true;
+        resolve();
       }
-      resolve();
     };
-    if (proc.exitCode !== null || proc.signalCode !== null) {
-      cleanup();
-      return;
+    proc.once("exit", done);
+    // Windows does not kill the ACP grandchild on proc.kill(). The shell
+    // helper already tree-kills for this reason; host.stop() used to leak
+    // those Node children until RAM ballooned.
+    if (process.platform === "win32" && proc.pid) {
+      execFile("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { windowsHide: true }, () => undefined);
+    } else {
+      try {
+        proc.kill();
+      } catch {
+        done();
+      }
     }
-    const t = setTimeout(() => {
+    setTimeout(() => {
       try {
         proc.kill("SIGKILL");
       } catch {
         /* ignore */
       }
+      done();
     }, 3000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      cleanup();
-    });
-    try {
-      proc.kill();
-    } catch {
-      clearTimeout(t);
-      cleanup();
-    }
   });
+}
+
+async function stopHost(proc: ChildProcess, homeDir: string): Promise<void> {
+  await stopProcess(proc);
+  try {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  } catch {
+    /* best effort */
+  }
 }

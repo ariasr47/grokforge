@@ -4,7 +4,34 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ToolActivityGroup } from "./ToolActivity.js";
 import type { ChatMessage } from "./messageBlocks.js";
 
-afterEach(() => cleanup());
+const proto = HTMLElement.prototype;
+const originalClientHeight = Object.getOwnPropertyDescriptor(proto, "clientHeight");
+const originalScrollHeight = Object.getOwnPropertyDescriptor(proto, "scrollHeight");
+const originalScrollTop = Object.getOwnPropertyDescriptor(proto, "scrollTop");
+
+afterEach(() => {
+  cleanup();
+  restoreFollowGeometry();
+});
+
+function restoreFollowGeometry(): void {
+  restoreGeometryProperty("clientHeight", originalClientHeight);
+  restoreGeometryProperty("scrollHeight", originalScrollHeight);
+  restoreGeometryProperty("scrollTop", originalScrollTop);
+}
+
+function restoreGeometryProperty(
+  name: "clientHeight" | "scrollHeight" | "scrollTop",
+  original: PropertyDescriptor | undefined,
+): void {
+  if (original) {
+    Object.defineProperty(proto, name, original);
+    return;
+  }
+  // jsdom keeps these getters on Element.prototype; the follow patch
+  // installs own properties on HTMLElement.prototype that must be deleted.
+  delete (proto as unknown as Record<string, unknown>)[name];
+}
 
 function row(i: number, status: "ok" | "pending" | "fail" | "not-run" = "ok"): ChatMessage {
   return {
@@ -44,4 +71,85 @@ test("explicit collapse persists and body is keyboard reachable", () => {
   const body = screen.getByRole("region", { name: "Tool activity details" });
   assert.equal(body.getAttribute("tabindex"), "0");
   assert.ok(screen.getAllByText("Completed").length >= 2);
+});
+
+const followScrollTop = new WeakMap<HTMLElement, number>();
+
+function installInnerFollowGeometry(): void {
+  const proto = HTMLElement.prototype;
+  Object.defineProperty(proto, "clientHeight", {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).classList?.contains("tool-activity-body") ? 40 : 0;
+    },
+  });
+  Object.defineProperty(proto, "scrollHeight", {
+    configurable: true,
+    get() {
+      const el = this as HTMLElement;
+      if (!el.classList?.contains("tool-activity-body")) return 0;
+      return el.querySelectorAll(".tool-row").length * 20;
+    },
+  });
+  Object.defineProperty(proto, "scrollTop", {
+    configurable: true,
+    get() {
+      return followScrollTop.get(this as HTMLElement) ?? 0;
+    },
+    set(value: number) {
+      followScrollTop.set(this as HTMLElement, value);
+    },
+  });
+}
+
+function activityBody(): HTMLElement {
+  return screen.getByRole("region", { name: "Tool activity details" });
+}
+
+test("inner follow keeps latest row when atEnd gap <= 2", () => {
+  installInnerFollowGeometry();
+  const initial = Array.from({ length: 5 }, (_, i) => row(i));
+  const { rerender } = render(<ToolActivityGroup tools={initial} groupKey="activity-run:follow" />);
+  followScrollTop.set(activityBody(), activityBody().scrollHeight - activityBody().clientHeight);
+  rerender(<ToolActivityGroup tools={[...initial]} groupKey="activity-run:follow" />);
+  const grown = [...initial, row(5), row(6)];
+  rerender(<ToolActivityGroup tools={grown} groupKey="activity-run:follow" />);
+  const body = activityBody();
+  assert.equal(body.querySelectorAll(".tool-row").length, grown.length);
+  assert.equal(body.scrollTop, grown.length * 20 - 40);
+});
+
+test("inner follow does not jump when gap > 2", () => {
+  installInnerFollowGeometry();
+  const initial = Array.from({ length: 5 }, (_, i) => row(i));
+  const { rerender } = render(<ToolActivityGroup tools={initial} groupKey="activity-run:away" />);
+  followScrollTop.set(activityBody(), 0);
+  rerender(<ToolActivityGroup tools={[...initial]} groupKey="activity-run:away" />);
+  rerender(<ToolActivityGroup tools={[...initial, row(5)]} groupKey="activity-run:away" />);
+  assert.equal(activityBody().scrollTop, 0);
+});
+
+test("returning to atEnd resumes follow", () => {
+  installInnerFollowGeometry();
+  const initial = Array.from({ length: 5 }, (_, i) => row(i));
+  const { rerender } = render(<ToolActivityGroup tools={initial} groupKey="activity-run:resume" />);
+  followScrollTop.set(activityBody(), 0);
+  rerender(<ToolActivityGroup tools={[...initial]} groupKey="activity-run:resume" />);
+  rerender(<ToolActivityGroup tools={[...initial, row(5)]} groupKey="activity-run:resume" />);
+  assert.equal(activityBody().scrollTop, 0);
+  followScrollTop.set(activityBody(), activityBody().scrollHeight - activityBody().clientHeight);
+  const more = [...initial, row(5), row(6), row(7)];
+  rerender(<ToolActivityGroup tools={more} groupKey="activity-run:resume" />);
+  assert.equal(activityBody().scrollTop, more.length * 20 - 40);
+});
+
+test("explicit collapse mid-burst does not auto-expand on new rows", () => {
+  const initial = [row(1), row(2)];
+  const { rerender } = render(<ToolActivityGroup tools={initial} groupKey="activity-run:collapse" />);
+  const head = screen.getByRole("button", { name: /tool activity/i });
+  fireEvent.click(head);
+  assert.equal(head.getAttribute("aria-expanded"), "false");
+  rerender(<ToolActivityGroup tools={[...initial, row(3), row(4)]} groupKey="activity-run:collapse" />);
+  assert.equal(head.getAttribute("aria-expanded"), "false");
+  assert.equal(screen.queryByRole("region", { name: "Tool activity details" }), null);
 });

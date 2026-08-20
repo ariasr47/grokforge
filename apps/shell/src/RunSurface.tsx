@@ -2,15 +2,19 @@ import React from "react";
 void React;
 import type { ActivityRecord, RunProjectionRun } from "./runReducer";
 import { RunTerminalNotice } from "./RunTerminalNotice";
-import { api } from "./api";
+import { api, type ProductMode } from "./api";
 import { useEffect, useState } from "react";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
 import { FileChangesSection } from "./FileChangesSection";
 import { projectRunVerifyList } from "./runVerifyList";
 import { VerifySection } from "./VerifySection";
+import { projectRunGitReviewList } from "./runGitReviewList";
+import { GitReviewSection } from "./GitReviewSection";
 import { projectRunPlanSection } from "./runPlanSection";
 import { PlanSection } from "./PlanSection";
+import { projectProjectInstructionsTurn } from "./projectInstructionsTurn";
+import { ProjectInstructionsTurnChip } from "./ProjectInstructionsTurnChip";
 
 const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
 const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
@@ -37,13 +41,14 @@ export interface RunSurfaceProps {
   run: RunProjectionRun;
   catchUp?: CatchUpSignal;
   offline?: boolean;
+  productMode?: ProductMode | string | null;
   onRetryPrompt?: (prompt: string) => void;
   onReconnect?: () => void;
   onOpenSettings?: () => void;
   onExportDiagnostics?: () => void;
   onFocusDiffRequest?: (requestId: string) => void;
 }
-export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest }: RunSurfaceProps) {
+export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
@@ -94,7 +99,15 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
   }
   const changeList = projectRunChangeList(run, catchUp);
   const verifyList = projectRunVerifyList(run, catchUp);
+  const gitReviewList = projectRunGitReviewList(run, catchUp);
+  const activityStatusById = new Map(
+    Object.values(run.activities).map((a) => [a.activityId, a.status] as const),
+  );
+  const activityLifecycleById = new Map(
+    Object.values(run.activities).map((a) => [a.activityId, a.lifecycle] as const),
+  );
   const planSection = projectRunPlanSection(run, catchUp, { connected: !offline });
+  const projectInstructionsTurn = projectProjectInstructionsTurn(run, catchUp, { mode: productMode });
   const reasoning = Object.values(run.reasoning).join("");
   const answer = run.finalAnswer;
   // answer_delta is durable received provider output, but is not itself a
@@ -105,7 +118,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
   const model = run.model as { requestedModel?: string; appliedModel?: string; selectionProvenance?: string };
   return <article className="run-content" data-run-id={run.runId} aria-label={`Run ${run.acceptedPrompt}`}>
     <div className="run-prompt"><strong>You</strong><p>{run.acceptedPrompt}</p></div>
-    <div className="run-provenance" aria-label="Run provenance"><span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>{model.selectionProvenance && <span>Selection: {model.selectionProvenance}</span>}<span>Policy: {policy.effectiveMode || "unspecified"}</span>{policy.source && <span>Policy source: {policy.source}</span>}</div>
+    <div className="run-provenance" aria-label="Run provenance"><span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>{model.selectionProvenance && <span>Selection: {model.selectionProvenance}</span>}<span>Policy: {policy.effectiveMode || "unspecified"}</span>{policy.source && <span>Policy source: {policy.source}</span>}<ProjectInstructionsTurnChip projection={projectInstructionsTurn} /></div>
     {reasoning && <details><summary>Reasoning</summary><p>{reasoning}</p></details>}
     <PlanSection projection={planSection} preserved={run.plan ?? null} offline={offline} />
     <FileChangesSection
@@ -130,8 +143,43 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
           .map((a) => a.activityId),
       )}
     />
+    {productMode === "code" ? (
+      <GitReviewSection
+        projection={gitReviewList}
+        offline={offline}
+        activityStatusById={activityStatusById}
+        activityLifecycleById={activityLifecycleById}
+        onViewOutput={(member) => setFocusActivityId(member.activityId)}
+        outputAvailableIds={new Set(
+          Object.values(run.activities)
+            .filter((a) => a.output != null)
+            .map((a) => a.activityId),
+        )}
+      />
+    ) : null}
     {Object.values(run.activities).length > 0 && <div className="activity-output" aria-label="Activity">{Object.values(run.activities).map(a => { const result = recoveryResult[a.activityId]; return <details key={a.activityId} data-activity-id={a.activityId} open={focusActivityId === a.activityId ? true : undefined} ref={(el) => { if (el && focusActivityId === a.activityId) { el.scrollIntoView({ block: "nearest" }); } }}><summary>{a.name}: {a.status}</summary><p>Input: {typeof a.input === "string" ? a.input : JSON.stringify(a.input)}</p>{a.output != null && <p>Output: {typeof a.output === "string" ? a.output : JSON.stringify(a.output)}</p>}{a.error && <p role="alert">Failure: {a.error}</p>}{a.diff && <><button type="button" onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}>{openDiff === a.activityId ? "Hide diff" : "View diff"}</button>{openDiff === a.activityId && <pre>{a.diff}</pre>}</>}<ActivityProvenance activity={a} />{a.recovery?.available && !result && <><p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p><button type="button" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</button></>}{result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}{result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}{result === "conflict" && a.diff && <button type="button" onClick={() => setOpenDiff(a.activityId)}>View diff</button>}</details>; })}</div>}
-    {Object.values(run.decisions).filter(d => d.status === "pending" && d.kind !== "plan").map(d => <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}><strong>{d.title}</strong><p>{d.detail}</p><button type="button" disabled={pending === d.requestId} onClick={() => void submitDecision(d, "allow_once")}>{d.kind === "diff" ? "Accept" : d.kind === "recovery_confirmation" ? "Recover" : "Allow"}</button><button type="button" disabled={pending === d.requestId || d.kind === "recovery_confirmation"} onClick={() => void submitDecision(d, "deny")}>{d.kind === "diff" ? "Reject" : "Decline"}</button></div>)}
+    {Object.values(run.decisions)
+      .filter((d) => d.status === "pending" && d.kind !== "plan")
+      .map((d) => {
+        const isRecovery = d.kind === "recovery_confirmation";
+        const isDiff = d.kind === "diff";
+        return (
+          <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
+            <strong>{d.title}</strong>
+            <p>{d.detail}</p>
+            <button
+              type="button"
+              disabled={!isRecovery || pending === d.requestId}
+              onClick={isRecovery ? () => void submitDecision(d, "allow_once") : undefined}
+            >
+              {isDiff ? "Accept" : isRecovery ? "Recover" : "Allow"}
+            </button>
+            <button type="button" disabled>
+              {isDiff ? "Reject" : "Decline"}
+            </button>
+          </div>
+        );
+      })}
     {error && <p role="alert">{error}</p>}
     {run.state !== "terminal" && <div className="run-live" role="status" aria-live="polite">{run.state === "recovering" ? "Recovering run…" : run.state === "cancelling" ? "Ending run…" : "Run in progress…"}</div>}
     {receivedAnswer && !(run.terminalKind === "answered" && run.answerVouched && answer) && <div className="assistant-partial" aria-label="Received answer (not final)"><p>{receivedAnswer}</p></div>}

@@ -3,6 +3,7 @@
 // Loaded via `--import` so `document`/`window` exist before React/RTL modules load.
 // Safe to load ahead of plain unit test files too (only defines globals that
 // are missing / configurable; never throws on Node's own getter-only globals).
+import { spawn } from "node:child_process";
 import { JSDOM } from "jsdom";
 import React from "react";
 
@@ -108,4 +109,52 @@ if (typeof urlStatics.createObjectURL !== "function") {
 }
 if (typeof urlStatics.revokeObjectURL !== "function") {
   urlStatics.revokeObjectURL = () => {};
+}
+
+// App-test hangs (HostSocket reconnect / React update loops / jsdom assert.inspect)
+// have previously ignored `--test-timeout` because they never return to the
+// event loop, then filled tens of GB. The in-process interval cannot fire in
+// that case, so a detached child watches RSS and taskkills this pid.
+const HEAP_ABORT_MB = 768;
+const RSS_ABORT_MB = 1536;
+const leakWatchdog = setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapMb = mem.heapUsed / (1024 * 1024);
+  const rssMb = mem.rss / (1024 * 1024);
+  if (heapMb <= HEAP_ABORT_MB && rssMb <= RSS_ABORT_MB) return;
+  console.error(
+    `[testEnv] aborting runaway test process heap=${heapMb.toFixed(0)}MB rss=${rssMb.toFixed(0)}MB`,
+  );
+  process.exit(134);
+}, 500);
+leakWatchdog.unref();
+
+{
+  const parentPid = process.pid;
+  const limitMb = RSS_ABORT_MB;
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const pid=${parentPid};const limit=${limitMb};const {spawnSync}=require('node:child_process');
+setInterval(()=>{
+  const r=spawnSync('powershell.exe',['-NoProfile','-Command','(Get-Process -Id '+pid+' -EA SilentlyContinue).WorkingSet64'],{windowsHide:true,encoding:'utf8'});
+  const ws=Number(String(r.stdout||'').trim());
+  if(!Number.isFinite(ws)||ws<=0) process.exit(0);
+  if(ws/1048576>limit){ spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true}); process.exit(1); }
+},400);`,
+    ],
+    { detached: true, stdio: "ignore", windowsHide: true },
+  );
+  child.unref();
+  const reap = () => {
+    if (child.pid) {
+      try {
+        spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).unref();
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+  process.on("exit", reap);
 }

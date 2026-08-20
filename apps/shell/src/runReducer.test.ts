@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialRunProjection, mergeRunSnapshot, reduceRunEvent, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
+import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, restoreRunProjection, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
 const snap = (sessionId="s1", runId="r1"): RunSnapshot => ({ sessionId, runId, connectionGeneration:1, state:"admitted", acceptedPrompt:"prompt", admittedAt:"", updatedAt:"", lastEventSeq:0, policy:{mode:"review"}, model:{model:"grok-4.6"}, terminalKind:null, finalAnswer:null, answerVouched:false, failure:null });
 const started = (s=snap(), seq=1): RunEventEnvelope => ({ schemaVersion:1,type:"run_started",sessionId:s.sessionId,runId:s.runId,eventSeq:seq,connectionGeneration:s.connectionGeneration,occurredAt:"",payload:{kind:"run_started",run:s} });
 function event(payload: RunEventEnvelope["payload"], seq:number, s="s1", r="r1"): RunEventEnvelope { return {schemaVersion:1,type:payload.kind,sessionId:s,runId:r,eventSeq:seq,connectionGeneration:1,occurredAt:"",payload}; }
@@ -136,4 +136,109 @@ test("activity_update defaults missing path to null", () => {
     ),
   );
   assert.equal(a.runsById.r1.activities.a3.path, null);
+});
+
+test("project_instructions included folds onto run projection", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "project_instructions",
+        projectInstructions: {
+          runId: "r1",
+          sessionId: "s1",
+          connectionGeneration: 1,
+          inclusion: "included",
+          path: "AGENTS.md",
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.projectInstructions?.inclusion, "included");
+  assert.equal(a.runsById.r1.projectInstructions?.path, "AGENTS.md");
+});
+
+test("project_instructions failed is kept — not collapsed to not_included", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "project_instructions",
+        projectInstructions: {
+          runId: "r1",
+          sessionId: "s1",
+          connectionGeneration: 1,
+          inclusion: "failed",
+          path: "AGENTS.md",
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.projectInstructions?.inclusion, "failed");
+  assert.notEqual(a.runsById.r1.projectInstructions?.inclusion, "not_included");
+});
+
+test("type/kind mismatch ignored", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  const mismatched = event(
+    {
+      kind: "project_instructions",
+      projectInstructions: {
+        runId: "r1",
+        sessionId: "s1",
+        connectionGeneration: 1,
+        inclusion: "included",
+        path: "AGENTS.md",
+      },
+    },
+    2,
+  );
+  mismatched.type = "run_state";
+  const next = reduceRunEvent(a, mismatched);
+  assert.strictEqual(next, a);
+  assert.equal(next.runsById.r1.projectInstructions ?? null, null);
+});
+
+test("last project_instructions event wins; persist/restore keeps failed", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "project_instructions",
+        projectInstructions: {
+          runId: "r1",
+          sessionId: "s1",
+          connectionGeneration: 1,
+          inclusion: "included",
+          path: "AGENTS.md",
+        },
+      },
+      2,
+    ),
+  );
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "project_instructions",
+        projectInstructions: {
+          runId: "r1",
+          sessionId: "s1",
+          connectionGeneration: 1,
+          inclusion: "failed",
+          path: "AGENTS.md",
+        },
+      },
+      3,
+    ),
+  );
+  assert.equal(a.runsById.r1.projectInstructions?.inclusion, "failed");
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.equal(restored.runsById.r1.projectInstructions?.inclusion, "failed");
+  assert.notEqual(restored.runsById.r1.projectInstructions?.inclusion, "not_included");
 });

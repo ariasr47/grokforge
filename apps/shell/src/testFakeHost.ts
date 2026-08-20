@@ -165,6 +165,7 @@ const BASE_STATE: PublicState = {
   permissionPolicy: { status: "confirmed", workspace: "", storedMode: null, effectiveMode: "review", source: "default", revision: "default", fallbackReason: null, savedForWorkspace: false },
   bypassPermissions: { unlocked: false, available: false, activeForSession: false, blockedReason: "unlock_required", confirmationVersion: null },
   planEngagement: { engaged: false, vouched: true },
+  projectInstructions: { status: "absent", path: null, vouched: true },
 };
 
 export interface FakeHostOptions {
@@ -191,6 +192,8 @@ export interface FakeHostOptions {
   runJournals?: Record<string, FakeRunJournal>;
   /** When true, omit planEngagement from state snapshots (older-host / AC-28). */
   omitPlanEngagement?: boolean;
+  /** When true, omit projectInstructions from state snapshots (older-host loading). */
+  omitProjectInstructions?: boolean;
   /** Scripted POST /api/prompt refuse. */
   promptRefuse?: { status: number; code: string; error: string } | null;
 }
@@ -215,6 +218,13 @@ export function createFakeHost(
     const snap = { ...state };
     if (opts.omitPlanEngagement) {
       delete (snap as Partial<PublicState>).planEngagement;
+    }
+    if (opts.omitProjectInstructions) {
+      delete (snap as Partial<PublicState>).projectInstructions;
+    } else if (snap.mode === "chat") {
+      snap.projectInstructions = { status: "absent", path: null, vouched: true };
+    } else if (!snap.workspace) {
+      snap.projectInstructions = { status: "absent", path: null, vouched: true };
     }
     return snap;
   }
@@ -384,7 +394,11 @@ export function createFakeHost(
       return mutatingSnapshot();
     }
     if (path === "/api/workspace" && method === "POST") {
-      state.workspace = (body?.path as string) ?? state.workspace;
+      const next = (body?.path as string) ?? state.workspace;
+      if (next !== state.workspace) {
+        state.workspace = next;
+        state.projectInstructions = { status: "absent", path: null, vouched: false };
+      }
       return mutatingSnapshot();
     }
     if (path === "/api/workspace/files") return { files: Object.keys(files) };
@@ -541,32 +555,56 @@ export function createFakeHost(
 
 /** Minimal controllable WebSocket the app can receive server-pushed events from. */
 export class FakeWebSocket {
+  static CONNECTING = 0;
   static OPEN = 1;
+  static CLOSING = 2;
   static CLOSED = 3;
+  /** Hard cap so a HostSocket reconnect storm fails the test instead of filling RAM. */
+  static MAX_INSTANCES = 24;
   static instances: FakeWebSocket[] = [];
   url: string;
-  readyState = 0;
+  readyState = FakeWebSocket.CONNECTING;
+  sent: unknown[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
   constructor(url: string) {
+    if (FakeWebSocket.instances.length >= FakeWebSocket.MAX_INSTANCES) {
+      console.error(
+        `[FakeWebSocket] aborting: ${FakeWebSocket.instances.length} sockets (reconnect storm)`,
+      );
+      process.exit(134);
+    }
     this.url = url;
     FakeWebSocket.instances.push(this);
     queueMicrotask(() => {
+      if (this.readyState === FakeWebSocket.CLOSED) return;
       this.readyState = FakeWebSocket.OPEN;
       this.onopen?.();
     });
   }
 
-  send(): void {
-    /* client never needs to send in this app — commands go over REST */
+  send(data?: string): void {
+    if (this.readyState !== FakeWebSocket.OPEN) return;
+    if (typeof data !== "string") return;
+    try {
+      this.sent.push(JSON.parse(data));
+    } catch {
+      this.sent.push(data);
+    }
   }
 
   close(): void {
+    if (this.readyState === FakeWebSocket.CLOSED) return;
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
+    const onclose = this.onclose;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onerror = null;
+    this.onclose = null;
+    onclose?.();
   }
 
   /** Test-only: push a server event as if the host emitted it over /ws. */
@@ -579,6 +617,13 @@ export class FakeWebSocket {
   }
 
   static reset(): void {
+    for (const ws of FakeWebSocket.instances) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.readyState = FakeWebSocket.CLOSED;
+    }
     FakeWebSocket.instances = [];
   }
 }
