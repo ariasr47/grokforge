@@ -1,6 +1,6 @@
 import test, { after, afterEach, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { FILE_CHANGES_HEADER } from "./FileChangesSection";

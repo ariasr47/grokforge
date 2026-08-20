@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App } from "./App";
 import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";

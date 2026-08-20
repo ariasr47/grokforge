@@ -1,6 +1,6 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { ActionDock } from "./ActionDock.js";
 import { mergePendingDiffs, mergePendingPermissions, pendingPermissionsFromRun } from "./runChangeList.js";
 import type { ActivityRecord, DecisionRequest, RunProjectionRun, RunSnapshot } from "./runReducer.js";

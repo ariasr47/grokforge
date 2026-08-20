@@ -8,7 +8,7 @@ import { PLAN_HEADER } from "./PlanSection";
 import { PLAN_LIVE_FOOTER, PLAN_LIVE_STATUS } from "./planArm";
 import { RunSurface } from "./RunSurface";
 import { RunStatusBar } from "./RunStatusBar";
-import type { ActivityRecord, DecisionRequest, PlanRecord, RunProjectionRun, RunSnapshot } from "./runReducer";
+import type { ActivityRecord, PlanRecord, RunProjectionRun, RunSnapshot } from "./runReducer";
 
 afterEach(() => cleanup());
 
@@ -103,20 +103,6 @@ function verifyActivity(): ActivityRecord {
     command: "npm test",
     editId: null,
     recovery: null,
-  };
-}
-
-function diffDecision(overrides: Partial<DecisionRequest> = {}): DecisionRequest {
-  return {
-    requestId: "diff-1",
-    invocationId: "i1",
-    kind: "diff",
-    status: "pending",
-    title: "Edit file",
-    detail: "a.txt",
-    expiresAt: null,
-    policy: { effectiveMode: "review" },
-    ...overrides,
   };
 }
 

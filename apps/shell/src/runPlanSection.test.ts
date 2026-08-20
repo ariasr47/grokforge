@@ -210,7 +210,7 @@ test("forbidden: ready && empty:false && proposedMembers.length===0 cannot be pr
   assert.equal(projected.state, "ready");
   if (projected.state === "ready") {
     assert.equal(projected.empty, true);
-    assert.notEqual(projected.empty === false && projected.proposedMembers.length === 0, true);
+    assert.equal(projected.proposedMembers.length, 0);
   }
 });
 
