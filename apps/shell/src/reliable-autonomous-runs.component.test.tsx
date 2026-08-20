@@ -170,10 +170,8 @@ test("all action controls retain visible focus and announcements transition with
   const activity = { activityId: "focus", invocationId: "focus-inv", name: "write", lifecycle: "terminal", execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "text_edit", autoApplied: true, editId: "focus-edit", recovery: { kind: "guarded_revert", available: true, status: "available" } } as any;
   const decision = { requestId: "perm", invocationId: "focus-inv", kind: "permission", status: "pending", title: "Approval needed · Review", detail: "Allow?", expiresAt: null, policy: {} } as any;
   const { rerender } = render(<RunSurface run={run({ activities: { focus: activity }, decisions: { perm: decision }, state: "running" })} />);
-  const allow = screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement;
-  const decline = screen.getByRole("button", { name: "Decline" }) as HTMLButtonElement;
-  assert.equal(allow.disabled, true, "RunSurface Allow is evidence-only");
-  assert.equal(decline.disabled, true, "RunSurface Decline is evidence-only");
+  assert.equal(screen.queryByRole("button", { name: "Allow" }), null, "permission settle stays in the action dock");
+  assert.equal(screen.queryByRole("button", { name: "Decline" }), null, "permission settle stays in the action dock");
   for (const name of ["Revert edit", "View diff"]) {
     const control = screen.getByRole("button", { name });
     control.focus();
@@ -195,12 +193,8 @@ test("routes diff decisions with edit identity and prevents duplicate submits", 
   try {
     const activity = { activityId: "a", invocationId: "i", name: "write", lifecycle: "pending", execution: "executed", status: "running", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "none", autoApplied: false, editId: "edit-1", recovery: null } as any;
     render(<RunSurface run={run({ decisions: { d: { requestId: "d", invocationId: "i", kind: "diff", status: "pending", title: "Review edit", detail: "", expiresAt: null, policy: {} } }, activities: { a: activity } })} />);
-    const accept = screen.getByRole("button", { name: "Accept" }) as HTMLButtonElement;
-    const reject = screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement;
-    assert.equal(accept.disabled, true, "RunSurface Accept is evidence-only");
-    assert.equal(reject.disabled, true, "RunSurface Reject is evidence-only");
-    fireEvent.click(accept); fireEvent.click(accept);
-    await new Promise(r => setTimeout(r, 30));
+    assert.equal(screen.queryByRole("button", { name: "Accept" }), null, "diff settle stays in the action dock");
+    assert.equal(screen.queryByRole("button", { name: "Reject" }), null, "diff settle stays in the action dock");
     assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.runDiff = original; }
 });

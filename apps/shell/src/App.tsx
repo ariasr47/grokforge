@@ -4089,7 +4089,16 @@ export function App() {
                   <>
                     {runProjection.runOrder.map((id) => {
                       const run = runProjection.runsById[id];
-                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} productMode={productMode} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} /> : null;
+                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} productMode={productMode} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={(label, meta) => {
+                        const line = meta
+                          ? `I choose: ${label}\n\n${meta}`
+                          : `I choose: ${label}`;
+                        setDraft((d) =>
+                          d.trim() ? `${d.trim()}\n\n${line}` : line,
+                        );
+                        toast.push(`Added “${label}” to composer`, "info");
+                        setTimeout(() => composerRef.current?.focus(), 0);
+                      }} /> : null;
                     })}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
@@ -4338,8 +4347,15 @@ export function App() {
           role="dialog"
           aria-modal="true"
           aria-label="Path peek"
+          tabIndex={-1}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setPeek(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setPeek(null);
+            }
           }}
         >
           <div className="modal peek-modal">

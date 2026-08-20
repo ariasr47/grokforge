@@ -49,7 +49,16 @@ fn ladder() -> &'static [u16] {
 /// 8787 at the same commit, so an identity rule would call that a match and attach, which is
 /// exactly the state AC20 forbids.
 fn rung_is_free(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+    if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+        return true;
+    }
+    // Exclusive bind fails for both a live listener and TIME_WAIT. Node can
+    // listen through TIME_WAIT (SO_REUSEADDR); only a process that still
+    // accepts connections is a reason to step.
+    let Ok(addr) = host_addr(port).parse() else {
+        return false;
+    };
+    TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_err()
 }
 
 fn host_addr(port: u16) -> String {
@@ -379,15 +388,10 @@ fn load_bypass_unlock(app: &tauri::AppHandle) -> bool {
 }
 
 fn is_repo_root(dir: &Path) -> bool {
-    // Packaged install: resources/host/index.js present
-    if dir
-        .join("resources")
-        .join("host")
-        .join("index.js")
-        .is_file()
-    {
-        return true;
-    }
+    // Monorepo layout only. A Tauri debug output dir also has
+    // resources/host/index.js (copied from src-tauri/resources); treating that
+    // as the repo root makes `tauri dev` spawn the leftover packaged host
+    // (prod allowlist) and CORS-refuse the Vite origin.
     dir.join("apps")
         .join("host")
         .join("src")
@@ -445,6 +449,18 @@ fn repo_root_dev() -> PathBuf {
 /// B8 — resource resolution (SPEC §2.3). Packaged: Tauri's resolver. Dev: the walk-up above,
 /// behind an explicit `cfg!(debug_assertions)` gate. No `std::env::current_dir()` fallback.
 fn resource_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // Dev: walk up to the monorepo. Do this BEFORE Tauri's resource_dir — in
+    // `tauri dev` that directory is the debug output with a stale packaged
+    // host, not the source tree.
+    if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
+            let root = repo_root_dev();
+            if is_repo_root(&root) {
+                return Ok(root);
+            }
+        }
+    }
     if let Ok(dir) = app.path().resource_dir() {
         if dir
             .join("resources")
@@ -453,15 +469,6 @@ fn resource_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
             .is_file()
         {
             return Ok(dir);
-        }
-    }
-    if cfg!(debug_assertions) {
-        #[cfg(debug_assertions)]
-        {
-            let root = repo_root_dev();
-            if is_repo_root(&root) {
-                return Ok(root);
-            }
         }
     }
     Err("resources/host/index.js not found under the resolved resource root".to_string())
@@ -724,22 +731,29 @@ fn spawn_host_process(
         c.arg(resource_host.as_os_str());
         c
     } else if cfg!(debug_assertions) {
-        // Dev-only fallback branches: system Node via PATH lookup, tsx entry from the monorepo.
+        // Dev-only: system Node + tsx loader in THIS process. Never the tsx CLI
+        // (`cli.mjs` re-execs a child, so /api/health.pid != spawn pid and the
+        // post-spawn ownership check reaps + walks the whole port ladder).
         // Never reachable in a release build (SPEC §2.1).
-        let tsx_cli = root
+        let tsx_loader = root
             .join("node_modules")
             .join("tsx")
             .join("dist")
-            .join("cli.mjs");
+            .join("loader.mjs");
         let host_entry = root.join("apps").join("host").join("src").join("index.ts");
         entry_present = host_entry.exists() || resource_host.exists();
         runtime_present = true; // dev path relies on system Node; not the isolation-rule surface
-        if host_entry.exists() && tsx_cli.exists() {
-            let mut c = Command::new("node");
-            c.arg(tsx_cli.as_os_str()).arg(host_entry.as_os_str());
+        let node_bin = std::env::var("GROKFORGE_NODE").unwrap_or_else(|_| "node".into());
+        if host_entry.exists() && tsx_loader.is_file() {
+            let loader_url = format!(
+                "file:///{}",
+                tsx_loader.to_string_lossy().replace('\\', "/")
+            );
+            let mut c = Command::new(&node_bin);
+            c.arg("--import").arg(loader_url).arg(host_entry.as_os_str());
             c
         } else if host_entry.exists() {
-            let mut c = Command::new("node");
+            let mut c = Command::new(&node_bin);
             c.args(["--import", "tsx"]).arg(host_entry.as_os_str());
             c
         } else {
@@ -800,16 +814,20 @@ fn spawn_host_process(
 /// mechanism AC-S7 is checking: KILL_ON_JOB_CLOSE does not fire on a single member's death, so a
 /// dead host's ACP grandchild is only reaped here, before a replacement spawns.
 fn reap_host(state: &HostProcess) {
-    let fallback_pid = if state.reap_by_taskkill.swap(false, Ordering::SeqCst) {
-        let pid = state.reaped_pid.load(Ordering::SeqCst);
-        if pid != 0 {
-            Some(pid)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let pid = state
+        .child
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.id()))
+        .or_else(|| {
+            let p = state.reaped_pid.load(Ordering::SeqCst);
+            if p != 0 {
+                Some(p)
+            } else {
+                None
+            }
+        });
+    state.reap_by_taskkill.store(false, Ordering::SeqCst);
 
     #[cfg(windows)]
     if let Ok(mut job) = state.job.lock() {
@@ -817,7 +835,11 @@ fn reap_host(state: &HostProcess) {
         *job = None;
     }
 
-    if let Some(pid) = fallback_pid {
+    // Always taskkill on Windows. Node can break away from the job, and
+    // TIME_WAIT on every ladder rung after a half-killed walk is exactly
+    // `port_unavailable` ("Forge couldn't get a connection on this PC").
+    #[cfg(windows)]
+    if let Some(pid) = pid {
         let _ = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
@@ -835,6 +857,23 @@ fn reap_host(state: &HostProcess) {
         *owned = false;
     }
     clear_runtime_port_record();
+}
+
+/// After reap, Windows keeps the listen port in TIME_WAIT. `rung_is_free`
+/// uses an exclusive bind, so the whole ladder looks taken until that
+/// expires — which is how Try again produced `port_unavailable` with no
+/// other Forge copy running.
+fn wait_any_rung_free(timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if ladder().iter().copied().any(rung_is_free) {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn current_owned_pid(app: &tauri::AppHandle) -> (bool, Option<u32>) {
@@ -895,6 +934,18 @@ fn ensure_host_inner(app: &tauri::AppHandle) -> HostStatus {
 
     // Not (yet) healthy under our ownership — reap any prior child we own, then walk the ladder.
     reap_host(&state);
+    if !wait_any_rung_free(Duration::from_secs(5)) {
+        return HostStatus {
+            ok: false,
+            phase: "failed",
+            owned: false,
+            port: None,
+            pid: None,
+            reason: Some(REASON_PORT_UNAVAILABLE),
+            os_error: None,
+            message: "Every rung of the port ladder is held.".into(),
+        };
+    }
 
     let root = match resource_root(app) {
         Ok(r) => r,

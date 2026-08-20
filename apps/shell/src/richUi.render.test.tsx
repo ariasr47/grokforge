@@ -3,6 +3,8 @@ import { afterEach, describe, it } from "node:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { MarkdownBody } from "./markdown";
+import { RunSurface } from "./RunSurface";
+import type { RunProjectionRun } from "./runReducer";
 
 afterEach(() => cleanup());
 
@@ -48,6 +50,91 @@ describe("unfenced grok-ui dump renders components", () => {
     assert.ok(screen.getByText("Recommended"));
     assert.equal(document.body.textContent?.includes('"version": 1'), false);
     assert.equal(document.body.textContent?.includes("grok-ui {"), false);
+  });
+
+  it("renders same-line fenced grok-ui as components, not a JSON paste", () => {
+    const src =
+      "Make most sides ahead so you can sit and cook. ```grok-ui " +
+      JSON.stringify({
+        version: 1,
+        blocks: [
+          {
+            type: "callout",
+            tone: "info",
+            title: "Hosting rule",
+            body: "Plan 4–6 sides, not 12.",
+          },
+          {
+            type: "carousel",
+            title: "Best sides for home yakiniku",
+            items: [
+              { title: "Steamed Japanese rice", body: "Short-grain rice.", badge: "Essential" },
+              { title: "Kimchi", body: "The classic fat-cutter.", badge: "Must-have" },
+            ],
+          },
+        ],
+      }) +
+      " ``` ### Sauces\n- **Tare**";
+    render(createElement(MarkdownBody, { text: src }));
+    assert.ok(screen.getByText("Hosting rule"));
+    assert.ok(screen.getByText("Plan 4–6 sides, not 12."));
+    assert.ok(screen.getByText("Best sides for home yakiniku"));
+    assert.ok(screen.getByText("Steamed Japanese rice"));
+    assert.ok(screen.getByRole("heading", { name: /Sauces/i }));
+    assert.equal(document.body.textContent?.includes('"version": 1'), false);
+    assert.equal(document.body.textContent?.includes("```grok-ui"), false);
+  });
+
+  it("RunSurface Chat answer renders same-line grok-ui as components, not a JSON paste", () => {
+    const dump =
+      "Sides should be make-ahead. ```grok-ui " +
+      JSON.stringify({
+        version: 1,
+        blocks: [
+          {
+            type: "callout",
+            tone: "info",
+            title: "Keep it to 5–6 sides",
+            body: "Rice + kimchi + lettuce wraps.",
+          },
+          {
+            type: "carousel",
+            title: "Best sides",
+            items: [{ title: "Steamed rice", body: "Short-grain.", badge: "Essential" }],
+          },
+        ],
+      }) +
+      " ``` ### Sauces\n- Tare";
+    const run = {
+      sessionId: "s",
+      runId: "r",
+      connectionGeneration: 1,
+      state: "terminal",
+      acceptedPrompt: "yakiniku sides",
+      admittedAt: "",
+      updatedAt: "",
+      lastEventSeq: 2,
+      policy: {},
+      model: {},
+      terminalKind: "answered",
+      finalAnswer: dump,
+      answerVouched: true,
+      failure: null,
+      reasoning: {},
+      answer: {},
+      activities: {},
+      decisions: {},
+      seenEventSeq: new Set([1]),
+      terminalEventSeq: 2,
+    } as RunProjectionRun;
+    render(createElement(RunSurface, { run, productMode: "chat" }));
+    const answer = document.querySelector(".assistant-answer");
+    assert.ok(answer);
+    assert.ok(answer!.querySelector(".rich-callout"));
+    assert.ok(screen.getByText("Keep it to 5–6 sides"));
+    assert.ok(screen.getByText("Steamed rice"));
+    assert.equal(answer!.textContent?.includes("```grok-ui"), false);
+    assert.equal(answer!.textContent?.includes('"version": 1'), false);
   });
 
   it("renders a constructed map embed, not a caller-supplied iframe src", () => {

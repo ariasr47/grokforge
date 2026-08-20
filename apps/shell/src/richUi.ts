@@ -554,20 +554,61 @@ export function extractJsonObject(
 }
 
 const UNFENCED_MARKER = /^(grok-ui|grokui|rich-ui)\s*\{/i;
+const FENCED_RICH_LANG = /^(grok-ui|grokui|rich-ui|ui)\b/i;
+
+function skipHorizontalWs(src: string, i: number): number {
+  while (i < src.length && (src[i] === " " || src[i] === "\t" || src[i] === "\r")) i += 1;
+  return i;
+}
+
+function consumeClosingFence(src: string, i: number): number {
+  let j = skipHorizontalWs(src, i);
+  if (src[j] === "\n") j += 1;
+  j = skipHorizontalWs(src, j);
+  if (src.startsWith("```", j)) return j + 3;
+  return i;
+}
+
+function emitCanonicalRichFence(json: string): string {
+  return `\n\n\`\`\`grok-ui\n${json}\n\`\`\`\n\n`;
+}
 
 /**
- * Models often emit `grok-ui { ... }` as prose instead of a ```grok-ui fence.
- * Lift complete documents into fences so the markdown parser can render them.
- * Already-fenced blocks and JSON inside other fences are left untouched.
+ * Models often emit `grok-ui { ... }` as prose, or a same-line fence
+ * (```grok-ui { ... } ```) instead of a real markdown fence with newlines.
+ * Lift complete documents into canonical fences so the markdown parser
+ * renders components instead of dumping JSON. JSON inside non-rich fences
+ * is left untouched.
  */
 export function liftUnfencedRichUi(src: string): string {
   let out = "";
   let i = 0;
   while (i < src.length) {
     if (src.startsWith("```", i)) {
-      const nl = src.indexOf("\n", i);
+      const headerAt = skipHorizontalWs(src, i + 3);
+      const langMatch = FENCED_RICH_LANG.exec(src.slice(headerAt));
+      if (langMatch && langMatch.index === 0) {
+        let j = skipHorizontalWs(src, headerAt + langMatch[0].length);
+        if (src[j] === "\n") j += 1;
+        j = skipHorizontalWs(src, j);
+        if (src[j] === "{") {
+          const extracted = extractJsonObject(src, j);
+          if (extracted) {
+            out += emitCanonicalRichFence(extracted.json);
+            i = consumeClosingFence(src, extracted.end);
+            continue;
+          }
+        }
+      }
+      const nl = src.indexOf("\n", i + 3);
+      const sameLineClose = src.indexOf("```", i + 3);
+      if (sameLineClose !== -1 && (nl === -1 || sameLineClose < nl)) {
+        out += src.slice(i, sameLineClose + 3);
+        i = sameLineClose + 3;
+        continue;
+      }
       const close = src.indexOf("\n```", i + 3);
-      if (nl === -1 || close === -1) {
+      if (close === -1) {
         out += src.slice(i);
         break;
       }
@@ -583,9 +624,9 @@ export function liftUnfencedRichUi(src: string): string {
       const braceAt = i + marker[0].length - 1;
       const extracted = extractJsonObject(src, braceAt);
       if (extracted) {
-        out += `\n\n\`\`\`grok-ui\n${extracted.json}\n\`\`\`\n\n`;
+        out += emitCanonicalRichFence(extracted.json);
         i = extracted.end;
-        while (i < src.length && (src[i] === " " || src[i] === "\t")) i += 1;
+        i = skipHorizontalWs(src, i);
         continue;
       }
     }
@@ -595,9 +636,9 @@ export function liftUnfencedRichUi(src: string): string {
       if (/"version"\s*:\s*1/.test(peek) && /"blocks"\s*:/.test(peek)) {
         const extracted = extractJsonObject(src, i);
         if (extracted) {
-          out += `\n\n\`\`\`grok-ui\n${extracted.json}\n\`\`\`\n\n`;
+          out += emitCanonicalRichFence(extracted.json);
           i = extracted.end;
-          while (i < src.length && (src[i] === " " || src[i] === "\t")) i += 1;
+          i = skipHorizontalWs(src, i);
           continue;
         }
       }

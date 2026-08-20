@@ -3,7 +3,7 @@
  * Run Tauri dev with channel isolation (prod | dev).
  * Usage: node scripts/tauri-dev.mjs --channel=dev
  */
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,12 @@ const channelEnv = {
   VITE_GROKFORGE_PORT: hostPort,
   VITE_PORT: uiPort,
   CARGO_TARGET_DIR: cargoTarget,
+  // Compile-time channel for the Rust launcher (option_env!), matching tauri-build.mjs.
+  // Without this, `desktop:dev` bakes BUILD_CHANNEL=prod and the host allowlist
+  // refuses http://localhost:5174 — "Forge couldn't reach its engine."
+  GROKFORGE_BUILD_CHANNEL: channel,
+  GROKFORGE_ROOT: root,
+  GROKFORGE_NODE: process.execPath,
 };
 
 function findVsDevCmd() {
@@ -64,10 +70,26 @@ function findVsDevCmd() {
 
 const tauriScript = isDev ? "tauri:dev:channel" : "tauri:dev";
 
+function generateChannelArtifacts() {
+  // `tauri dev` spawns the host via node+tsx, which skips npm prestart. Bake
+  // the channel allowlist (dev includes :5174) and build version first.
+  execFileSync(
+    process.execPath,
+    [path.join(root, "scripts", "gen-allowed-origins.mjs"), `--channel=${channel}`],
+    { cwd: root, stdio: "inherit", env: channelEnv },
+  );
+  execFileSync(process.execPath, [path.join(root, "scripts", "gen-build-version.mjs")], {
+    cwd: root,
+    stdio: "inherit",
+    env: channelEnv,
+  });
+}
+
 async function main() {
   console.log(
     `[tauri-dev] channel=${channel} host=:${hostPort} ui=:${uiPort} product=${isDev ? "Forge Dev" : "Forge"}`,
   );
+  generateChannelArtifacts();
 
   if (process.platform !== "win32") {
     const child = spawn("npm", ["run", tauriScript], {
@@ -97,6 +119,9 @@ set VITE_GROKFORGE_CHANNEL=${channel}\r
 set VITE_GROKFORGE_PORT=${hostPort}\r
 set VITE_PORT=${uiPort}\r
 set CARGO_TARGET_DIR=${cargoTarget}\r
+set GROKFORGE_BUILD_CHANNEL=${channel}\r
+set GROKFORGE_ROOT=${root}\r
+set GROKFORGE_NODE=${process.execPath}\r
 call "${vsdev}" -arch=x64 -host_arch=x64\r
 if errorlevel 1 exit /b 1\r
 cd /d "${shellDir}"\r

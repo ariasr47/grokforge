@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { markdownCacheSize, parseMarkdownBlocks } from "./markdown.js";
+import { markdownCacheSize, parseMarkdownBlocks } from "./markdownParse.js";
 import { tokenizeLine, shouldHighlight } from "./codeHighlight.js";
 import { parseRichDocumentProgressive } from "./richUi.js";
 
@@ -39,6 +39,30 @@ describe("parseMarkdownBlocks", () => {
       "\n```";
     const blocks = parseMarkdownBlocks(src);
     assert.ok(blocks.some((b) => b.type === "rich"));
+  });
+
+  it("parses a same-line ```grok-ui {json}``` dump as rich, not a JSON paste", () => {
+    const src =
+      "Make most sides ahead. ```grok-ui " +
+      JSON.stringify({
+        version: 1,
+        blocks: [
+          { type: "callout", tone: "info", title: "Hosting rule", body: "Plan 4–6 sides." },
+          {
+            type: "carousel",
+            title: "Best sides",
+            items: [{ title: "Rice", body: "Short-grain.", badge: "Essential" }],
+          },
+        ],
+      }) +
+      " ``` ### Sauces\n- Tare";
+    const blocks = parseMarkdownBlocks(src);
+    assert.ok(blocks.some((b) => b.type === "rich"));
+    assert.ok(blocks.some((b) => b.type === "h" && b.text.includes("Sauces")));
+    const dump = blocks.find((b) => b.type === "p" && b.text.includes('"version"'));
+    assert.equal(dump, undefined);
+    const code = blocks.find((b) => b.type === "code" && b.lang.startsWith("grok-ui"));
+    assert.equal(code, undefined);
   });
 
   it("parses unfenced grok-ui {json} dumps as rich, not a text dump", () => {

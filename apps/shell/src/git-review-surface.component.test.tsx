@@ -144,8 +144,8 @@ test("Chat productMode never mounts Git review (AC-26)", () => {
     <RunSurface run={triple()} catchUp={{ phase: "closed" }} productMode="chat" />,
   );
   assert.equal(container.querySelector("[aria-label='Git review']"), null);
-  assert.ok(screen.getByLabelText("File changes"));
-  assert.ok(screen.getByLabelText("Verify"));
+  assert.equal(screen.queryByLabelText("File changes"), null);
+  assert.equal(screen.queryByLabelText("Verify"), null);
 });
 
 test("multi-member status+diff on one list without Dirty/Ahead chips (AC-01/02/03)", async () => {

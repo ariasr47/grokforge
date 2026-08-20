@@ -162,12 +162,15 @@ describe("liftUnfencedRichUi", () => {
     assert.ok(!lifted.includes("grok-ui {"));
   });
 
-  it("leaves already-fenced grok-ui alone and does not lift JSON inside other fences", () => {
+  it("leaves already-fenced grok-ui as a canonical fence and does not lift JSON inside other fences", () => {
     const fenced =
       "Intro\n\n```grok-ui\n" +
       JSON.stringify({ blocks: [{ type: "callout", body: "hi" }] }) +
       "\n```\n";
-    assert.equal(liftUnfencedRichUi(fenced), fenced);
+    const lifted = liftUnfencedRichUi(fenced);
+    assert.match(lifted, /```grok-ui\n\{"blocks":/);
+    assert.ok(lifted.includes("Intro"));
+    assert.ok(!lifted.includes("```grok-ui {"));
 
     const code =
       "```js\nconst x = { \"version\": 1, \"blocks\": [{ \"type\": \"callout\", \"body\": \"no\" }] };\n```";
@@ -177,5 +180,49 @@ describe("liftUnfencedRichUi", () => {
   it("does not lift an incomplete grok-ui object", () => {
     const src = 'Hello grok-ui { "version": 1, "blocks": [';
     assert.equal(liftUnfencedRichUi(src), src);
+  });
+
+  it("lifts a same-line ```grok-ui {json}``` fence mid-prose", () => {
+    const payload = {
+      version: 1,
+      blocks: [
+        { type: "callout", tone: "info", title: "Hosting rule", body: "Plan 4–6 sides." },
+      ],
+    };
+    const src =
+      "Make most sides ahead. ```grok-ui " +
+      JSON.stringify(payload) +
+      " ``` ### Sauces\n- Tare";
+    const lifted = liftUnfencedRichUi(src);
+    assert.match(lifted, /```grok-ui\n\{/);
+    assert.ok(lifted.includes("### Sauces"));
+    assert.ok(lifted.includes("Make most sides ahead."));
+    assert.ok(!lifted.includes("```grok-ui {"));
+  });
+
+  it("lifts two same-line grok-ui fences without swallowing the rest of the answer", () => {
+    const first = {
+      version: 1,
+      blocks: [{ type: "callout", tone: "info", title: "Hosting rule", body: "Plan 4–6 sides." }],
+    };
+    const second = {
+      version: 1,
+      blocks: [
+        { type: "tabs", tabs: [{ label: "Simple menu", body: "Rice + kimchi." }] },
+        { type: "checklist", title: "Shopping", items: [{ text: "Rice", done: false }] },
+      ],
+    };
+    const src =
+      "Between bites. ```grok-ui " +
+      JSON.stringify(first) +
+      " ``` ### Sauces (put 2–3 on the table)\n- Tare\n```grok-ui " +
+      JSON.stringify(second) +
+      " ``` ### Easy namul";
+    const lifted = liftUnfencedRichUi(src);
+    const fences = lifted.split("```grok-ui\n");
+    assert.equal(fences.length, 3);
+    assert.ok(lifted.includes("### Sauces"));
+    assert.ok(lifted.includes("### Easy namul"));
+    assert.ok(lifted.includes("- Tare"));
   });
 });

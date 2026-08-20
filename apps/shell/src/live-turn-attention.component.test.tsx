@@ -129,13 +129,9 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
     );
     const group = screen.getByRole("group", { name: "Run shell" });
     assert.ok(within(group).getByText("echo live-turn-attention"));
-    const allow = within(group).getByRole("button", { name: "Allow" });
-    const decline = within(group).getByRole("button", { name: "Decline" });
-    assert.equal(allow.hasAttribute("disabled"), true);
-    assert.equal(decline.hasAttribute("disabled"), true);
-    fireEvent.click(allow);
-    fireEvent.click(decline);
-    await Promise.resolve();
+    assert.equal(within(group).queryByRole("button", { name: "Allow" }), null);
+    assert.equal(within(group).queryByRole("button", { name: "Decline" }), null);
+    assert.ok(within(group).getByText("Settle this in Attention required below."));
     assert.equal(permissionCalls, 0);
     assert.equal(diffCalls, 0);
   } finally {
