@@ -61,7 +61,7 @@ test("Review proposed file_edit carries editId, path, diff, and invocation ids",
   try {
     const h = harness(root);
     h.session.permissionMode = "review";
-    h.session.sessionWrite = true;
+    h.session.sessionWrite = false;
     delete (h.server as any).waitEdit;
     const pending = h.server.executeTool(h.session, call("write_file", { path: "r.txt", content: "one" }, "call-r"));
     let proposed: any;

@@ -14,10 +14,16 @@ function harness(kind:"permission"|"diff", state:"running"|"terminal"="running",
 }
 
 for(const kind of ["permission","diff"] as const){
-  test(`AC31 ${kind}: expiry is explicit and has no ACP effect`, async()=>{
-    const h=harness(kind,"running",1,Date.now()-1);
-    const op=kind==="permission"?h.s.permission("request","allow_once",{sessionId:"stable",runId:"run",connectionGeneration:1},"inv"):h.s.diffAction("request","accept",{sessionId:"stable",runId:"run",connectionGeneration:1},"inv");
-    await assert.rejects(op,(e:any)=>e?.code==="request_expired"); assert.equal(h.calls,0);
+  test(`AC31 ${kind}: a late Allow still reaches ACP`, async()=>{
+    const h=harness(kind,"running",1,Date.now()-400_000);
+    if(kind==="permission"){
+      const settled=await h.s.permission("request","allow_once",{sessionId:"stable",runId:"run",connectionGeneration:1},"inv");
+      assert.equal(settled,"accepted");
+    }else{
+      const settled=await h.s.diffAction("request","accept",{sessionId:"stable",runId:"run",connectionGeneration:1},"inv");
+      assert.equal(settled,"accepted");
+    }
+    assert.equal(h.calls,1);
   });
   test(`AC31 ${kind}: cancelled request is not pending and has no ACP effect`, async()=>{
     const h=harness(kind); h.s.pendingDecisions.get("request").status="declined";

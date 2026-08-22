@@ -2361,6 +2361,27 @@ export function App() {
     [permissions, reportError, toast],
   );
 
+  const trustFolder = useCallback(async () => {
+    const workspace = state?.workspace;
+    if (!sessionId || !workspace) return;
+    try {
+      const result = await api.saveWorkspacePolicy({
+        sessionId,
+        workspace,
+        mode: "trusted_workspace",
+      });
+      if (state) {
+        applyState({
+          ...state,
+          permissionPolicy: result.policy as PublicState["permissionPolicy"],
+        });
+      }
+      await decidePermission("allow_session");
+    } catch (err) {
+      reportError(err instanceof Error ? err.message : String(err));
+    }
+  }, [applyState, decidePermission, reportError, sessionId, state]);
+
   const settleOwnedDiff = useCallback(async (id: string, action: "accept" | "reject") => {
     const owner = runProjectionRef.current.runOrder
       .map((runId) => runProjectionRef.current.runsById[runId])
@@ -4100,6 +4121,11 @@ export function App() {
                 onActiveDiffId={setActiveDiffId}
                 oauth={oauth}
                 onPermission={(d) => void decidePermission(d)}
+                onTrustFolder={
+                  permissions[0]?.kind === "write" && state?.workspace
+                    ? () => void trustFolder()
+                    : undefined
+                }
                 onAccept={(id) => void acceptDiff(id)}
                 onReject={(id) => void rejectDiff(id)}
                 onAcceptAll={() => void acceptAllDiffs()}

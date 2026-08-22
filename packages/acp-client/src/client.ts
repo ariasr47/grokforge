@@ -144,6 +144,8 @@ export class StdioAcpClient implements AcpClient {
       policy: opts?.policy,
       trustedCommandClasses: opts?.trustedCommandClasses ?? [],
       executionPhase: opts?.executionPhase ?? "execute",
+      sessionWrite: opts?.sessionWrite === true,
+      sessionShell: opts?.sessionShell === true,
     });
   }
 

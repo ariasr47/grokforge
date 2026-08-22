@@ -33,6 +33,7 @@ interface Props {
   onActiveDiffId: (id: string | null) => void;
   oauth: OauthPending | null;
   onPermission: (d: "allow_once" | "allow_session" | "deny") => void;
+  onTrustFolder?: () => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onAcceptAll: () => void;
@@ -51,6 +52,7 @@ export const ActionDock = memo(function ActionDock({
   onActiveDiffId,
   oauth,
   onPermission,
+  onTrustFolder,
   onAccept,
   onReject,
   onAcceptAll,
@@ -116,7 +118,7 @@ export const ActionDock = memo(function ActionDock({
       )}
 
       {head ? (
-        <PermissionCard permission={head} onDecision={onPermission} />
+        <PermissionCard permission={head} onDecision={onPermission} onTrustFolder={onTrustFolder} />
       ) : null}
 
       {diffQueue.length > 0 ? (

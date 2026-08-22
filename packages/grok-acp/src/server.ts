@@ -224,6 +224,8 @@ export class GrokAcpServer {
             : [];
           session.trustedCommandClasses = classes;
           session.executionPhase = params?.executionPhase === "plan" ? "plan" : "execute";
+          if (params?.sessionWrite === true) session.sessionWrite = true;
+          if (params?.sessionShell === true) session.sessionShell = true;
           // Seed prior UI history once if agent only has system message
           const hist = params?.history;
           if (Array.isArray(hist) && session.messages.length <= 1) {
@@ -870,7 +872,7 @@ export class GrokAcpServer {
         session.permissionMode === "bypass_permissions",
       );
       session.pendingEdits.set(editId, edit);
-      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" ? "accept" : await this.waitEdit(edit, executionOwner, call.id);
+      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || session.sessionWrite ? "accept" : await this.waitEdit(edit, executionOwner, call.id);
       if (action === "accept") {
         const lease = await this.mutation.acquire(this.workspaceRoot, call.id);
         try {

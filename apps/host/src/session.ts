@@ -302,7 +302,9 @@ export class AgentSession {
   }
   private activeRunId: string | null = null;
   private connectionGeneration = 0;
-  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number}>();
+  private sessionWriteGrant = false;
+  private sessionShellGrant = false;
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number}>();
   private planEngaged = false;
   private planEngagementVouched = true;
   private lastReadyPlanRunId: string | null = null;
@@ -525,9 +527,8 @@ export class AgentSession {
     return false;
   }
 
-  private isDecisionExpired(pending: { kind: DecisionKind; expiresAt: number } | undefined): boolean {
-    if (!pending || pending.kind === "plan" || pending.expiresAt <= 0) return false;
-    return pending.expiresAt < Date.now();
+  private isDecisionExpired(_pending: { kind: DecisionKind; expiresAt: number } | undefined): boolean {
+    return false;
   }
 
   updateSettings(patch: {
@@ -650,6 +651,8 @@ export class AgentSession {
     if (!st.isDirectory()) throw new Error("Path is not a directory");
 
     this.workspace = resolved;
+    this.sessionWriteGrant = false;
+    this.sessionShellGrant = false;
     this.projectInstructionsCache = { status: "absent", path: null, vouched: false };
     this.projectInstructionsProbeRoot = resolved;
     // Hydrate the durable workspace policy before the first state snapshot. A
@@ -834,7 +837,7 @@ export class AgentSession {
             kind: ev.kind,
             detail: ev.detail.slice(0, 200),
           });
-          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const expiresAt=Date.now()+300000; this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId:ev.id,kind:"permission",status:"pending",expiresAt}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId:ev.id,kind:"permission",status:"pending",title:ev.kind==="shell"?"Run shell":"Write file",detail:ev.detail,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
+          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId:ev.id,kind:"permission",permissionKind:ev.kind,status:"pending",expiresAt:0}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId:ev.id,kind:"permission",status:"pending",title:ev.kind==="shell"?"Run shell":"Write file",detail:ev.detail,expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
         }
         if (ev.type === "file_edit") {
           if (ev.status !== "proposed") { return; }
@@ -843,9 +846,8 @@ export class AgentSession {
             if(run){
               const editId=ev.editId??ev.id;
               const invocationId=ev.invocationId??ev.toolCallId??editId;
-              const expiresAt=Date.now()+300000;
-              this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt});
-              const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:new Date(expiresAt).toISOString(),policy:run.policy}},"decision_request").catch(()=>undefined);
+              this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt:0});
+              const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined);
               if (ev.path && ev.diff && editId) {
                 const activity=activityRecordFromProposedEdit({editId,invocationId,path:ev.path,diff:ev.diff,policy:run.policy});
                 await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined);
@@ -899,6 +901,8 @@ export class AgentSession {
                   connectionGeneration: this.connectionGeneration,
                   policy: this.workspace ? await this.workspacePolicies.snapshot(this.workspace, this.bypassActive) : { workspace:"", storedMode:null, effectiveMode:"review" as const, source:"fallback" as const, revision:"fallback", fallbackReason:"missing" as const, snapshottedAt:new Date().toISOString() },
                   executionPhase: this.runCoordinator.get(this.activeRunId ?? "")?.executionPhase ?? "execute",
+                  sessionWrite: this.sessionWriteGrant,
+                  sessionShell: this.sessionShellGrant,
                 })
                 .catch((e2) => {
                   this.pendingFallback = null;
@@ -1167,6 +1171,8 @@ export class AgentSession {
         policy: workspacePolicy,
         trustedCommandClasses: this.trustedClassesSnapshot.slice(),
         executionPhase,
+        sessionWrite: this.sessionWriteGrant,
+        sessionShell: this.sessionShellGrant,
       });
     } catch (e) {
       this.pendingFallback = null;
@@ -1236,7 +1242,6 @@ export class AgentSession {
     return saved;
   }
   async saveWorkspacePolicy(workspace: string, mode: "review" | "trusted_workspace"): Promise<WorkspacePolicyView> {
-    if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state !== "terminal") throw Object.assign(new Error("run active"), { code: "run_active" });
     const p = await this.workspacePolicies.save(workspace, mode); this.policyView = p; this.emit({type:"state", state:this.getState()}); return p;
   }
   async setPermissionMode(mode: "workspace" | "bypass_permissions", activationToken?: string) {
@@ -1331,6 +1336,10 @@ export class AgentSession {
     const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="permission"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
     await this.client.respondPermission(id, decision, ownership);
     log("debug","permission acknowledged",{id,decision,runId:ownership?.runId,sessionId:ownership?.sessionId});
+    if (decision === "allow_session") {
+      if (pending?.permissionKind === "write") this.sessionWriteGrant = true;
+      if (pending?.permissionKind === "shell") this.sessionShellGrant = true;
+    }
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:"Permission",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     return decision === "deny" ? "declined" : "accepted";

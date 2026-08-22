@@ -106,6 +106,9 @@ export interface PromptOptions {
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   /** Snapshotted at host admit; immutable for this run ownership. */
   executionPhase?: "plan" | "execute";
+  /** Host-held Always-this-chat grants, restored after ACP reclaim. */
+  sessionWrite?: boolean;
+  sessionShell?: boolean;
 }
 
 export interface AcpClient {

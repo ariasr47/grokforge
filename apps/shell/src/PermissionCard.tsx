@@ -12,9 +12,10 @@ export interface PermissionReq {
 interface Props {
   permission: PermissionReq;
   onDecision: (decision: "allow_once" | "allow_session" | "deny") => void;
+  onTrustFolder?: () => void;
 }
 
-export function PermissionCard({ permission, onDecision }: Props) {
+export function PermissionCard({ permission, onDecision, onTrustFolder }: Props) {
   const isShell = permission.kind === "shell";
   const label = isShell
     ? "Allow running a command?"
@@ -54,6 +55,11 @@ export function PermissionCard({ permission, onDecision }: Props) {
         >
           Always this chat
         </Button>
+        {!isShell && onTrustFolder ? (
+          <Button onClick={onTrustFolder}>
+            Trust this folder
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           aria-keyshortcuts="n"

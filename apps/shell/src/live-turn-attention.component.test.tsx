@@ -1,6 +1,6 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ActionDock } from "./ActionDock.js";
 import { mergePendingDiffs, mergePendingPermissions, pendingPermissionsFromRun } from "./runChangeList.js";
 import type { ActivityRecord, DecisionRequest, RunProjectionRun, RunSnapshot } from "./runReducer.js";
@@ -178,6 +178,22 @@ test("pending permission card uses pinned title chrome and detail pass-through",
   assert.ok(within(dock).getByRole("button", { name: "Allow once" }));
   assert.ok(within(dock).getByRole("button", { name: "Always this chat" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
+  assert.equal(screen.queryByRole("button", { name: "Trust this folder" }), null);
+});
+
+test("write permission card offers Trust this folder when a workspace can be trusted", () => {
+  const fixture = run({
+    decisions: { a: permissionDecision({ title: "Write file", detail: "Write: notes.md" }) },
+  });
+  let trusted = 0;
+  render(emptyDock({
+    permissions: pendingPermissionsFromRun(fixture),
+    onTrustFolder: () => { trusted += 1; },
+  }));
+  const dock = screen.getByRole("region", { name: "Pending agent actions" });
+  assert.ok(within(dock).getByRole("region", { name: "Allow saving a file?" }));
+  fireEvent.click(within(dock).getByRole("button", { name: "Trust this folder" }));
+  assert.equal(trusted, 1);
 });
 
 test("mergePendingPermissions drops a settled permission from the dock input", () => {
