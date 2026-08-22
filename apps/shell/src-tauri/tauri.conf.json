@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; frame-src https://www.google.com; media-src 'none'; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8787 ws://127.0.0.1:8787 http://127.0.0.1:8800 ws://127.0.0.1:8800 http://127.0.0.1:8801 ws://127.0.0.1:8801 http://127.0.0.1:8802 ws://127.0.0.1:8802 http://127.0.0.1:8803 ws://127.0.0.1:8803 http://127.0.0.1:8804 ws://127.0.0.1:8804 http://127.0.0.1:8805 ws://127.0.0.1:8805 http://127.0.0.1:8806 ws://127.0.0.1:8806 https://github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com; frame-src https://www.google.com; media-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {

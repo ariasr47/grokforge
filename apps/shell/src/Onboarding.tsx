@@ -1,5 +1,6 @@
 import type { FirstRunState } from "./firstRun";
 import type { ProductMode } from "./api";
+import { Button } from "./ui/Button";
 
 interface Props {
   firstRun: FirstRunState;
@@ -31,20 +32,18 @@ export function Onboarding({
       action:
         onSetMode && !firstRun.pickedMode ? (
           <div className="row" style={{ gap: 8 }}>
-            <button
-              type="button"
-              className={`btn ${isChat ? "primary" : ""}`}
+            <Button
+              variant={isChat ? "primary" : "default"}
               onClick={() => onSetMode("chat")}
             >
               Chat — everyday agent
-            </button>
-            <button
-              type="button"
-              className={`btn ${!isChat ? "primary" : ""}`}
+            </Button>
+            <Button
+              variant={!isChat ? "primary" : "default"}
               onClick={() => onSetMode("code")}
             >
               Code — repo agent
-            </button>
+            </Button>
           </div>
         ) : null,
       hint: "Chat is for everyday work. Code is only if you work with a software project folder.",
@@ -59,13 +58,13 @@ export function Onboarding({
         : firstRun.openedFolder || hasWorkspace,
       action:
         !hasWorkspace && !isChat ? (
-          <button type="button" className="btn primary" onClick={onOpenFolder}>
+          <Button variant="primary" onClick={onOpenFolder}>
             Open folder…
-          </button>
+          </Button>
         ) : isChat && !hasWorkspace ? (
-          <button type="button" className="btn" onClick={onOpenFolder}>
+          <Button onClick={onOpenFolder}>
             Open folder (optional)…
-          </button>
+          </Button>
         ) : null,
       hint: isChat
         ? "Chat works without a folder (sandbox). Attach files only if you need tools on disk."
@@ -76,9 +75,9 @@ export function Onboarding({
       title: "Sign in with subscription (or API key backup)",
       done: firstRun.signedIn || signedIn,
       action: signedIn ? null : (
-        <button type="button" className="btn primary" onClick={onOpenSettings}>
+        <Button variant="primary" onClick={onOpenSettings}>
           Sign in / Settings
-        </button>
+        </Button>
       ),
       hint: "Sign in with your Grok account (recommended). API key is optional backup.",
     },
@@ -92,9 +91,9 @@ export function Onboarding({
         : firstRun.openedFolder || hasWorkspace,
       action:
         isChat && onOpenSettings ? (
-          <button type="button" className="btn" onClick={onOpenSettings}>
+          <Button onClick={onOpenSettings}>
             Open Connectors in Settings
-          </button>
+          </Button>
         ) : null,
       hint: isChat
         ? "No Gmail login yet — paste emails into Chat. Notion: optional API secret under Settings → Connectors. Local files: Open folder or Attach."
@@ -124,9 +123,9 @@ export function Onboarding({
             Desktop agent shell · Grok first · {doneCount}/{steps.length} done
           </p>
         </div>
-        <button type="button" className="btn ghost" onClick={onDismiss}>
+        <Button variant="ghost" onClick={onDismiss}>
           Skip
-        </button>
+        </Button>
       </div>
       <ol className="onboarding-steps">
         {steps.map((s, i) => (

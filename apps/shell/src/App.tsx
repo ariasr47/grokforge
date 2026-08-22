@@ -20,12 +20,16 @@ import {
 import {
   DIAGNOSTICS_REVEAL_MS,
   INITIAL_PHASE_LINE,
-  SLOW_START_LINE,
   SLOW_START_MS,
   phaseLine,
 } from "./launchState";
 import { LaunchFailureCard, canRetryEngine } from "./LaunchFailureCard";
-import { ModeSwitch } from "./ModeSwitch";
+import { BootScreen } from "./BootScreen";
+import { AppTopbar } from "./AppTopbar";
+import { EngineStoppedBanner, ErrorBanner } from "./AppBanners";
+import { ComposerPane } from "./ComposerPane";
+import { recentCrashes } from "./crashSink";
+
 import { EffortControl } from "./EffortControl";
 import { PlanArmControl } from "./PlanArmControl";
 import {
@@ -52,7 +56,7 @@ import { OverlayDialog } from "./ui/Dialog";
 import { parseRunEventEnvelope } from "./runEventSchema";
 import { checkForAppUpdate, installAppUpdate, type UpdateStatus } from "./desktopUpdate";
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
-import { Command, Paperclip, Download, Square, Send, Settings as SettingsIcon, RefreshCw, MessageSquare } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { MessageList, type ChatMessage } from "./MessageList";
 import { RunStatusBar, type RunPhase } from "./RunStatusBar";
 import {
@@ -98,7 +102,7 @@ import {
   importSessionsJson,
   pickImportFile,
 } from "./sessionIO";
-import { BrandMark } from "./BrandMark";
+
 import { ConnectorsPanel } from "./ConnectorsPanel";
 import {
   appChannel,
@@ -346,6 +350,13 @@ export function App() {
 
   useEffect(() => {
     void registerSummonShortcut();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void checkForAppUpdate().then((status) => {
+      if (status.kind === "available") setUpdateStatus(status);
+    });
   }, []);
 
   const discardTranscriptStream = useCallback(() => {
@@ -667,7 +678,7 @@ export function App() {
       sessionTitle: session?.title ?? null,
       messages: messagesRef.current,
       errorBanner,
-      recentErrors: recentErrorsRef.current,
+      recentErrors: [...recentErrorsRef.current, ...recentCrashes()],
       bootMsg: boot === "error" ? bootMsg : null,
       launch: launchStatus,
       health,
@@ -3306,25 +3317,13 @@ export function App() {
     // and the ~20s diagnostics reveal are time-driven; every other line
     // comes straight from the launcher's own phase (`phaseLine`).
     return (
-      <div className="boot-screen">
-        <div className="boot-card">
-          <div className="brand">
-            <BrandMark className="brand-mark brand-mark-lg" />
-            <span className="brand-word">Forge</span>
-          </div>
-          <p className="boot-msg">{slowStart ? SLOW_START_LINE : bootMsg}</p>
-          <div className="boot-spinner" aria-hidden />
-          {diagRevealed && (
-            <Button onClick={() => void exportSessionDiagnostics()}>
-              Save troubleshooting file
-            </Button>
-          )}
-          <p className="boot-hint">
-            Agent shell · Grok first · Chat & Code
-            {channelBadge() ? ` · ${channelBadge()}` : ""}
-          </p>
-        </div>
-      </div>
+      <BootScreen
+        bootMsg={bootMsg}
+        slowStart={slowStart}
+        diagRevealed={diagRevealed}
+        channel={channelBadge()}
+        onSaveDiagnostics={() => void exportSessionDiagnostics()}
+      />
     );
   }
 
@@ -3381,190 +3380,56 @@ export function App() {
           </span>
         </div>
       )}
-      <header className="topbar">
-        <div className="brand" title="Forge — agent shell">
-          <BrandMark />
-          <span className="brand-word">Forge</span>
-          <span className="brand-mode">
-            {productMode === "chat" ? "Chat" : "Code"}
-          </span>
-        </div>
-        <ModeSwitch
-          mode={productMode}
-          applying={modeSwitching}
-          onChange={(m) => void switchMode(m)}
+      <AppTopbar
+        productMode={productMode}
+        modeSwitching={modeSwitching}
+        onSwitchMode={(m) => void switchMode(m)}
+        state={state}
+        branchMap={branchMap}
+        chip={chip}
+        sessionWrite={sessionWrite}
+        sessionShell={sessionShell}
+        hostOk={hostOk}
+        healthFailStreak={healthFailStreak}
+        wsOk={wsOk}
+        engineRetryAllowed={engineRetryAllowed}
+        onRetryHost={() => void retryHost()}
+        view={view}
+        onToggleSettings={() => setView(view === "settings" ? "chat" : "settings")}
+        onOpenPalette={() => setPaletteOpen(true)}
+      />
+
+      {!hostOk ? (
+        <EngineStoppedBanner
+          engineRetryAllowed={engineRetryAllowed}
+          onRetry={() => void retryHost()}
         />
-        <div className="workspace-label" title={state?.workspace ?? ""}>
-          {productMode === "chat" ? (
-            state?.chatRoot ? (
-              <>
-                Files · <strong>{state.workspaceName || "folder"}</strong>
-              </>
-            ) : (
-              "Chat · personal sandbox"
-            )
-          ) : state?.workspace ? (
-            <>
-              Project · <strong>{state.workspaceName}</strong>
-              {branchMap[state.workspace] && (
-                <>
-                  {" "}
-                  <span className="branch top-branch">
-                    {branchMap[state.workspace]}
-                  </span>
-                </>
-              )}
-            </>
-          ) : (
-            "No project open"
-          )}
-        </div>
-        {channelBadge() && (
-          <span
-            className={`chip channel-badge channel-${channelBadge()?.toLowerCase()}`}
-            title={`${channelBadge()} channel · host :${hostPort() ?? "?"} · data ~/.grokforge${appChannel() === "dev" ? "-dev" : ""} (isolated from Prod)`}
-          >
-            {channelBadge()}
-          </span>
-        )}
-        <span className={chip.className} title={state ? `source: ${state.authSource}` : ""}>
-          {chip.text}
-        </span>
-        {(sessionWrite || sessionShell) && (
-          <span className="chip api" title="Session allow policy">
-            session
-            {sessionWrite ? " write" : ""}
-            {sessionShell ? " shell" : ""}
-          </span>
-        )}
-        <span
-          className={`chip ${hostOk && healthFailStreak === 0 ? "api" : "signed-out"}`}
-          title={wsOk ? "WebSocket connected" : "Reconnecting…"}
-        >
-          {healthFailStreak >= 1 ? "Engine · reconnecting" : "Engine · live"}
-        </span>
-        <Button
-          variant="ghost"
-          title="Command palette (Ctrl+K)"
-          onClick={() => setPaletteOpen(true)}
-        >
-          <Icon icon={Command} size={15} />
-          ⌘K
-        </Button>
-        {!hostOk && engineRetryAllowed && (
-          <Button onClick={() => void retryHost()}>
-            <Icon icon={RefreshCw} size={15} />
-            Reconnect
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          onClick={() => setView(view === "settings" ? "chat" : "settings")}
-        >
-          {view === "settings" ? (
-            <>
-              <Icon icon={MessageSquare} size={15} />
-              Chat
-            </>
-          ) : (
-            <>
-              <Icon icon={SettingsIcon} size={15} />
-              Settings
-            </>
-          )}
-        </Button>
-      </header>
+      ) : null}
 
-      {!hostOk && (
-        <div className="banner-error" role="alert">
-          <div>
-            <strong>Forge's engine stopped.</strong> Your conversation is saved.
-            {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
-          </div>
-          {engineRetryAllowed && (
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => void retryHost()}
-            >
-              Try again
-            </button>
-          )}
-        </div>
-      )}
-
-      {errorBanner && (
-        <div className="banner-error" role="alert">
-          <div>
-            <div>{errorBanner}</div>
-            <div className="recovery">
-              {recovery === "api_key" && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => {
-                    setView("settings");
-                    setErrorBanner(null);
-                  }}
-                >
-                  Sign in / API key
-                </button>
-              )}
-              {recovery === "reconnect" && engineRetryAllowed && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void retryHost()}
-                >
-                  Reconnect engine
-                </button>
-              )}
-              {recovery === "workspace" && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void browseFolder()}
-                >
-                  Open folder…
-                </button>
-              )}
-              {recovery === "tools" && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => {
-                    setForceOpenFailedTools(true);
-                    setView("chat");
-                    setErrorBanner(null);
-                    setTimeout(() => setForceOpenFailedTools(false), 2500);
-                  }}
-                >
-                  Show failed tools
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="banner-actions">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void exportSessionDiagnostics()}
-            >
-              Export diagnostics
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => {
-                setErrorBanner(null);
-                setRecovery(null);
-              }}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
+      {errorBanner ? (
+        <ErrorBanner
+          message={errorBanner}
+          recovery={recovery}
+          engineRetryAllowed={engineRetryAllowed}
+          onSignIn={() => {
+            setView("settings");
+            setErrorBanner(null);
+          }}
+          onReconnect={() => void retryHost()}
+          onOpenFolder={() => void browseFolder()}
+          onShowFailedTools={() => {
+            setForceOpenFailedTools(true);
+            setView("chat");
+            setErrorBanner(null);
+            setTimeout(() => setForceOpenFailedTools(false), 2500);
+          }}
+          onExportDiagnostics={() => void exportSessionDiagnostics()}
+          onDismiss={() => {
+            setErrorBanner(null);
+            setRecovery(null);
+          }}
+        />
+      ) : null}
 
       <div className="layout">
         <div className="sidebar-stack" data-mode={productMode}>
@@ -4256,8 +4121,8 @@ export function App() {
                 onPlanKeepPlanning={() => void settlePlan("keep_planning")}
               />
 
-              <div
-                className={`composer-wrap${dragOver ? " drag-over" : ""}`}
+              <ComposerPane
+                dragOver={dragOver}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(true);
@@ -4279,86 +4144,24 @@ export function App() {
                   }
                   composerRef.current?.focus();
                 }}
-              >
-                {atSuggestions.length > 0 && (
-                  <ul className="at-menu">
-                    {atSuggestions.map((f) => (
-                      <li key={f}>
-                        <button type="button" onClick={() => insertAtFile(f)}>
-                          @{f}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="composer">
-                  <textarea
-                    id="composer-input"
-                    ref={composerRef}
-                    value={draft}
-                    onChange={(e) => onComposerChange(e.target.value)}
-                    onKeyDown={onComposerKeyDown}
-                    aria-label="Message to agent"
-                    placeholder={
-                      sendDisabledReason && !draft.trim()
-                        ? sendDisabledReason
-                        : productMode === "chat"
-                          ? "Speak into the continuum… paste text, attach .txt/.md"
-                          : "Speak into the continuum… @file · attach · Enter send"
-                    }
-                    disabled={!connected}
-                    rows={prefs.density === "compact" ? 2 : 3}
-                  />
-                  <input
-                    type="file"
-                    id="composer-attach"
-                    multiple
-                    accept=".txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yml,.yaml,.ts,.tsx,.js,.py,.rs,text/*"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      if (e.target.files?.length) {
-                        void attachFilesToComposer(e.target.files);
-                      }
-                      e.target.value = "";
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    title="Attach text files into this message"
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      document.getElementById("composer-attach")?.click()
-                    }
-                  >
-                    <Icon icon={Paperclip} size={15} />
-                    Attach
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    title="Download this chat as Markdown"
-                    disabled={messages.length === 0}
-                    onClick={exportCurrentChat}
-                  >
-                    <Icon icon={Download} size={15} />
-                    Export
-                  </Button>
-                  {busy ? (
-                    <Button onClick={requestCancel}>
-                      <Icon icon={Square} size={15} />
-                      Cancel
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      disabled={Boolean(sendDisabledReason)}
-                      title={sendDisabledReason || "Send (Enter)"}
-                      onClick={() => void send()}
-                    >
-                      <Icon icon={Send} size={15} />
-                      Send
-                    </Button>
-                  )}
-                </div>
+                atSuggestions={atSuggestions}
+                onInsertAt={insertAtFile}
+                composerRef={composerRef}
+                draft={draft}
+                onDraftChange={onComposerChange}
+                onComposerKeyDown={onComposerKeyDown}
+                sendDisabledReason={sendDisabledReason}
+                productMode={productMode}
+                connected={connected}
+                densityCompact={prefs.density === "compact"}
+                onAttachFiles={(files) => void attachFilesToComposer(files)}
+                busy={busy}
+                hasMessages={messages.length > 0}
+                onExportChat={exportCurrentChat}
+                onCancel={requestCancel}
+                onSend={() => void send()}
+                footer={
+                  <>
                 <div className="composer-footer">
                   <EffortControl
                     value={effortLevel}
@@ -4418,7 +4221,9 @@ export function App() {
                               : "Grok is working — see status bar above. Cancel if stuck.")}
                   </div>
                 )}
-              </div>
+                  </>
+                }
+              />
             </div>
           )}
         </main>

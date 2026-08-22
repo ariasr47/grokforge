@@ -81,14 +81,27 @@ function findVsDevCmd() {
   return null;
 }
 
-const tauriScript = isDev ? "tauri:build:dev" : "tauri:build";
+const tauriArgs = isDev
+  ? ["tauri", "build", "--config", "src-tauri/tauri.conf.dev.json"]
+  : ["tauri", "build"];
+const updaterArtifacts = path.join(shellDir, "src-tauri", ".updater-artifacts.json");
+if (fs.existsSync(updaterKey)) {
+  fs.writeFileSync(
+    updaterArtifacts,
+    JSON.stringify({ bundle: { createUpdaterArtifacts: true } }),
+  );
+  tauriArgs.push("--config", "src-tauri/.updater-artifacts.json");
+  console.log("[tauri-build] updater artifacts ON (signing key present)");
+} else {
+  console.log("[tauri-build] updater artifacts OFF (no .tauri/updater.key)");
+}
 
 console.log(
-  `[tauri-build] channel=${channel} host=:${hostPort} → npm run ${tauriScript}`,
+  `[tauri-build] channel=${channel} host=:${hostPort} → npx ${tauriArgs.join(" ")}`,
 );
 
 if (process.platform !== "win32") {
-  const child = spawn("npm", ["run", tauriScript], {
+  const child = spawn("npx", tauriArgs, {
     cwd: shellDir,
     stdio: "inherit",
     shell: true,
@@ -101,6 +114,7 @@ if (process.platform !== "win32") {
     console.error("MSVC Build Tools not found");
     process.exit(1);
   }
+  const tauriLine = `npx ${tauriArgs.join(" ")}`;
   const bat = `@echo off\r
 set GROKFORGE_CHANNEL=${channel}\r
 set GROKFORGE_PORT=${hostPort}\r
@@ -110,7 +124,7 @@ set GROKFORGE_BUILD_CHANNEL=${channel}\r
 call "${vsdev}" -arch=x64 -host_arch=x64\r
 if errorlevel 1 exit /b 1\r
 cd /d "${shellDir}"\r
-npm run ${tauriScript}\r
+${tauriLine}\r
 `;
   const tmp = path.join(root, ".tauri-build-run.cmd");
   fs.writeFileSync(tmp, bat, "utf8");

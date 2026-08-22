@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "./ui/Button";
 import {
   api,
   type ConnectorInfo,
@@ -130,18 +131,15 @@ export function ConnectorsPanel({ onUseSample, onOpenChat }: Props) {
                         }
                       />
                       <div className="row" style={{ marginTop: 8 }}>
-                        <button
-                          type="button"
-                          className="btn"
+                        <Button
                           disabled={busyId === c.id}
                           onClick={() => void saveToken(c.id)}
                         >
                           Save token
-                        </button>
+                        </Button>
                         {c.hasToken && (
-                          <button
-                            type="button"
-                            className="btn ghost"
+                          <Button
+                            variant="ghost"
                             disabled={busyId === c.id}
                             onClick={() => {
                               setTokenDrafts((d) => ({ ...d, [c.id]: "" }));
@@ -151,31 +149,28 @@ export function ConnectorsPanel({ onUseSample, onOpenChat }: Props) {
                             }}
                           >
                             Clear
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </div>
                   )}
                   <div className="row" style={{ marginTop: 10, gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn"
+                    <Button
                       disabled={busyId === c.id}
                       onClick={() => void runTest(c.id)}
                     >
                       {busyId === c.id ? "Testing…" : "Test"}
-                    </button>
+                    </Button>
                     {onUseSample && (
-                      <button
-                        type="button"
-                        className="btn primary"
+                      <Button
+                        variant="primary"
                         onClick={() => {
                           onUseSample(c.samplePrompt);
                           onOpenChat?.();
                         }}
                       >
                         Try in Chat
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>

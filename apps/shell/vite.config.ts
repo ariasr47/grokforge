@@ -23,7 +23,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      react(),
+      react({
+        babel: {
+          plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+        },
+      }),
       ...(mode === "analyze"
         ? [visualizer({ filename: "dist/stats.html", gzipSize: true, open: false })]
         : []),

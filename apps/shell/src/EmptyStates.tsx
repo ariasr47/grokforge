@@ -1,3 +1,5 @@
+import { Button } from "./ui/Button";
+
 interface Props {
   kind:
     | "no-workspace"
@@ -59,9 +61,9 @@ export function EmptyStates({
           {onReconnect ? " Forge is trying to reconnect." : ""}
         </p>
         {onReconnect && (
-          <button type="button" className="btn primary" onClick={onReconnect}>
+          <Button variant="primary" onClick={onReconnect}>
             Try again
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -80,18 +82,14 @@ export function EmptyStates({
         </p>
         <div className="row" style={{ justifyContent: "center", gap: 8 }}>
           {onSaveDiagnostics && (
-            <button
-              type="button"
-              className="btn primary"
-              onClick={onSaveDiagnostics}
-            >
+            <Button variant="primary" onClick={onSaveDiagnostics}>
               Save troubleshooting file
-            </button>
+            </Button>
           )}
           {onStartNewConversation && (
-            <button type="button" className="btn" onClick={onStartNewConversation}>
+            <Button onClick={onStartNewConversation}>
               Start a new conversation
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -107,9 +105,9 @@ export function EmptyStates({
           that workspace.
         </p>
         {onOpenFolder && (
-          <button type="button" className="btn primary" onClick={onOpenFolder}>
+          <Button variant="primary" onClick={onOpenFolder}>
             Open folder…
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -129,14 +127,12 @@ export function EmptyStates({
         </p>
         <div className="row" style={{ justifyContent: "center" }}>
           {onSignIn && (
-            <button type="button" className="btn primary" onClick={onSignIn}>
+            <Button variant="primary" onClick={onSignIn}>
               Sign in with Grok
-            </button>
+            </Button>
           )}
           {onSettings && (
-            <button type="button" className="btn" onClick={onSettings}>
-              Open Settings
-            </button>
+            <Button onClick={onSettings}>Open Settings</Button>
           )}
         </div>
       </div>

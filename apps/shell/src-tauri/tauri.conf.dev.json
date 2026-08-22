@@ -13,7 +13,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://localhost:5174 http://127.0.0.1:5174; script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:5174; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:5174 ws://localhost:5174 http://127.0.0.1:* ws://127.0.0.1:*; frame-src https://www.google.com"
+      "csp": "default-src 'self' http://localhost:5174 http://127.0.0.1:5174; script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:5174; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8788 ws://127.0.0.1:8788 http://127.0.0.1:8810 ws://127.0.0.1:8810 http://127.0.0.1:8811 ws://127.0.0.1:8811 http://127.0.0.1:8812 ws://127.0.0.1:8812 http://127.0.0.1:8813 ws://127.0.0.1:8813 http://127.0.0.1:8814 ws://127.0.0.1:8814 http://127.0.0.1:8815 ws://127.0.0.1:8815 http://127.0.0.1:8816 ws://127.0.0.1:8816 http://localhost:5174 ws://localhost:5174 http://127.0.0.1:5174 ws://127.0.0.1:5174 https://github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com; frame-src https://www.google.com"
     }
   },
   "bundle": {

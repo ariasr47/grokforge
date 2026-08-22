@@ -88,7 +88,7 @@ export function buildSessionMarkdown(opts: {
     lines.push("### Boot message", "", opts.bootMsg, "");
   }
   if (opts.recentErrors?.length) {
-    lines.push("### Recent UI errors", "");
+    lines.push("### Recent UI errors / crash sink", "");
     for (const e of opts.recentErrors.slice(-20)) {
       lines.push(`- ${e}`);
     }

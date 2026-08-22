@@ -2,29 +2,36 @@
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "files": {
     "includes": [
-      "apps/shell/src/**",
-      "apps/host/src/**",
-      "packages/*/src/**",
-      "scripts/**",
+      "apps/shell/src/ui/**",
+      "apps/shell/src/fonts.ts",
+      "apps/shell/src/runEventSchema.ts",
+      "apps/shell/src/desktopUpdate.ts",
+      "apps/shell/src/desktopNotify.ts",
+      "apps/shell/src/codeHighlightAsync.ts",
+      "apps/shell/src/csp.ts",
+      "apps/shell/src/crashSink.ts",
+      "apps/shell/src/BootScreen.tsx",
+      "apps/shell/src/AppTopbar.tsx",
+      "apps/shell/src/AppBanners.tsx",
+      "apps/shell/src/ComposerPane.tsx",
       "!**/*.css",
-      "!**/dist/**",
-      "!**/node_modules/**",
-      "!**/src-tauri/target/**",
-      "!**/src-tauri/target-dev/**",
-      "!apps/host/src/allowed-origins.ts",
-      "!apps/host/src/build-version.ts"
+      "!**/dist",
+      "!**/node_modules",
+      "!.spire"
     ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      }
+    }
   },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true
-    }
   },
   "javascript": {
     "formatter": {

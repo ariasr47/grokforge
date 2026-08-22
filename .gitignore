@@ -17,6 +17,7 @@ coverage/
 .tauri-build-run.cmd
 .desktop-profile/
 .tauri/updater.key
+apps/shell/src-tauri/.updater-artifacts.json
 *.tsbuildinfo
 .idea/
 .vscode/*
