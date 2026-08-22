@@ -155,9 +155,9 @@ export const MarkdownBody = memo(function MarkdownBody({
           }
           if (streaming) {
             return (
-              <div key={k} className="rich-pending" role="status">
-                Building rich layout…
-              </div>
+              <pre key={k} className="md-stream-pre">
+                {b.code}
+              </pre>
             );
           }
           return <CodeBlock key={k} code={b.code} lang="grok-ui" />;

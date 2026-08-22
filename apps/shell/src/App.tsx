@@ -77,7 +77,7 @@ import {
   workspaceDisplayName,
   type ChatSession,
 } from "./sessions";
-import { StreamBuffer } from "./streamBuffer";
+import { FrameFlush, StreamBuffer } from "./streamBuffer";
 import { computeOverview, OverviewStrip } from "./OverviewStrip";
 import { EmptyStates } from "./EmptyStates";
 import { Sidebar, type WorkspaceNode } from "./Sidebar";
@@ -121,7 +121,7 @@ import {
   transcriptToMarkdown,
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
-import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
 import {
   hasDockOwnedPending,
   mergePendingDiffs,
@@ -223,10 +223,20 @@ export function App() {
   });
   // Reconnect reconciliation reads the latest durable projection without
   // changing the HostSocket effect's identity (which would create a second
-  // transport). These refs are intentionally updated on every render so an
-  // onopen callback never closes over a stale run cursor.
+  // transport). Sync from React state unless a coalesced delta paint is
+  // ahead of the committed snapshot — otherwise a render would drop tokens.
   const runProjectionRef = useRef(runProjection);
-  runProjectionRef.current = runProjection;
+  const pendingProjectionPaintRef = useRef(false);
+  const projectionFlushRef = useRef<FrameFlush | null>(null);
+  if (!pendingProjectionPaintRef.current) {
+    runProjectionRef.current = runProjection;
+  }
+  const commitRunProjection = useCallback((next: RunProjection) => {
+    pendingProjectionPaintRef.current = false;
+    projectionFlushRef.current?.cancel();
+    runProjectionRef.current = next;
+    setRunProjection(next);
+  }, []);
   const reconcileRunsInFlightRef = useRef<Promise<{ ok: boolean; hasNonterminal: boolean }> | null>(null);
   const [catchUpByRunId, setCatchUpByRunId] = useState<CatchUpMap>({});
   const socketRef = useRef<HostSocket | null>(null);
@@ -371,6 +381,18 @@ export function App() {
   }, []);
 
   // Batched stream flushes → single setMessages per frame
+  useEffect(() => {
+    const projectionFlush = new FrameFlush(() => {
+      pendingProjectionPaintRef.current = false;
+      setRunProjection(runProjectionRef.current);
+    });
+    projectionFlushRef.current = projectionFlush;
+    return () => {
+      projectionFlush.cancel();
+      if (projectionFlushRef.current === projectionFlush) projectionFlushRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     const buf = new StreamBuffer((text) => {
       if (streamEpochRef.current !== eventEpochRef.current) return;
@@ -777,11 +799,18 @@ export function App() {
       }
       // Sequential live envelopes must reduce from the latest snapshot, not
       // a batched updater. Dock pending is rebuilt from durable evidence.
+      // Token deltas stay on the ref and paint once per frame; other kinds
+      // cancel that coalesce so decision/activity/terminal land immediately.
       const prevProjection = runProjectionRef.current;
       const next = reduceRunEvent(prevProjection, runEvent);
       if (next === prevProjection) return;
       runProjectionRef.current = next;
-      setRunProjection(next);
+      if (isRunStreamDelta(runEvent.payload.kind)) {
+        pendingProjectionPaintRef.current = true;
+        projectionFlushRef.current?.ping();
+      } else {
+        commitRunProjection(next);
+      }
       const nextRun = next.runsById[runEvent.runId];
       if (
         nextRun &&
@@ -1265,7 +1294,7 @@ export function App() {
       toolFailCountRef.current = 0;
       return;
     }
-  }, [applyState, bindNormalizedRun, markDisconnectedActivity, reportError, stampActivity, toast]);
+  }, [applyState, bindNormalizedRun, commitRunProjection, markDisconnectedActivity, reportError, stampActivity, toast]);
 
   useEffect(() => {
     onServerEventRef.current = onServerEvent;
@@ -1428,8 +1457,7 @@ export function App() {
       const replay = await api.runState(run.runId, run.sessionId, after);
       const next = reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events);
       const nextRun = next.runsById[run.runId];
-      runProjectionRef.current = next;
-      setRunProjection(next);
+      commitRunProjection(next);
       if (nextRun) {
         setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
         setPermissions((prev) => mergePendingPermissions(prev, nextRun));
@@ -1446,7 +1474,7 @@ export function App() {
       if (openWindow) setCatchUpByRunId((m) => failCatchUp(m, run.runId));
       return { ok: false as const, run: null };
     }
-  }, []);
+  }, [commitRunProjection]);
 
   const restoreOwnedRuns = useCallback(async (intent: RestoreIntent): Promise<{ ok: boolean; hasNonterminal: boolean }> => {
     const runs = runProjectionRef.current.runOrder
@@ -1472,7 +1500,7 @@ export function App() {
         // Health-poll reconcile is incremental completeness — it must not
         // open a File changes catch-up window (W3).
         const replay = await api.runState(run.runId, run.sessionId, run.lastEventSeq);
-        setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+        commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
         return replay.run;
       }));
       const ok = results.every((result) => result.status === "fulfilled");
@@ -1486,7 +1514,7 @@ export function App() {
     finally {
       if (reconcileRunsInFlightRef.current === task) reconcileRunsInFlightRef.current = null;
     }
-  }, []);
+  }, [commitRunProjection]);
 
   // Normalized terminal truth owns the legacy run chrome regardless of which
   // transport delivered it (live WS, resume, admission replay, or health
@@ -2496,10 +2524,10 @@ export function App() {
     void cancelRequest
       .then(async (result) => {
         if (active && sessionId && "run" in result && result.run) {
-          setRunProjection((prev) => mergeRunSnapshot(prev, result.run));
+          commitRunProjection(mergeRunSnapshot(runProjectionRef.current, result.run));
           try {
             const replay = await api.runState(active.runId, sessionId, 0);
-            setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+            commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
             if (replay.run.state === "terminal") { setRunStartedAt(null); setRunPhase(null); setRunPhaseDetail(null); setRunFooter(null); setAwaitingNextTurn(true); cancelInFlightRef.current = false; }
           } catch { /* socket replay remains available */ }
         }
@@ -2512,7 +2540,7 @@ export function App() {
         if (active && sessionId && e?.status === 409 && e?.code === "run_terminal") {
           void api.runState(active.runId, sessionId, 0)
             .then((replay) => {
-              setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+              commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
               if (replay.run.state === "terminal") {
                 setRunStartedAt(null);
                 setRunPhase(null);
@@ -2652,10 +2680,10 @@ export function App() {
           // Project identity immediately, but never fabricate an eventSeq from
           // the snapshot. Early WS frames may already be in flight; replay the
           // journal from the reducer's cursor so those frames remain admissible.
-          setRunProjection((prev) => mergeRunSnapshot(prev, run));
+          commitRunProjection(mergeRunSnapshot(runProjectionRef.current, run));
           try {
             const replay = await api.runState(run.runId, run.sessionId, 0);
-            setRunProjection((prev) => reduceRunEvents(mergeRunSnapshot(prev, replay.run), replay.events));
+            commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
             if (replay.run.state === "terminal") {
               setRunStartedAt(null);
               setRunPhase(null);

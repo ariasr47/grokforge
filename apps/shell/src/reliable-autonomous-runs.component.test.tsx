@@ -42,6 +42,37 @@ test("renders durable received answer segments before and after a non-answer ter
   assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
   assert.ok(screen.getByText("Cancelled"));
 });
+test("live received answer is plain text, not markdown or a rich-layout placeholder", () => {
+  const live = "# Hello\n\n```grok-ui\nnot json yet";
+  render(<RunSurface run={run({ answer: { seg: live } })} />);
+  assert.equal(screen.queryByText("Building rich layout…"), null);
+  const partial = document.querySelector(".assistant-partial");
+  assert.ok(partial);
+  const pre = partial!.querySelector("pre");
+  assert.ok(pre);
+  assert.ok(pre!.textContent?.includes("# Hello"));
+  assert.ok(pre!.textContent?.includes("```grok-ui"));
+  assert.equal(partial!.querySelector(".md-p"), null);
+  assert.equal(partial!.querySelector(".md-h"), null);
+  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+});
+test("vouched terminal answer leaves the live pre and parses markdown", () => {
+  const body = "# Hello\n\nDone.";
+  const { rerender } = render(<RunSurface run={run({ answer: { seg: body } })} />);
+  assert.ok(document.querySelector(".assistant-partial pre"));
+  rerender(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "answered",
+    finalAnswer: body,
+    answerVouched: true,
+    answer: { seg: body },
+  })} />);
+  assert.equal(document.querySelector(".assistant-partial"), null);
+  const answer = document.querySelector(".assistant-answer");
+  assert.ok(answer);
+  assert.ok(answer!.querySelector(".md-h, .md-p"));
+  assert.equal(screen.getByRole("article", { name: /assistant answer/i }).textContent?.includes("# Hello"), false);
+});
 test("keeps activity, decision, policy/model provenance and terminal under one run", () => {
   const activity = { activityId: "a", invocationId: "i", name: "read_file", lifecycle: "terminal", execution: "executed", status: "succeeded", input: { path: "README.md" }, output: "ok", error: null, diff: null, policy: { effectiveMode: "review" }, automaticEligibility: "read", autoApplied: false, editId: null, recovery: null } as any;
   const decision = { requestId: "d", invocationId: "i", kind: "permission", status: "pending", title: "Approval needed", detail: "Allow read?", expiresAt: null, policy: { effectiveMode: "review" } } as any;

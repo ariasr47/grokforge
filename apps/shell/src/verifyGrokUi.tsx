@@ -30,6 +30,19 @@ const run = {
   terminalEventSeq: 2,
 } as RunProjectionRun;
 
+const streamingRun = {
+  ...run,
+  runId: "verify-stream",
+  state: "running",
+  terminalKind: null,
+  finalAnswer: null,
+  answerVouched: false,
+  answer: {
+    seg: "Intro while the fence is still open.\n\n```grok-ui\n{ \"version\": 1, \"blocks\": [{ \"type\": \"callout\", \"title\": \"Not yet\"",
+  },
+  terminalEventSeq: null,
+} as RunProjectionRun;
+
 createRoot(document.getElementById("root")!).render(
   createElement(
     "div",
@@ -42,5 +55,6 @@ createRoot(document.getElementById("root")!).render(
       createElement("button", { type: "button", className: "btn ghost", id: "verify-ghost" }, "Deny"),
     ),
     createElement(RunSurface, { run, productMode: "chat" }),
+    createElement(RunSurface, { run: streamingRun, productMode: "chat" }),
   ),
 );

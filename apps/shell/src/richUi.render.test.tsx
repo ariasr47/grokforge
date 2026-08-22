@@ -137,6 +137,19 @@ describe("unfenced grok-ui dump renders components", () => {
     assert.equal(answer!.textContent?.includes('"version": 1'), false);
   });
 
+  it("streaming incomplete grok-ui stays pre, not a Building rich layout placeholder", () => {
+    render(createElement(MarkdownBody, {
+      text: "Intro\n\n```grok-ui\nnot json yet",
+      streaming: true,
+    }));
+    assert.equal(screen.queryByText("Building rich layout…"), null);
+    assert.equal(document.querySelector(".rich-pending"), null);
+    const pre = document.querySelector("pre");
+    assert.ok(pre);
+    assert.ok(pre!.textContent?.includes("not json yet"));
+    assert.ok(screen.getByText("Intro"));
+  });
+
   it("renders a constructed map embed, not a caller-supplied iframe src", () => {
     const src =
       "```grok-ui\n" +

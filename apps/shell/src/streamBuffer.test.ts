@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { StreamBuffer } from "./streamBuffer.js";
+import { FrameFlush, StreamBuffer } from "./streamBuffer.js";
 
 describe("StreamBuffer", () => {
   it("batches pushes into one flush via timer fallback", async () => {
@@ -30,5 +30,50 @@ describe("StreamBuffer", () => {
     buf.push("x");
     buf.flush();
     assert.deepEqual(chunks, ["x"]);
+  });
+});
+
+describe("FrameFlush", () => {
+  it("batches pings into one flush via timer fallback", async () => {
+    let n = 0;
+    const flush = new FrameFlush(() => {
+      n += 1;
+    });
+    flush.ping();
+    flush.ping();
+    flush.ping();
+    assert.equal(n, 0);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(n, 1);
+  });
+
+  it("cancel drops a scheduled flush", async () => {
+    let n = 0;
+    const flush = new FrameFlush(() => {
+      n += 1;
+    });
+    flush.ping();
+    flush.cancel();
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(n, 0);
+  });
+
+  it("flush emits immediately when pending", () => {
+    let n = 0;
+    const flush = new FrameFlush(() => {
+      n += 1;
+    });
+    flush.ping();
+    flush.flush();
+    assert.equal(n, 1);
+  });
+
+  it("flush is a no-op when nothing is pending", () => {
+    let n = 0;
+    const flush = new FrameFlush(() => {
+      n += 1;
+    });
+    flush.flush();
+    assert.equal(n, 0);
   });
 });

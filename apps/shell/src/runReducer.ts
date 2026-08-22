@@ -54,6 +54,10 @@ export type RunEventPayload =
   | { kind: "project_instructions"; projectInstructions: ProjectInstructionsTurnVoucher }
   | { kind: "run_terminal"; terminalKind: TerminalKind; finalAnswer: string | null; answerVouched: boolean; failure: RunSnapshot["failure"]; terminalAt: string };
 export interface RunEventEnvelope { schemaVersion: 1; type: RunEventPayload["kind"]; sessionId: string; runId: string; eventSeq: number; connectionGeneration: number; occurredAt: string; payload: RunEventPayload; }
+/** Token-storm kinds. Reduce immediately; paint at most once per frame. */
+export function isRunStreamDelta(kind: RunEventPayload["kind"]): boolean {
+  return kind === "answer_delta" || kind === "reasoning_delta";
+}
 export interface RunProjection {
   runsById: Record<string, RunProjectionRun>; runOrder: string[]; sessionCursors: Record<string, number>;
 }

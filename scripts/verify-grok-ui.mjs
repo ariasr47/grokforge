@@ -37,6 +37,7 @@ try {
     waitUntil: "domcontentloaded",
   });
   await page.waitForSelector(".assistant-answer", { timeout: 10_000 });
+  await page.waitForSelector(".assistant-partial", { timeout: 10_000 });
   await page.waitForSelector("#verify-primary", { timeout: 5_000 });
 
   const hover = await page.locator("#verify-primary").evaluate((el) => {
@@ -53,7 +54,9 @@ try {
 
   const report = await page.evaluate(() => {
     const answer = document.querySelector(".assistant-answer");
+    const partial = document.querySelector(".assistant-partial");
     const text = answer?.textContent ?? "";
+    const pageText = document.body.textContent ?? "";
     return {
       hasAnswer: Boolean(answer),
       hasCallout: Boolean(answer?.querySelector(".rich-callout")),
@@ -65,6 +68,10 @@ try {
       calloutTitle: answer?.querySelector(".rich-callout-title")?.textContent ?? null,
       chatHidesFileChanges: !document.querySelector('[aria-label="File changes"]'),
       chatHidesVerify: !document.querySelector('[aria-label="Verify"]'),
+      hasPartial: Boolean(partial),
+      hasPartialPre: Boolean(partial?.querySelector("pre")),
+      partialKeepsFence: Boolean(partial?.textContent?.includes("```grok-ui")),
+      richLayoutPlaceholder: pageText.includes("Building rich layout"),
     };
   });
 
@@ -82,6 +89,10 @@ try {
   }
   if (!report.chatHidesFileChanges) fail.push("Chat still shows File changes");
   if (!report.chatHidesVerify) fail.push("Chat still shows Verify");
+  if (!report.hasPartial) fail.push("missing live .assistant-partial");
+  if (!report.hasPartialPre) fail.push("live answer is not a pre");
+  if (!report.partialKeepsFence) fail.push("live answer dropped the open grok-ui fence");
+  if (report.richLayoutPlaceholder) fail.push("still showing Building rich layout placeholder");
   const ink = hovered.color.replace(/\s/g, "");
   const darkInk = ink === "rgb(4,16,22)" || ink === "rgba(4,16,22,1)";
   const hasGradient = /gradient/i.test(hovered.bgImage);

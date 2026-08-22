@@ -189,7 +189,15 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
       })}
     {error && <p role="alert">{error}</p>}
     {run.state !== "terminal" && <div className="run-live" role="status" aria-live="polite">{run.state === "recovering" ? "Recovering run…" : run.state === "cancelling" ? "Ending run…" : "Run in progress…"}</div>}
-    {receivedAnswer && !(run.terminalKind === "answered" && run.answerVouched && answer) && <div className="assistant-partial" aria-label="Received answer (not final)"><MarkdownBody text={receivedAnswer} streaming={run.state !== "terminal"} onChoose={onChoose} /></div>}
+    {receivedAnswer && !(run.terminalKind === "answered" && run.answerVouched && answer) && (
+      <div
+        className={`assistant-partial${run.state !== "terminal" ? " streaming" : ""}`}
+        aria-label="Received answer (not final)"
+      >
+        <pre className="assistant-partial-text">{receivedAnswer}</pre>
+        {run.state !== "terminal" ? <span className="md-caret" aria-hidden /> : null}
+      </div>
+    )}
     {run.terminalKind === "answered" && run.answerVouched && answer && <div className="assistant-answer" role="article" aria-label="Assistant answer"><MarkdownBody text={answer} onChoose={onChoose} /></div>}
     {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}
   </article>;

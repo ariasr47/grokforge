@@ -1,9 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, restoreRunProjection, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
+import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, restoreRunProjection, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
 const snap = (sessionId="s1", runId="r1"): RunSnapshot => ({ sessionId, runId, connectionGeneration:1, state:"admitted", acceptedPrompt:"prompt", admittedAt:"", updatedAt:"", lastEventSeq:0, policy:{mode:"review"}, model:{model:"grok-4.6"}, terminalKind:null, finalAnswer:null, answerVouched:false, failure:null });
 const started = (s=snap(), seq=1): RunEventEnvelope => ({ schemaVersion:1,type:"run_started",sessionId:s.sessionId,runId:s.runId,eventSeq:seq,connectionGeneration:s.connectionGeneration,occurredAt:"",payload:{kind:"run_started",run:s} });
 function event(payload: RunEventEnvelope["payload"], seq:number, s="s1", r="r1"): RunEventEnvelope { return {schemaVersion:1,type:payload.kind,sessionId:s,runId:r,eventSeq:seq,connectionGeneration:1,occurredAt:"",payload}; }
+test("answer and reasoning deltas are the only coalesced live kinds", () => {
+  assert.equal(isRunStreamDelta("answer_delta"), true);
+  assert.equal(isRunStreamDelta("reasoning_delta"), true);
+  assert.equal(isRunStreamDelta("run_terminal"), false);
+  assert.equal(isRunStreamDelta("activity_update"), false);
+  assert.equal(isRunStreamDelta("decision_request"), false);
+  assert.equal(isRunStreamDelta("run_state"), false);
+});
 test("deduplicates replay by runId/eventSeq",()=>{const a=reduceRunEvent(initialRunProjection(),started()); assert.strictEqual(reduceRunEvent(a,started()),a);});
 test("wrong session returns same reference",()=>{const a=reduceRunEvent(initialRunProjection(),started()); assert.strictEqual(reduceRunEvent(a,event({kind:"run_state",state:"running",liveness:null},2,"other")),a);});
 test("stale generation returns same reference",()=>{const a=reduceRunEvent(initialRunProjection(),started()); const e=event({kind:"run_state",state:"running",liveness:null},2); e.connectionGeneration=2; assert.strictEqual(reduceRunEvent(a,e),a);});
