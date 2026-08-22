@@ -2,6 +2,10 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { RunSurface } from "./RunSurface";
 import type { RunProjectionRun } from "./runReducer";
+import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
+import { Paperclip, Send, Settings } from "lucide-react";
+import "./fonts";
 import "./styles.css";
 
 const dump =
@@ -50,9 +54,21 @@ createRoot(document.getElementById("root")!).render(
     createElement(
       "div",
       { className: "row", style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-      createElement("button", { type: "button", className: "btn primary", id: "verify-primary" }, "Allow once"),
-      createElement("button", { type: "button", className: "btn", id: "verify-secondary" }, "Always this chat"),
-      createElement("button", { type: "button", className: "btn ghost", id: "verify-ghost" }, "Deny"),
+      createElement(Button, { variant: "primary", id: "verify-primary" }, "Allow once"),
+      createElement(Button, { id: "verify-secondary" }, "Always this chat"),
+      createElement(Button, { variant: "ghost", id: "verify-ghost" }, "Deny"),
+      createElement(Button, { variant: "primary", id: "verify-send" },
+        createElement(Icon, { icon: Send, size: 15 }),
+        " Send",
+      ),
+      createElement(Button, { variant: "ghost", id: "verify-attach" },
+        createElement(Icon, { icon: Paperclip, size: 15 }),
+        " Attach",
+      ),
+      createElement(Button, { variant: "ghost", id: "verify-settings" },
+        createElement(Icon, { icon: Settings, size: 15 }),
+        " Settings",
+      ),
     ),
     createElement(RunSurface, { run, productMode: "chat" }),
     createElement(RunSurface, { run: streamingRun, productMode: "chat" }),

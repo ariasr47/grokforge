@@ -1,12 +1,5 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useRef, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface Props<T> {
   items: T[];
@@ -22,8 +15,7 @@ interface Props<T> {
 }
 
 /**
- * Lightweight windowed list — no extra deps.
- * Good enough for hundreds of chat sessions.
+ * Windowed list. Short lists render in full; longer lists use TanStack Virtual.
  */
 export const VirtualList = memo(function VirtualList<T>({
   items,
@@ -35,56 +27,14 @@ export const VirtualList = memo(function VirtualList<T>({
   empty,
 }: Props<T>) {
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewport, setViewport] = useState(400);
-
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const measure = () => setViewport(el.clientHeight || 400);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const rafScroll = useRef<number | null>(null);
-  const onScroll = useCallback(() => {
-    if (rafScroll.current != null) return;
-    rafScroll.current = requestAnimationFrame(() => {
-      rafScroll.current = null;
-      const el = scrollerRef.current;
-      if (!el) return;
-      setScrollTop(el.scrollTop);
-    });
-  }, []);
-  useEffect(() => {
-    return () => {
-      if (rafScroll.current != null) cancelAnimationFrame(rafScroll.current);
-    };
-  }, []);
-
   const total = items.length;
-  const { start, end, offsetY, height } = useMemo(() => {
-    if (total === 0) {
-      return { start: 0, end: 0, offsetY: 0, height: 0 };
-    }
-    // Short lists: render all (no virtualization overhead)
-    if (total <= 40) {
-      return { start: 0, end: total, offsetY: 0, height: total * rowHeight };
-    }
-    const visible = Math.ceil(viewport / rowHeight) + overscan * 2;
-    let s = Math.floor(scrollTop / rowHeight) - overscan;
-    if (s < 0) s = 0;
-    let e = s + visible;
-    if (e > total) e = total;
-    return {
-      start: s,
-      end: e,
-      offsetY: s * rowHeight,
-      height: total * rowHeight,
-    };
-  }, [total, scrollTop, viewport, rowHeight, overscan]);
+  const virtualizer = useVirtualizer({
+    count: total,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: () => rowHeight,
+    overscan,
+    enabled: total > 40,
+  });
 
   if (total === 0) {
     return (
@@ -94,29 +44,53 @@ export const VirtualList = memo(function VirtualList<T>({
     );
   }
 
-  const slice = items.slice(start, end);
+  if (total <= 40) {
+    return (
+      <div
+        className={className}
+        ref={scrollerRef}
+        style={{ overflow: "auto", position: "relative" }}
+      >
+        {items.map((item, index) => (
+          <div
+            key={getKey(item, index)}
+            style={{ minHeight: rowHeight, contentVisibility: "auto" }}
+          >
+            {renderItem(item, index)}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
+  const virtualItems = virtualizer.getVirtualItems();
   return (
     <div
       className={className}
       ref={scrollerRef}
-      onScroll={onScroll}
       style={{ overflow: "auto", position: "relative" }}
     >
-      <div style={{ height, position: "relative" }}>
-        <div style={{ transform: `translateY(${offsetY}px)` }}>
-          {slice.map((item, i) => {
-            const index = start + i;
-            return (
-              <div
-                key={getKey(item, index)}
-                style={{ minHeight: rowHeight, contentVisibility: "auto" }}
-              >
-                {renderItem(item, index)}
-              </div>
-            );
-          })}
-        </div>
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualItems.map((row) => {
+          const item = items[row.index]!;
+          return (
+            <div
+              key={getKey(item, row.index)}
+              data-index={row.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${row.start}px)`,
+                minHeight: rowHeight,
+              }}
+            >
+              {renderItem(item, row.index)}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

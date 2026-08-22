@@ -1,3 +1,5 @@
+import { Button } from "./ui/Button";
+
 export interface PermissionReq {
   id: string;
   kind: "write" | "shell";
@@ -39,30 +41,26 @@ export function PermissionCard({ permission, onDecision }: Props) {
       </p>
       <pre className="detail">{permission.detail}</pre>
       <div className="row">
-        <button
-          type="button"
-          className="btn primary"
+        <Button
+          variant="primary"
           aria-keyshortcuts="y"
           onClick={() => onDecision("allow_once")}
         >
           Allow once
-        </button>
-        <button
-          type="button"
-          className="btn"
+        </Button>
+        <Button
           aria-keyshortcuts="s"
           onClick={() => onDecision("allow_session")}
         >
           Always this chat
-        </button>
-        <button
-          type="button"
-          className="btn ghost"
+        </Button>
+        <Button
+          variant="ghost"
           aria-keyshortcuts="n"
           onClick={() => onDecision("deny")}
         >
           Deny
-        </button>
+        </Button>
       </div>
     </div>
   );

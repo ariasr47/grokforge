@@ -4,6 +4,7 @@ import { App } from "./App";
 import { FieldLayer } from "./FieldLayer";
 import { ToastProvider } from "./Toast";
 import { applyPrefsToDom } from "./prefs";
+import "./fonts";
 import "./styles.css";
 
 applyPrefsToDom();

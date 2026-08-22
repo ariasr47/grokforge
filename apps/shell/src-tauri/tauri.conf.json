@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; frame-src https://www.google.com; media-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
@@ -57,5 +57,15 @@
       "resources/agents/grok-acp/index.js": "resources/agents/grok-acp/index.js"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5RjYwQzVDQ0Y1RDg3N0YKUldSL2gxM1BYQXoycWQrY3gwbmxhM0E2YlV3S1FiRmd0alFOTGhkQU80cEtJbTB4amw4UTRndHMK",
+      "endpoints": [
+        "https://github.com/ariasr47/grokforge/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

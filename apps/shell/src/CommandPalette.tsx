@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OverlayDialog } from "./ui/Dialog";
 
 export interface PaletteAction {
   id: string;
@@ -50,24 +51,19 @@ export function CommandPalette({ open, actions, onClose }: Props) {
     if (idx >= filtered.length) setIdx(Math.max(0, filtered.length - 1));
   }, [filtered.length, idx]);
 
-  if (!open) return null;
-
   const run = (a: PaletteAction) => {
     onClose();
     a.run();
   };
 
   return (
-    <div
-      className="palette-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Command palette"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <OverlayDialog
+      isOpen={open}
+      onClose={onClose}
+      title="Command palette"
+      overlayClassName="palette-overlay"
+      modalClassName="palette"
     >
-      <div className="palette">
         <input
           ref={inputRef}
           className="palette-input"
@@ -140,7 +136,6 @@ export function CommandPalette({ open, actions, onClose }: Props) {
           <span>Ctrl+L chat</span>
           <span>Ctrl+N new</span>
         </div>
-      </div>
-    </div>
+    </OverlayDialog>
   );
 }

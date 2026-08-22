@@ -30,9 +30,9 @@
   --dur: 200ms;
   --dur-slow: 360ms;
   /* Typography scale (Geist) */
-  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
     monospace;
   --sans: var(--font-sans);
   --mono: var(--font-mono);
@@ -1119,6 +1119,21 @@ html[data-motion="calm"] .brand-mark {
 .plan-dock-error {
   color: var(--accent3);
 }
+.ui-icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+.btn .ui-icon { margin-right: 6px; }
+.btn.icon-only {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.btn.icon-only .ui-icon { margin-right: 0; }
+.overlay-dialog { outline: none; }
+.shiki { margin: 0; background: transparent !important; overflow-x: auto; }
+.shiki code { font-family: var(--mono); font-size: 12px; }
+
 .assistant-answer { background:var(--card); border:1px solid var(--border-strong); border-radius:var(--radius); padding:16px; }
 .assistant-partial {
   background: var(--card);

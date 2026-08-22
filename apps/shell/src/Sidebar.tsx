@@ -4,6 +4,9 @@
  * - Code: pinned workspaces → sessions (existing tree)
  */
 import { memo, useMemo, useState } from "react";
+import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
+import { FolderOpen, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import type { ChatSession, SubagentRecord } from "./sessions";
 import { workspaceDisplayName } from "./sessions";
 import { timeAgo } from "./timeAgo";
@@ -110,22 +113,22 @@ const SessionRow = memo(function SessionRow({
       </button>
       <div className="session-ops">
         {onRename && (
-          <button
-            type="button"
-            className="btn ghost sess-op"
+          <Button
+            variant="ghost"
+            className="sess-op icon-only"
             title="Rename"
             onClick={() => {
               setDraft(sess.title || "New chat");
               setRenaming(true);
             }}
           >
-            ✎
-          </button>
+            <Icon icon={Pencil} size={14} />
+          </Button>
         )}
         {onDelete && (
-          <button
-            type="button"
-            className="btn ghost sess-op"
+          <Button
+            variant="ghost"
+            className="sess-op icon-only"
             title="Delete"
             onClick={() => {
               if (
@@ -135,8 +138,8 @@ const SessionRow = memo(function SessionRow({
               }
             }}
           >
-            ×
-          </button>
+            <Icon icon={Trash2} size={14} />
+          </Button>
         )}
       </div>
     </div>
@@ -240,21 +243,23 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
 
       <div className="side-top">
         {mode === "chat" ? (
-          <button
-            type="button"
-            className="btn primary open-folder-btn"
+          <Button
+            variant="primary"
+            className="open-folder-btn"
             onClick={props.onNewChat}
           >
+            <Icon icon={MessageSquarePlus} size={15} />
             New chat
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className="btn primary open-folder-btn"
+          <Button
+            variant="primary"
+            className="open-folder-btn"
             onClick={props.onOpenFolder}
           >
+            <Icon icon={FolderOpen} size={15} />
             Open folder…
-          </button>
+          </Button>
         )}
         <input
           className="session-search"

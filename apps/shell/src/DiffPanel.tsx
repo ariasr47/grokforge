@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { splitUnifiedDiff } from "./diffUtil";
+import { Button } from "./ui/Button";
 
 export interface PendingDiff {
   id: string;
@@ -118,44 +119,42 @@ export const DiffPanel = memo(function DiffPanel({
           ))}
         </div>
         <div className="row diff-actions">
-          <button
-            type="button"
-            className={`btn ghost ${mode === "unified" ? "active-toggle" : ""}`}
+          <Button
+            variant="ghost"
+            className={mode === "unified" ? "active-toggle" : ""}
             onClick={() => setMode("unified")}
           >
             Unified
-          </button>
-          <button
-            type="button"
-            className={`btn ghost ${mode === "split" ? "active-toggle" : ""}`}
+          </Button>
+          <Button
+            variant="ghost"
+            className={mode === "split" ? "active-toggle" : ""}
             onClick={() => setMode("split")}
           >
             Side-by-side
-          </button>
-          <button
-            type="button"
-            className="btn primary"
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => onAccept(active.id)}
             title="Accept (A)"
           >
             Accept
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => onReject(active.id)}
             title="Reject (R)"
           >
             Reject
-          </button>
+          </Button>
           {queue.length > 1 && (
             <>
-              <button type="button" className="btn" onClick={onAcceptAll}>
+              <Button onClick={onAcceptAll}>
                 Accept all
-              </button>
-              <button type="button" className="btn ghost" onClick={onRejectAll}>
+              </Button>
+              <Button variant="ghost" onClick={onRejectAll}>
                 Reject all
-              </button>
+              </Button>
             </>
           )}
         </div>

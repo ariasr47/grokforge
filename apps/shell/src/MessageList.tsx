@@ -1,6 +1,7 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ChatMessage } from "./messageBlocks";
 import { toDisplayBlocks } from "./messageBlocks";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 export type { ChatMessage };
 import { ToolActivityGroup } from "./ToolActivity";
@@ -20,6 +21,8 @@ interface Props {
   lastAssistantId?: string | null;
   /** Rich UI choice → fill composer */
   onChoose?: (label: string, meta?: string) => void;
+  /** Outer transcript scroller — used to virtualize long histories. */
+  scrollRef?: RefObject<HTMLElement | null>;
 }
 
 function copyText(text: string): Promise<void> {
@@ -234,6 +237,7 @@ export const MessageList = memo(function MessageList({
   lastAssistantId,
   thinkingDetail,
   onChoose,
+  scrollRef,
 }: Props & { thinkingDetail?: string | null }) {
   const sliced = useMemo(() => {
     if (messages.length <= windowSize) return messages;
@@ -252,6 +256,70 @@ export const MessageList = memo(function MessageList({
         (Boolean(m.content?.trim()) || Boolean(m.thinking?.trim())),
     );
 
+  const renderBlock = (block: (typeof blocks)[number]) => {
+    if (block.kind === "message") {
+      const m = block.message;
+      if (isActivityChip(m)) {
+        return <ActivityChip key={block.key} message={m} />;
+      }
+      const isLastUser = m.role === "user" && m.id === lastUserId && !busy;
+      const isLastAssistant =
+        m.role === "assistant" && m.id === lastAssistantId && !busy;
+      return (
+        <ChatBubble
+          key={block.key}
+          message={m}
+          showRetry={isLastUser && Boolean(onRetryUser)}
+          showRegenerate={
+            isLastAssistant && Boolean(onRegenerate) && Boolean(lastUserId)
+          }
+          onChoose={onChoose}
+          onRetry={
+            isLastUser && onRetryUser
+              ? () => onRetryUser(m.id, m.content)
+              : undefined
+          }
+          onRegenerate={
+            isLastAssistant && onRegenerate
+              ? () => {
+                  const u = messages
+                    .slice()
+                    .reverse()
+                    .find((x) => x.role === "user");
+                  if (u) onRegenerate(u.content);
+                }
+              : undefined
+          }
+        />
+      );
+    }
+    return (
+      <ToolActivityGroup
+        key={block.key}
+        tools={block.tools}
+        groupKey={block.key}
+        onOpenPath={onOpenPath}
+        forceOpen={
+          forceOpenFailedTools &&
+          block.tools.some((t) => t.toolMeta?.ok === false)
+        }
+      />
+    );
+  };
+
+  const virtualizer = useVirtualizer({
+    count: blocks.length,
+    getScrollElement: () => scrollRef?.current ?? null,
+    estimateSize: () => 140,
+    overscan: 8,
+    enabled: Boolean(scrollRef) && blocks.length > 40,
+  });
+
+  const virtualItems =
+    Boolean(scrollRef) && blocks.length > 40
+      ? virtualizer.getVirtualItems()
+      : null;
+
   return (
     <>
       {truncated ? (
@@ -259,56 +327,31 @@ export const MessageList = memo(function MessageList({
           Showing last {windowSize} of {messages.length} messages
         </div>
       ) : null}
-      {blocks.map((block) => {
-        if (block.kind === "message") {
-          const m = block.message;
-          if (isActivityChip(m)) {
-            return <ActivityChip key={block.key} message={m} />;
-          }
-          const isLastUser = m.role === "user" && m.id === lastUserId && !busy;
-          const isLastAssistant =
-            m.role === "assistant" && m.id === lastAssistantId && !busy;
-          return (
-            <ChatBubble
-              key={block.key}
-              message={m}
-              showRetry={isLastUser && Boolean(onRetryUser)}
-              showRegenerate={
-                isLastAssistant && Boolean(onRegenerate) && Boolean(lastUserId)
-              }
-              onChoose={onChoose}
-              onRetry={
-                isLastUser && onRetryUser
-                  ? () => onRetryUser(m.id, m.content)
-                  : undefined
-              }
-              onRegenerate={
-                isLastAssistant && onRegenerate
-                  ? () => {
-                      const u = messages
-                        .slice()
-                        .reverse()
-                        .find((x) => x.role === "user");
-                      if (u) onRegenerate(u.content);
-                    }
-                  : undefined
-              }
-            />
-          );
-        }
-        return (
-          <ToolActivityGroup
-            key={block.key}
-            tools={block.tools}
-            groupKey={block.key}
-            onOpenPath={onOpenPath}
-            forceOpen={
-              forceOpenFailedTools &&
-              block.tools.some((t) => t.toolMeta?.ok === false)
-            }
-          />
-        );
-      })}
+      {virtualItems ? (
+        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          {virtualItems.map((row) => {
+            const block = blocks[row.index]!;
+            return (
+              <div
+                key={block.key}
+                data-index={row.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${row.start}px)`,
+                }}
+              >
+                {renderBlock(block)}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        blocks.map((block) => renderBlock(block))
+      )}
       {showPlaceholder ? (
         <ThinkingPlaceholder detail={thinkingDetail} />
       ) : null}

@@ -1310,6 +1310,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_log::Builder::new().max_file_size(512_000).build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(HostProcess {
             child: Mutex::new(None),
             owned: Mutex::new(false),

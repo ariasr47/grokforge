@@ -46,6 +46,13 @@ import {
 } from "./firstRun";
 import { Onboarding } from "./Onboarding";
 import { CommandPalette, type PaletteAction } from "./CommandPalette";
+import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
+import { OverlayDialog } from "./ui/Dialog";
+import { parseRunEventEnvelope } from "./runEventSchema";
+import { checkForAppUpdate, installAppUpdate, type UpdateStatus } from "./desktopUpdate";
+import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
+import { Command, Paperclip, Download, Square, Send, Settings as SettingsIcon, RefreshCw, MessageSquare } from "lucide-react";
 import { MessageList, type ChatMessage } from "./MessageList";
 import { RunStatusBar, type RunPhase } from "./RunStatusBar";
 import {
@@ -290,6 +297,7 @@ export function App() {
   const [branchMap, setBranchMap] = useState<Record<string, string | null>>({});
   const [expandTick, setExpandTick] = useState(0);
   const [connTest, setConnTest] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ kind: "idle" });
   const [modeSwitching, setModeSwitching] = useState(false);
   const [runPhase, setRunPhase] = useState<RunPhase>(null);
   const [runPhaseDetail, setRunPhaseDetail] = useState<string | null>(null);
@@ -335,6 +343,10 @@ export function App() {
       if (err) toast.push(`Session save failed: ${err}`, "error");
     });
   }, [toast]);
+
+  useEffect(() => {
+    void registerSummonShortcut();
+  }, []);
 
   const discardTranscriptStream = useCallback(() => {
     // Invalidate in-flight stream paint (session/mode switch).
@@ -793,7 +805,9 @@ export function App() {
     // Contract v1 run envelopes are reduced by owner identity and eventSeq;
     // legacy transcript events below remain for older hosts during migration.
     if (typeof (ev as unknown as { schemaVersion?: number }).schemaVersion === "number" && "eventSeq" in (ev as object)) {
-      const runEvent = ev as unknown as RunEventEnvelope;
+      const parsed = parseRunEventEnvelope(ev);
+      if (!parsed) return;
+      const runEvent = parsed as unknown as RunEventEnvelope;
       if (runEvent.payload.kind === "run_started") {
         bindNormalizedRun(runEvent.runId, runEvent.sessionId);
       }
@@ -828,6 +842,11 @@ export function App() {
         setRunPhase(null);
         setRunPhaseDetail(null);
         setAwaitingNextTurn(true);
+        const kind = runEvent.payload.terminalKind;
+        void notifyDesktop(
+          "Forge",
+          kind === "answered" ? "Answer ready" : kind === "cancelled" ? "Run cancelled" : "Run ended",
+        );
       } else if (runEvent.payload.kind === "run_state") {
         setRunPhaseDetail(runEvent.payload.state === "recovering" ? "Recovering run…" : runEvent.payload.state === "cancelling" ? "Ending run…" : null);
       }
@@ -3296,13 +3315,9 @@ export function App() {
           <p className="boot-msg">{slowStart ? SLOW_START_LINE : bootMsg}</p>
           <div className="boot-spinner" aria-hidden />
           {diagRevealed && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void exportSessionDiagnostics()}
-            >
+            <Button onClick={() => void exportSessionDiagnostics()}>
               Save troubleshooting file
-            </button>
+            </Button>
           )}
           <p className="boot-hint">
             Agent shell · Grok first · Chat & Code
@@ -3428,26 +3443,36 @@ export function App() {
         >
           {healthFailStreak >= 1 ? "Engine · reconnecting" : "Engine · live"}
         </span>
-        <button
-          type="button"
-          className="btn ghost"
+        <Button
+          variant="ghost"
           title="Command palette (Ctrl+K)"
           onClick={() => setPaletteOpen(true)}
         >
+          <Icon icon={Command} size={15} />
           ⌘K
-        </button>
+        </Button>
         {!hostOk && engineRetryAllowed && (
-          <button type="button" className="btn" onClick={() => void retryHost()}>
+          <Button onClick={() => void retryHost()}>
+            <Icon icon={RefreshCw} size={15} />
             Reconnect
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="btn ghost"
+        <Button
+          variant="ghost"
           onClick={() => setView(view === "settings" ? "chat" : "settings")}
         >
-          {view === "settings" ? "Chat" : "Settings"}
-        </button>
+          {view === "settings" ? (
+            <>
+              <Icon icon={MessageSquare} size={15} />
+              Chat
+            </>
+          ) : (
+            <>
+              <Icon icon={SettingsIcon} size={15} />
+              Settings
+            </>
+          )}
+        </Button>
       </header>
 
       {!hostOk && (
@@ -3922,14 +3947,46 @@ export function App() {
                     <kbd>Shift+Enter</kbd> newline
                   </p>
                 </div>
+                <div className="field">
+                  <span>App updates</span>
+                  <p className="settings-hint">
+                    Ctrl+Alt+F summons Forge. Updates check GitHub releases.
+                  </p>
+                  <div className="row">
+                    <Button
+                      variant="ghost"
+                      disabled={updateStatus.kind === "checking"}
+                      onClick={() => {
+                        setUpdateStatus({ kind: "checking" });
+                        void checkForAppUpdate().then(setUpdateStatus);
+                      }}
+                    >
+                      <Icon icon={RefreshCw} size={15} />
+                      Check for updates
+                    </Button>
+                    {updateStatus.kind === "available" ? (
+                      <Button
+                        variant="primary"
+                        onClick={() => void installAppUpdate().then(setUpdateStatus)}
+                      >
+                        Install {updateStatus.version}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {updateStatus.kind === "checking" ? (
+                    <p className="settings-hint">Checking…</p>
+                  ) : null}
+                  {updateStatus.kind === "none" ? (
+                    <p className="settings-hint">No update available.</p>
+                  ) : null}
+                  {updateStatus.kind === "error" ? (
+                    <p className="settings-hint" role="status">{updateStatus.message}</p>
+                  ) : null}
+                </div>
                 <div className="row">
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => void saveSettings()}
-                  >
+                  <Button variant="primary" onClick={() => void saveSettings()}>
                     Save
-                  </button>
+                  </Button>
                   <button
                     type="button"
                     className="btn"
@@ -4145,6 +4202,7 @@ export function App() {
                     )}
                     <MessageList
                       messages={visibleMessages}
+                      scrollRef={transcriptRef}
                       busy={normalizedRunVisible ? false : busy || Boolean(runStartedAt)}
                       thinkingDetail={runPhaseDetail}
                       showTurnDelimiter={turnReady}
@@ -4264,44 +4322,41 @@ export function App() {
                       e.target.value = "";
                     }}
                   />
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  <Button
+                    variant="ghost"
                     title="Attach text files into this message"
                     disabled={!connected || busy}
                     onClick={() =>
                       document.getElementById("composer-attach")?.click()
                     }
                   >
+                    <Icon icon={Paperclip} size={15} />
                     Attach
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     title="Download this chat as Markdown"
                     disabled={messages.length === 0}
                     onClick={exportCurrentChat}
                   >
+                    <Icon icon={Download} size={15} />
                     Export
-                  </button>
+                  </Button>
                   {busy ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={requestCancel}
-                    >
+                    <Button onClick={requestCancel}>
+                      <Icon icon={Square} size={15} />
                       Cancel
-                    </button>
+                    </Button>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn primary"
+                    <Button
+                      variant="primary"
                       disabled={Boolean(sendDisabledReason)}
                       title={sendDisabledReason || "Send (Enter)"}
                       onClick={() => void send()}
                     >
+                      <Icon icon={Send} size={15} />
                       Send
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <div className="composer-footer">
@@ -4369,38 +4424,25 @@ export function App() {
         </main>
       </div>
 
-      {peek && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Path peek"
-          tabIndex={-1}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setPeek(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              setPeek(null);
-            }
-          }}
-        >
-          <div className="modal peek-modal">
+      <OverlayDialog
+        isOpen={Boolean(peek)}
+        onClose={() => setPeek(null)}
+        title="Path peek"
+        overlayClassName="modal-overlay"
+        modalClassName="modal peek-modal"
+      >
+        {peek ? (
+          <>
             <div className="peek-head">
               <strong title={peek.path}>{peek.path}</strong>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => setPeek(null)}
-              >
+              <Button variant="ghost" onClick={() => setPeek(null)}>
                 Close
-              </button>
+              </Button>
             </div>
             <pre className="peek-body">{peek.content}</pre>
-          </div>
-        </div>
-      )}
+          </>
+        ) : null}
+      </OverlayDialog>
     </div>
   );
 }

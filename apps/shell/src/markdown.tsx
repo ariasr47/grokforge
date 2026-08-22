@@ -11,6 +11,8 @@ import { parseRichDocument, parseRichDocumentProgressive } from "./richUi";
 import { parseMarkdownBlocks } from "./markdownParse";
 import { RichBlocks } from "./RichBlocks";
 import { shouldHighlight, tokenizeLine } from "./codeHighlight";
+import { highlightToHtml } from "./codeHighlightAsync";
+import { Button } from "./ui/Button";
 
 /**
  * Lightweight markdown for chat (no heavy deps).
@@ -79,6 +81,7 @@ const CodeBlock = memo(function CodeBlock({
   lang?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [richHtml, setRichHtml] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -97,15 +100,30 @@ const CodeBlock = memo(function CodeBlock({
   const lines = useMemo(() => code.replace(/\r\n/g, "\n").split("\n"), [code]);
   const highlight = shouldHighlight(lang) && lines.length <= 400;
 
+  useEffect(() => {
+    let cancelled = false;
+    setRichHtml(null);
+    if (!highlight) return;
+    void highlightToHtml(code, lang).then((html) => {
+      if (!cancelled && html) setRichHtml(html);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang, highlight]);
+
   return (
     <div className="md-code-wrap">
       <div className="md-code-bar">
         <span className="md-code-lang">{lang || "code"}</span>
         <span className="md-code-meta">{lines.length} lines</span>
-        <button type="button" className="btn ghost md-copy-btn" onClick={onCopy}>
+        <Button variant="ghost" className="md-copy-btn" onClick={onCopy}>
           {copied ? "Copied" : "Copy"}
-        </button>
+        </Button>
       </div>
+      {richHtml ? (
+        <div className="md-code md-code-hl" dangerouslySetInnerHTML={{ __html: richHtml }} />
+      ) : (
       <pre className="md-code md-code-hl">
         <code>
           {lines.map((line, li) => (
@@ -127,6 +145,7 @@ const CodeBlock = memo(function CodeBlock({
           ))}
         </code>
       </pre>
+      )}
     </div>
   );
 });

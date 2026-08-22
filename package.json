@@ -32,13 +32,21 @@
     "gate-q:dual-mode": "node --import tsx scripts/gate-q-dual-mode.mjs",
     "test:host-contract": "node scripts/host-contract.mjs",
     "e2e": "node scripts/e2e-shell.mjs",
+    "lint": "biome check apps/shell/src/ui apps/shell/src/fonts.ts apps/shell/src/runEventSchema.ts apps/shell/src/desktopUpdate.ts apps/shell/src/desktopNotify.ts apps/shell/src/codeHighlightAsync.ts",
+    "lint:fix": "biome check --write apps/shell/src/ui apps/shell/src/fonts.ts apps/shell/src/runEventSchema.ts apps/shell/src/desktopUpdate.ts apps/shell/src/desktopNotify.ts apps/shell/src/codeHighlightAsync.ts",
+    "knip": "knip --no-progress",
+    "analyze": "npm run build --workspace @grokforge/shell -- --mode analyze",
     "verify": "npm run typecheck && npm test",
     "verify:full": "npm run verify && npm run test:host-contract && npm run gate-q:dual-mode"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@changesets/cli": "^3.0.1",
     "concurrently": "^9.1.2",
     "esbuild": "^0.25.0",
+    "knip": "^6.32.2",
     "playwright": "^1.62.1",
+    "rollup-plugin-visualizer": "^7.1.1",
     "tsx": "^4.19.3"
   },
   "engines": {

@@ -11,7 +11,10 @@
         "label": "main",
         "title": "Forge Dev · DEV"
       }
-    ]
+    ],
+    "security": {
+      "csp": "default-src 'self' http://localhost:5174 http://127.0.0.1:5174; script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:5174; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:5174 ws://localhost:5174 http://127.0.0.1:* ws://127.0.0.1:*; frame-src https://www.google.com"
+    }
   },
   "bundle": {
     "shortDescription": "Forge development channel (side-by-side with Prod)",

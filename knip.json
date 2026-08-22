@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs"],
+      "ignore": [".spire/**", "docs/**", ".changeset/**"]
+    },
+    "apps/shell": {
+      "entry": ["src/main.tsx", "src/verifyGrokUi.tsx"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testEnv.ts"]
+    },
+    "apps/host": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/**/*.test.ts"]
+    }
+  }
+}

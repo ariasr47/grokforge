@@ -6,6 +6,9 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
+import { X } from "lucide-react";
 
 export type ToastKind = "info" | "success" | "error";
 
@@ -60,14 +63,14 @@ function ToastViewport() {
       {items.map((t) => (
         <div key={t.id} className={`toast toast-${t.kind}`} role="status">
           <span>{t.message}</span>
-          <button
-            type="button"
-            className="btn ghost toast-x"
+          <Button
+            variant="ghost"
+            className="toast-x icon-only"
             onClick={() => dismissToast(t.id)}
             aria-label="Dismiss"
           >
-            ×
-          </button>
+            <Icon icon={X} size={14} />
+          </Button>
         </div>
       ))}
     </div>

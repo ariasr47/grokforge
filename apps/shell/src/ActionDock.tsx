@@ -1,6 +1,9 @@
 import { memo, useEffect, useRef } from "react";
 import { DiffPanel, type PendingDiff } from "./DiffPanel";
 import { PermissionCard, type PermissionReq } from "./PermissionCard";
+import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
+import { Bell } from "lucide-react";
 
 export const PLAN_DOCK_REVIEW = "Review plan";
 export const PLAN_DOCK_EMPTY = "Plan complete · no changes";
@@ -82,6 +85,7 @@ export const ActionDock = memo(function ActionDock({
       aria-live={hasPlan ? "assertive" : "polite"}
     >
       <div className="action-dock-label">
+        <Icon icon={Bell} size={14} />
         Attention required
         {rest > 0 ? ` · ${permissions.length} permissions queued` : ""}
       </div>
@@ -104,9 +108,9 @@ export const ActionDock = memo(function ActionDock({
             and enter the code.
           </p>
           {onOauthCancel && (
-            <button type="button" className="btn ghost" onClick={onOauthCancel}>
+            <Button variant="ghost" onClick={onOauthCancel}>
               Cancel sign-in
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -144,28 +148,26 @@ export const ActionDock = memo(function ActionDock({
           {planDecision.error ? (
             <p className="plan-dock-error" role="alert">
               {planDecision.error}
-              <button type="button" className="btn ghost" onClick={onPlanAccept}>
+              <Button variant="ghost" onClick={onPlanAccept}>
                 Try again
-              </button>
+              </Button>
             </p>
           ) : (
             <div className="plan-dock-actions">
-              <button
-                type="button"
-                className="btn primary"
+              <Button
+                variant="primary"
                 disabled={planDecision.settling === true}
                 onClick={onPlanAccept}
               >
                 {planDecision.empty ? PLAN_END_EMPTY : PLAN_ACCEPT}
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
+              </Button>
+              <Button
+                variant="ghost"
                 disabled={planDecision.settling === true}
                 onClick={onPlanKeepPlanning}
               >
                 {PLAN_KEEP}
-              </button>
+              </Button>
             </div>
           )}
         </div>

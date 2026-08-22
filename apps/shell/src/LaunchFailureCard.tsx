@@ -5,6 +5,7 @@
 import { BrandMark } from "./BrandMark";
 import { CARD_COPY, cardFor, type FailureStatus } from "./failureCard";
 import type { DesktopHostStatus } from "./api";
+import { Button } from "./ui/Button";
 
 /** AC-U5: with `owned: false` no restart affordance renders anywhere — the
  *  shell does not own the listener it is talking to (dev-shell-only state;
@@ -67,26 +68,24 @@ export function LaunchFailureCard({
     if (which === "try-again") {
       if (!retryOffered) return null;
       return (
-        <button
+        <Button
           key={key}
-          type="button"
-          className={isPrimary ? "btn primary" : "btn"}
+          variant={isPrimary ? "primary" : "default"}
           onClick={onRetry}
         >
           Try again
-        </button>
+        </Button>
       );
     }
     if (which === "save-diagnostics") {
       return (
-        <button
+        <Button
           key={key}
-          type="button"
-          className={isPrimary ? "btn primary" : "btn"}
+          variant={isPrimary ? "primary" : "default"}
           onClick={onSaveDiagnostics}
         >
           Save troubleshooting file
-        </button>
+        </Button>
       );
     }
     return null;
