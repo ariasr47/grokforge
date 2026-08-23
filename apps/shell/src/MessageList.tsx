@@ -6,6 +6,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 export type { ChatMessage };
 import { ToolActivityGroup } from "./ToolActivity";
 import { MarkdownBody } from "./markdown";
+import { Button } from "./ui/Button";
+import { writeClipboard } from "./copyClipboard";
 
 interface Props {
   messages: ChatMessage[];
@@ -26,10 +28,7 @@ interface Props {
 }
 
 function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text);
-  }
-  return Promise.reject(new Error("clipboard unavailable"));
+  return writeClipboard(text);
 }
 
 /** Compact system noise (perm/diff notices) instead of full bubbles. */
@@ -162,33 +161,33 @@ const ChatBubble = memo(function ChatBubble({
         </div>
         <div className="msg-actions">
           {showRetry && onRetry && (
-            <button
-              type="button"
-              className="btn ghost msg-action"
+            <Button
+              variant="ghost"
+              className="msg-action"
               onClick={onRetry}
               title="Send this message again"
             >
               Retry
-            </button>
+            </Button>
           )}
           {showRegenerate && onRegenerate && (
-            <button
-              type="button"
-              className="btn ghost msg-action"
+            <Button
+              variant="ghost"
+              className="msg-action"
               onClick={onRegenerate}
               title="Generate a new reply to the last question"
             >
               Regenerate
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            className="btn ghost msg-action"
+          <Button
+            variant="ghost"
+            className="msg-action"
             onClick={onCopy}
             title="Copy message"
           >
             {copyErr ? "Failed" : copied ? "Copied" : "Copy"}
-          </button>
+          </Button>
         </div>
       </div>
       {m.thinking ? (

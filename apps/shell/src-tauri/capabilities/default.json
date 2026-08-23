@@ -12,6 +12,9 @@
     "notification:default",
     "process:default",
     "log:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "window-state:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text"
   ]
 }

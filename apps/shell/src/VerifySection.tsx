@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 void React;
+import { Button } from "./ui/Button";
 import {
   canAllChecksPassed,
   chipLabel,
@@ -76,13 +77,12 @@ function CommandRow({
       ) : null}
       {showViewOutput ? (
         <div className="verify-actions">
-          <button
-            type="button"
-            className="btn ghost"
+          <Button
+            variant="ghost"
             onClick={() => onViewOutput?.(member)}
           >
             {VERIFY_VIEW_OUTPUT}
-          </button>
+          </Button>
         </div>
       ) : null}
     </li>

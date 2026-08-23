@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Button } from "./ui/Button";
 void React;
 
 export type PolicyMode = "review" | "trusted_workspace";
@@ -25,10 +26,22 @@ export function PermissionPolicyControl({ status, confirmedMode = null, fallback
     {status === "no_workspace" && <p role="status">Open a workspace to choose its permission policy.</p>}
     <fieldset disabled={locked} aria-describedby={error ? "policy-error" : undefined}>
       <legend className="sr-only">Choose workspace policy</legend>
-      {(["review", "trusted_workspace"] as PolicyMode[]).map(mode => <label key={mode} className="policy-option"><input type="radio" name="permission-policy" value={mode} checked={draft === mode} onChange={() => setDraft(mode)} /> <span>{label(mode)}</span><small>{mode === "review" ? "Ask before edits and shell actions." : "Auto-apply eligible text edits in this workspace."}</small></label>)}
+      {(["review", "trusted_workspace"] as PolicyMode[]).map((mode) => (
+        <label key={mode} className="policy-option">
+          <input
+            type="radio"
+            name="permission-policy"
+            value={mode}
+            checked={draft === mode}
+            onChange={() => setDraft(mode)}
+          />
+          <span>{label(mode)}</span>
+          <small>{mode === "review" ? "Ask before edits and shell actions." : "Auto-apply eligible text edits in this workspace."}</small>
+        </label>
+      ))}
     </fieldset>
-    {error && <p id="policy-error" role="alert">{error} <button type="button" onClick={save}>Try again</button></p>}
+    {error && <p id="policy-error" role="alert">{error} <Button variant="ghost" onClick={() => void save()}>Try again</Button></p>}
     {status === "saving" && <p className="policy-saving" role="status">Saving permission policy…</p>}
-    {draft !== confirmedMode && !locked && <button type="button" onClick={save}>Save policy</button>}
+    {draft !== confirmedMode && !locked && <Button variant="primary" onClick={() => void save()}>Save policy</Button>}
   </div>;
 }

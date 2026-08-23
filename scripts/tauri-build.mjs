@@ -19,6 +19,17 @@ const channel = isDev ? "dev" : "prod";
 const hostPort = process.env.GROKFORGE_PORT || (isDev ? "8788" : "8787");
 
 const updaterKey = path.join(root, ".tauri", "updater.key");
+function updaterSigningEnv() {
+  if (!fs.existsSync(updaterKey)) return {};
+  // Tauri 2 reads TAURI_SIGNING_PRIVATE_KEY (contents), not PATH.
+  const key = fs.readFileSync(updaterKey, "utf8").trim();
+  if (!key) return {};
+  return {
+    TAURI_SIGNING_PRIVATE_KEY: key,
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+      process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || "",
+  };
+}
 const channelEnv = {
   ...process.env,
   GROKFORGE_CHANNEL: channel,
@@ -29,13 +40,7 @@ const channelEnv = {
   // runtime std::env::var read, so GROKFORGE_CHANNEL on the shipped binary can never move the
   // data root, port or allowlist (AC-S8).
   GROKFORGE_BUILD_CHANNEL: channel,
-  ...(fs.existsSync(updaterKey)
-    ? {
-        TAURI_SIGNING_PRIVATE_KEY_PATH: updaterKey,
-        TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-          process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || "",
-      }
-    : {}),
+  ...updaterSigningEnv(),
 };
 
 function step(label, args) {

@@ -1,4 +1,5 @@
 import { memo, useState, type ReactNode } from "react";
+import { Button } from "./ui/Button";
 import type { RichBlock, RichDocument, RichTone } from "./richUi";
 
 interface Props {
@@ -45,26 +46,25 @@ const Carousel = memo(function Carousel({
         {item.body ? <p className="rich-card-body">{item.body}</p> : null}
         {item.footer ? <div className="rich-card-footer">{item.footer}</div> : null}
         {onChoose ? (
-          <button
-            type="button"
-            className="btn primary rich-card-action"
+          <Button
+            variant="primary"
+            className="rich-card-action"
             onClick={() => onChoose(item.title, item.body)}
           >
             Choose this
-          </button>
+          </Button>
         ) : null}
       </div>
       {n > 1 ? (
         <div className="rich-carousel-nav">
-          <button
-            type="button"
-            className="btn ghost"
+          <Button
+            variant="ghost"
             disabled={i <= 0}
             onClick={() => setI((x) => Math.max(0, x - 1))}
             aria-label="Previous card"
           >
             ←
-          </button>
+          </Button>
           <span className="rich-carousel-dots" aria-hidden>
             {block.items.map((_, di) => (
               <button
@@ -76,15 +76,14 @@ const Carousel = memo(function Carousel({
               />
             ))}
           </span>
-          <button
-            type="button"
-            className="btn ghost"
+          <Button
+            variant="ghost"
             disabled={i >= n - 1}
             onClick={() => setI((x) => Math.min(n - 1, x + 1))}
             aria-label="Next card"
           >
             →
-          </button>
+          </Button>
           <span className="rich-carousel-count">
             {i + 1} / {n}
           </span>
@@ -387,13 +386,12 @@ const DownloadCard = memo(function DownloadCard({
         {block.note ? <div className="rich-file-meta">{block.note}</div> : null}
       </div>
       {block.content != null ? (
-        <button
-          type="button"
-          className="btn ghost"
+        <Button
+          variant="ghost"
           onClick={() => saveTextFile(block.name, block.content!, block.mime)}
         >
           Download
-        </button>
+        </Button>
       ) : block.href ? (
         <a
           className="btn ghost"
@@ -489,14 +487,13 @@ const Actions = memo(function Actions({
               {it.label}
             </a>
           ) : (
-            <button
+            <Button
               key={i}
-              type="button"
-              className="btn primary"
+              variant="primary"
               onClick={() => onChoose?.(it.label, it.value)}
             >
               {it.label}
-            </button>
+            </Button>
           ),
         )}
       </div>

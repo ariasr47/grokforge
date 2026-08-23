@@ -1,8 +1,23 @@
+import { cva, type VariantProps } from "class-variance-authority";
+import clsx from "clsx";
 import { type ReactNode, useRef } from "react";
 import type { AriaButtonProps } from "react-aria";
 import { useButton } from "react-aria";
 
-export type ButtonVariant = "default" | "primary" | "ghost";
+export const buttonVariants = cva("btn", {
+  variants: {
+    variant: {
+      default: "",
+      primary: "primary",
+      ghost: "ghost",
+    },
+  },
+  defaultVariants: { variant: "default" },
+});
+
+export type ButtonVariant = NonNullable<
+  VariantProps<typeof buttonVariants>["variant"]
+>;
 
 export interface ButtonProps extends Omit<AriaButtonProps, "isDisabled"> {
   variant?: ButtonVariant;
@@ -14,16 +29,6 @@ export interface ButtonProps extends Omit<AriaButtonProps, "isDisabled"> {
   isDisabled?: boolean;
   title?: string;
   id?: string;
-}
-
-function buttonClass(variant: ButtonVariant, className?: string): string {
-  const parts = new Set<string>(["btn"]);
-  if (variant === "primary") parts.add("primary");
-  if (variant === "ghost") parts.add("ghost");
-  for (const token of className?.split(/\s+/) ?? []) {
-    if (token) parts.add(token);
-  }
-  return [...parts].join(" ");
 }
 
 /** Voidglass `.btn` with React Aria press/focus. Native title/id stay on the button. */
@@ -56,7 +61,7 @@ export function Button({
       {...buttonProps}
       ref={ref}
       type="button"
-      className={buttonClass(variant, className)}
+      className={clsx(buttonVariants({ variant }), className)}
       title={title}
       id={id}
     >

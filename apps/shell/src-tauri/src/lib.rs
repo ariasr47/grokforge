@@ -1328,6 +1328,8 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(HostProcess {
             child: Mutex::new(None),
             owned: Mutex::new(false),

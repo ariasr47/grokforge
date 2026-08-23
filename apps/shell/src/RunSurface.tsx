@@ -16,6 +16,7 @@ import { PlanSection } from "./PlanSection";
 import { projectProjectInstructionsTurn } from "./projectInstructionsTurn";
 import { ProjectInstructionsTurnChip } from "./ProjectInstructionsTurnChip";
 import { MarkdownBody } from "./markdown";
+import { Button } from "./ui/Button";
 
 const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
 const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
@@ -163,7 +164,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
         )}
       />
     ) : null}
-    {Object.values(run.activities).length > 0 && <div className="activity-output" aria-label="Activity">{Object.values(run.activities).map(a => { const result = recoveryResult[a.activityId]; return <details key={a.activityId} data-activity-id={a.activityId} open={focusActivityId === a.activityId ? true : undefined} ref={(el) => { if (el && focusActivityId === a.activityId) { el.scrollIntoView({ block: "nearest" }); } }}><summary>{a.name}: {a.status}</summary><p>Input: {typeof a.input === "string" ? a.input : JSON.stringify(a.input)}</p>{a.output != null && <p>Output: {typeof a.output === "string" ? a.output : JSON.stringify(a.output)}</p>}{a.error && <p role="alert">Failure: {a.error}</p>}{a.diff && <><button type="button" className="btn ghost" onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}>{openDiff === a.activityId ? "Hide diff" : "View diff"}</button>{openDiff === a.activityId && <pre>{a.diff}</pre>}</>}<ActivityProvenance activity={a} />{a.recovery?.available && !result && <><p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p><button type="button" className="btn ghost" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</button></>}{result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}{result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}{result === "conflict" && a.diff && <button type="button" className="btn ghost" onClick={() => setOpenDiff(a.activityId)}>View diff</button>}</details>; })}</div>}
+    {Object.values(run.activities).length > 0 && <div className="activity-output" aria-label="Activity">{Object.values(run.activities).map(a => { const result = recoveryResult[a.activityId]; return <details key={a.activityId} data-activity-id={a.activityId} open={focusActivityId === a.activityId ? true : undefined} ref={(el) => { if (el && focusActivityId === a.activityId) { el.scrollIntoView({ block: "nearest" }); } }}><summary>{a.name}: {a.status}</summary><p>Input: {typeof a.input === "string" ? a.input : JSON.stringify(a.input)}</p>{a.output != null && <p>Output: {typeof a.output === "string" ? a.output : JSON.stringify(a.output)}</p>}{a.error && <p role="alert">Failure: {a.error}</p>}{a.diff && <><Button variant="ghost" onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}>{openDiff === a.activityId ? "Hide diff" : "View diff"}</Button>{openDiff === a.activityId && <pre>{a.diff}</pre>}</>}<ActivityProvenance activity={a} />{a.recovery?.available && !result && <><p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p><Button variant="ghost" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</Button></>}{result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}{result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}{result === "conflict" && a.diff && <Button variant="ghost" onClick={() => setOpenDiff(a.activityId)}>View diff</Button>}</details>; })}</div>}
     {Object.values(run.decisions)
       .filter((d) => d.status === "pending" && d.kind !== "plan")
       .map((d) => {
@@ -173,14 +174,13 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
             <strong>{d.title}</strong>
             <p>{d.detail}</p>
             {isRecovery ? (
-              <button
-                type="button"
-                className="btn primary"
+              <Button
+                variant="primary"
                 disabled={pending === d.requestId}
                 onClick={() => void submitDecision(d, "allow_once")}
               >
                 Recover
-              </button>
+              </Button>
             ) : (
               <p className="run-decision-dock-hint">Settle this in Attention required below.</p>
             )}

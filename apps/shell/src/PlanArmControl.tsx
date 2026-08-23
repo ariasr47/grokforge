@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Button } from "./ui/Button";
 import {
   PLAN_ARM_BLOCKED_UNVOUCHED,
   PLAN_ARM_HELPER_ARMED,
@@ -71,9 +72,9 @@ export const PlanArmControl = memo(function PlanArmControl({
         <p className="plan-arm-error" role="alert">
           {projection.message}
           {onRetry ? (
-            <button type="button" className="btn ghost" onClick={onRetry}>
+            <Button variant="ghost" onClick={onRetry}>
               Try again
-            </button>
+            </Button>
           ) : null}
         </p>
       ) : null}

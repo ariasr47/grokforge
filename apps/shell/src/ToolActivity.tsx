@@ -3,6 +3,7 @@ import type { ChatMessage } from "./messageBlocks";
 import { toolRunStats } from "./messageBlocks";
 import { displayToolName } from "./toolFormat";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
+import { Button } from "./ui/Button";
 
 const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
 const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
@@ -121,13 +122,13 @@ const ToolRow = memo(function ToolRow({
       ) : null}
       {pathHint && onOpenPath ? (
         <div className="tool-row-actions">
-          <button
-            type="button"
-            className="btn ghost tool-peek-btn"
+          <Button
+            variant="ghost"
+            className="tool-peek-btn"
             onClick={() => onOpenPath(pathHint)}
           >
             Peek path
-          </button>
+          </Button>
         </div>
       ) : null}
       {open ? (

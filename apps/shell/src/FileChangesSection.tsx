@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Button } from "./ui/Button";
 void React;
 import { unifiedDiffLineClass, unifiedDiffLines } from "./diffUtil";
 import type { RunChangeListProjection, RunChangeMember } from "./runChangeList";
@@ -128,28 +129,26 @@ function PathRow({
           <p className="file-changes-unavailable" role="status">{FILE_CHANGES_DIFF_UNAVAILABLE}</p>
         ) : (
           <div className="file-changes-actions">
-            <button
-              type="button"
-              className="btn ghost"
+            <Button
+              variant="ghost"
               aria-expanded={open}
               onClick={() => (open ? onHideDiff?.(member) : onViewDiff?.(member))}
             >
               {open ? "Hide diff" : "View diff"}
-            </button>
+            </Button>
           </div>
         )}
         {open && member.diff ? <ColorizedDiff diff={member.diff} /> : null}
         {showRevert ? (
           <div className="file-changes-revert">
             <p className="recovery-guard">{FILE_CHANGES_REVERT_GUARD}</p>
-            <button
-              type="button"
-              className="btn ghost"
+            <Button
+              variant="ghost"
               disabled={revertPending}
               onClick={() => onRevert?.(member)}
             >
               Revert edit
-            </button>
+            </Button>
           </div>
         ) : null}
       </details>

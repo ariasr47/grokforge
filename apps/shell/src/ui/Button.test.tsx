@@ -28,4 +28,11 @@ describe("Button", () => {
       true,
     );
   });
+
+  it("cva extra className still keeps Voidglass .btn", () => {
+    render(createElement(Button, { className: "msg-action" }, "Copy"));
+    const el = screen.getByRole("button", { name: "Copy" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(el.classList.contains("msg-action"));
+  });
 });

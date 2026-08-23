@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button } from "./ui/Button";
 
 export type RunPhase =
   | "waiting_model"
@@ -111,9 +112,9 @@ export function RunStatusBar({
         )}
       </div>
       {busy && onCancel && (
-        <button type="button" className="btn" onClick={onCancel}>
+        <Button onClick={onCancel}>
           Cancel run
-        </button>
+        </Button>
       )}
     </div>
   );

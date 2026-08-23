@@ -1,4 +1,5 @@
 import type { RunProjectionRun } from "./runReducer";
+import { Button } from "./ui/Button";
 export interface RunTerminalNoticeProps {
   run: RunProjectionRun;
   onRetryPrompt?: (prompt: string) => void;
@@ -23,7 +24,7 @@ export function RunTerminalNotice({ run, onRetryPrompt, onReconnect, onOpenSetti
         : run.failure?.recoveryAction === "export_diagnostics" && onExportDiagnostics
           ? { label: "Export diagnostics", run: onExportDiagnostics }
         : null;
-  return <div className="terminal-detail" role="alert"><strong>Run failed</strong><p>{detail}</p>{action && <button type="button" className="btn" onClick={action.run}>{action.label}</button>}</div>;
+  return <div className="terminal-detail" role="alert"><strong>Run failed</strong><p>{detail}</p>{action && <Button onClick={action.run}>{action.label}</Button>}</div>;
 }
 import React from "react";
 void React;

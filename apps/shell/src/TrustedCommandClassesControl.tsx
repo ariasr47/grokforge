@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 void React;
+import { Button } from "./ui/Button";
 import type { TrustedCommandClassId, TrustedCommandClassCatalogEntry, TrustedCommandClassesFallbackReason } from "./api";
 
 export type TrustedCommandClassesStatus =
@@ -206,9 +207,9 @@ export function TrustedCommandClassesControl({
       {error && (
         <p id="trusted-classes-error" role="alert">
           {error}{" "}
-          <button type="button" onClick={() => void save()}>
+          <Button variant="ghost" onClick={() => void save()}>
             Try again
-          </button>
+          </Button>
         </p>
       )}
       {(status === "saving" || localSaving) && (
@@ -218,9 +219,9 @@ export function TrustedCommandClassesControl({
       )}
       {success && !error && <p role="status">{COPY.success}</p>}
       {dirty && !locked && !localSaving && status !== "saving" && (
-        <button type="button" className="btn primary" onClick={() => void save()}>
+        <Button variant="primary" onClick={() => void save()}>
           Save classes
-        </button>
+        </Button>
       )}
     </div>
   );

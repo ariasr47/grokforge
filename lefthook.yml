@@ -1,0 +1,9 @@
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{js,mjs,ts,tsx}"
+      run: npx biome check --no-errors-on-unmatched {staged_files}
+    typecheck-shell:
+      glob: "apps/shell/src/**/*.{ts,tsx}"
+      run: npm run typecheck --workspace @grokforge/shell

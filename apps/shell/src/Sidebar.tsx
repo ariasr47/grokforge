@@ -325,22 +325,14 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
               </p>
               <div className="row chat-files-actions">
                 {props.onBindChatFolder && (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={props.onBindChatFolder}
-                  >
+                  <Button onClick={props.onBindChatFolder}>
                     {props.chatRootLabel ? "Change folder…" : "Open folder…"}
-                  </button>
+                  </Button>
                 )}
                 {props.chatRootLabel && props.onClearChatFolder && (
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    onClick={props.onClearChatFolder}
-                  >
+                  <Button variant="ghost" onClick={props.onClearChatFolder}>
                     Use private folder
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -395,13 +387,12 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                 </div>
                 {ws.expanded && (
                   <div className="folder-body">
-                    <button
-                      type="button"
-                      className="btn new-session-btn"
+                    <Button
+                      className="new-session-btn"
                       onClick={() => props.onNewCodeSession(ws.path)}
                     >
                       New session
-                    </button>
+                    </Button>
                     {ws.sessions.map((sess) => {
                       const isActive =
                         ws.path === props.activeWorkspace &&
@@ -502,13 +493,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
               placeholder="Paste project path…"
               aria-label="Workspace path"
             />
-            <button
-              type="button"
-              className="btn"
-              onClick={() => props.onPathOpen?.()}
-            >
+            <Button onClick={() => props.onPathOpen?.()}>
               Open
-            </button>
+            </Button>
           </div>
         </>
       )}

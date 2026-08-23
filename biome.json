@@ -3,6 +3,9 @@
   "files": {
     "includes": [
       "apps/shell/src/ui/**",
+      "apps/shell/src/state/**",
+      "apps/shell/src/copyClipboard.ts",
+      "apps/shell/src/CommandPalette.tsx",
       "apps/shell/src/fonts.ts",
       "apps/shell/src/runEventSchema.ts",
       "apps/shell/src/desktopUpdate.ts",

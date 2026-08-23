@@ -13,6 +13,7 @@ import { RichBlocks } from "./RichBlocks";
 import { shouldHighlight, tokenizeLine } from "./codeHighlight";
 import { highlightToHtml } from "./codeHighlightAsync";
 import { Button } from "./ui/Button";
+import { writeClipboard } from "./copyClipboard";
 
 /**
  * Lightweight markdown for chat (no heavy deps).
@@ -90,7 +91,7 @@ const CodeBlock = memo(function CodeBlock({
     [],
   );
   const onCopy = useCallback(() => {
-    void navigator.clipboard?.writeText(code).then(() => {
+    void writeClipboard(code).then(() => {
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 1200);

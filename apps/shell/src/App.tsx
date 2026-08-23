@@ -53,6 +53,13 @@ import { CommandPalette, type PaletteAction } from "./CommandPalette";
 import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { OverlayDialog } from "./ui/Dialog";
+import { Switch } from "./ui/Switch";
+import { TextField } from "./ui/TextField";
+import { Hint } from "./ui/Tooltip";
+import { useChromeStore } from "./state/chromeStore";
+import { useSessionFlagsStore } from "./state/sessionFlagsStore";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+import { tinykeys } from "tinykeys";
 import { parseRunEventEnvelope } from "./runEventSchema";
 import { checkForAppUpdate, installAppUpdate, type UpdateStatus } from "./desktopUpdate";
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
@@ -279,14 +286,17 @@ export function App() {
   >(null);
   const [firstRun, setFirstRun] = useState<FirstRunState>(() => loadFirstRun());
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [peek, setPeek] = useState<{ path: string; content: string } | null>(
-    null,
-  );
-  const [dragOver, setDragOver] = useState(false);
+  const paletteOpen = useChromeStore((s) => s.paletteOpen);
+  const setPaletteOpen = useChromeStore((s) => s.setPaletteOpen);
+  const peek = useChromeStore((s) => s.peek);
+  const setPeek = useChromeStore((s) => s.setPeek);
+  const dragOver = useChromeStore((s) => s.dragOver);
+  const setDragOver = useChromeStore((s) => s.setDragOver);
   const toast = useToast();
-  const [sessionWrite, setSessionWrite] = useState(false);
-  const [sessionShell, setSessionShell] = useState(false);
+  const sessionWrite = useSessionFlagsStore((s) => s.sessionWrite);
+  const sessionShell = useSessionFlagsStore((s) => s.sessionShell);
+  const setSessionWrite = useSessionFlagsStore((s) => s.setSessionWrite);
+  const setSessionShell = useSessionFlagsStore((s) => s.setSessionShell);
   const [fileIndex, setFileIndex] = useState<string[]>([]);
   const [atSuggestions, setAtSuggestions] = useState<string[]>([]);
   const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
@@ -2929,32 +2939,30 @@ export function App() {
 
   // Global keys: palette, composer, sessions, permissions, diffs
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      const t = e.target as HTMLElement | null;
-      const inField =
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable);
-
-      if (mod && e.key.toLowerCase() === "k") {
+    const inEditable = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      return Boolean(
+        el &&
+          (el.tagName === "INPUT" ||
+            el.tagName === "TEXTAREA" ||
+            el.isContentEditable),
+      );
+    };
+    const unbind = tinykeys(window, {
+      "$mod+KeyK": (e) => {
         e.preventDefault();
         setPaletteOpen((v) => !v);
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "l") {
+      },
+      "$mod+KeyL": (e) => {
         e.preventDefault();
         setView("chat");
         setTimeout(() => composerRef.current?.focus(), 0);
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "n") {
+      },
+      "$mod+KeyN": (e) => {
         e.preventDefault();
         newSession();
-        return;
-      }
-      if (e.key === "Escape") {
+      },
+      Escape: (e) => {
         if (peek) {
           e.preventDefault();
           setPeek(null);
@@ -2963,41 +2971,52 @@ export function App() {
         if (paletteOpen) {
           e.preventDefault();
           setPaletteOpen(false);
-          return;
         }
-      }
-
-      // Dock decisions work even with composer focused (Y/N/S, A/R)
-      const dockOpen =
-        permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
-
-      if (permissions.length > 0 && !mod && !e.altKey) {
-        const k = e.key.toLowerCase();
-        if (k === "y" || k === "n" || k === "s") {
-          // Allow when dock open even if inField
-          if (inField && !dockOpen) return;
-          e.preventDefault();
-          if (k === "y") void decidePermission("allow_once");
-          else if (k === "n") void decidePermission("deny");
-          else void decidePermission("allow_session");
-          return;
-        }
-      }
-
-      if (diffQueue.length > 0 && !mod && !e.altKey) {
-        const k = e.key.toLowerCase();
-        if (k === "a" || k === "r") {
-          if (inField && !dockOpen) return;
-          const active =
-            diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
-          e.preventDefault();
-          if (k === "a") void acceptDiff(active.id);
-          else void rejectDiff(active.id);
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+      },
+      KeyY: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+        if (permissions.length === 0) return;
+        if (inEditable(e.target) && !dockOpen) return;
+        e.preventDefault();
+        void decidePermission("allow_once");
+      },
+      KeyN: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+        if (permissions.length === 0) return;
+        if (inEditable(e.target) && !dockOpen) return;
+        e.preventDefault();
+        void decidePermission("deny");
+      },
+      KeyS: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+        if (permissions.length === 0) return;
+        if (inEditable(e.target) && !dockOpen) return;
+        e.preventDefault();
+        void decidePermission("allow_session");
+      },
+      KeyA: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+        if (diffQueue.length === 0) return;
+        if (inEditable(e.target) && !dockOpen) return;
+        const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
+        e.preventDefault();
+        void acceptDiff(active.id);
+      },
+      KeyR: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
+        if (diffQueue.length === 0) return;
+        if (inEditable(e.target) && !dockOpen) return;
+        const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
+        e.preventDefault();
+        void rejectDiff(active.id);
+      },
+    });
+    return () => unbind();
   }, [
     permissions,
     decidePermission,
@@ -3453,6 +3472,8 @@ export function App() {
       ) : null}
 
       <div className="layout">
+        <PanelGroup orientation="horizontal" className="layout-panels" defaultLayout={{ sidebar: 22, main: 78 }}>
+        <Panel id="sidebar" minSize="14%" maxSize="42%" className="sidebar-panel">
         <div className="sidebar-stack" data-mode={productMode}>
           <Sidebar
             mode={productMode}
@@ -3488,6 +3509,9 @@ export function App() {
             onViewTab={(t) => setView(t === "settings" ? "settings" : "chat")}
           />
         </div>
+        </Panel>
+        <PanelResizeHandle className="layout-resize" aria-label="Resize sidebar" />
+        <Panel id="main" minSize="40%" className="main-panel">
 
         <main className="main">
           {view === "settings" ? (
@@ -3587,16 +3611,11 @@ export function App() {
                   </>;
                 })()}
                 <div className="row" style={{ marginBottom: 16 }}>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={startGrokSignIn}
-                  >
+                  <Button variant="primary" onClick={startGrokSignIn}>
                     Sign in with Grok
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() =>
                       void api
                         .oauthLogout()
@@ -3605,15 +3624,11 @@ export function App() {
                     }
                   >
                     Sign out
-                  </button>
+                  </Button>
                   {engineRetryAllowed && (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => void restartDesktopHost().then(() => bootApp())}
-                    >
+                    <Button onClick={() => void restartDesktopHost().then(() => bootApp())}>
                       Restart engine
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {oauth && (
@@ -3630,16 +3645,15 @@ export function App() {
                       </a>
                     </p>
                     <p className="user-code">{oauth.user_code}</p>
-                    <button
-                      type="button"
-                      className="btn ghost"
+                    <Button
+                      variant="ghost"
                       onClick={() => {
                         void api.oauthCancel();
                         setOauth(null);
                       }}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 )}
                 <div className="field">
@@ -3710,41 +3724,36 @@ export function App() {
                       : null}
                   </p>
                 </div>
-                <div className="field">
-                  <label htmlFor="model">Model</label>
-                  <input
-                    id="model"
-                    type="text"
-                    value={modelDraft}
-                    onChange={(e) => setModelDraft(e.target.value)}
-                    list="model-presets"
-                  />
-                  <datalist id="model-presets">
-                    {MODEL_PRESETS.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                  <div className="model-presets row">
-                    {MODEL_PRESETS.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={`btn ghost ${modelDraft === m ? "active-toggle" : ""}`}
-                        onClick={() => setModelDraft(m)}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+                <TextField
+                  id="model"
+                  label="Model"
+                  value={modelDraft}
+                  onChange={setModelDraft}
+                  list="model-presets"
+                />
+                <datalist id="model-presets">
+                  {MODEL_PRESETS.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+                <div className="model-presets row">
+                  {MODEL_PRESETS.map((m) => (
+                    <Button
+                      key={m}
+                      variant="ghost"
+                      className={modelDraft === m ? "active-toggle" : ""}
+                      onClick={() => setModelDraft(m)}
+                    >
+                      {m}
+                    </Button>
+                  ))}
                 </div>
-                <label className="check-row">
-                  <input
-                    type="checkbox"
-                    checked={shellAllowlist}
-                    onChange={(e) => setShellAllowlist(e.target.checked)}
-                  />
+                <Switch
+                  isSelected={shellAllowlist}
+                  onChange={setShellAllowlist}
+                >
                   Enforce shell allowlist (npm, git, node, …)
-                </label>
+                </Switch>
                 {connTest && (
                   <div className="conn-test" role="status">
                     Connection: {connTest}
@@ -3758,9 +3767,7 @@ export function App() {
                 <div className="field">
                   <span>Appearance</span>
                   <div className="row">
-                    <button
-                      type="button"
-                      className="btn"
+                    <Button
                       onClick={() => {
                         const next = patchPrefs({
                           theme: prefs.theme === "light" ? "voidglass" : "light",
@@ -3769,10 +3776,8 @@ export function App() {
                       }}
                     >
                       Theme: {themeLabel(prefs.theme)}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
+                    </Button>
+                    <Button
                       onClick={() => {
                         const next = patchPrefs({
                           density:
@@ -3784,20 +3789,19 @@ export function App() {
                       }}
                     >
                       Density: {prefs.density}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      title="Reduce field motion and brand animations"
-                      onClick={() => {
-                        const next = patchPrefs({
-                          motion: prefs.motion === "calm" ? "full" : "calm",
-                        });
-                        setPrefs(next);
-                      }}
-                    >
-                      Motion: {prefs.motion === "calm" ? "Calm" : "Full"}
-                    </button>
+                    </Button>
+                    <Hint label="Reduce field motion and brand animations">
+                      <Button
+                        onClick={() => {
+                          const next = patchPrefs({
+                            motion: prefs.motion === "calm" ? "full" : "calm",
+                          });
+                          setPrefs(next);
+                        }}
+                      >
+                        Motion: {prefs.motion === "calm" ? "Calm" : "Full"}
+                      </Button>
+                    </Hint>
                   </div>
                   <label className="check-row" style={{ marginTop: 12 }}>
                     <input
@@ -3873,9 +3877,7 @@ export function App() {
                   <Button variant="primary" onClick={() => void saveSettings()}>
                     Save
                   </Button>
-                  <button
-                    type="button"
-                    className="btn"
+                  <Button
                     onClick={() =>
                       void api
                         .testConnection()
@@ -3890,10 +3892,9 @@ export function App() {
                     }
                   >
                     Test connection
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() =>
                       void api
                         .openLogs()
@@ -3904,17 +3905,11 @@ export function App() {
                     }
                   >
                     Open logs folder
-                  </button>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => void exportSessionDiagnostics()}
-                  >
+                  </Button>
+                  <Button variant="primary" onClick={() => void exportSessionDiagnostics()}>
                     Export diagnostics
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
+                  </Button>
+                  <Button
                     onClick={() => {
                       try {
                         toast.push(
@@ -3929,10 +3924,9 @@ export function App() {
                     }}
                   >
                     Export sessions
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() => {
                       void pickImportFile().then((raw) => {
                         if (!raw) return;
@@ -3951,16 +3945,15 @@ export function App() {
                     }}
                   >
                     Import sessions
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() =>
                       void api.settings({ clearKey: true }).then(applyState)
                     }
                   >
                     Clear saved key
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -4076,13 +4069,9 @@ export function App() {
                         <strong>{activeRun ? "Offline" : "Forge's engine stopped."}</strong> {activeRun ? "Forge is offline. Your prompt and received output are preserved. Reconnect to confirm this run’s outcome." : "Your conversation is saved."}
                         {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
                         {engineRetryAllowed && (
-                          <button
-                            type="button"
-                            className="btn primary"
-                            onClick={() => void retryHost()}
-                          >
+                          <Button variant="primary" onClick={() => void retryHost()}>
                             Try again
-                          </button>
+                          </Button>
                         )}
                       </div>
                     )}
@@ -4253,6 +4242,8 @@ export function App() {
             </div>
           )}
         </main>
+        </Panel>
+        </PanelGroup>
       </div>
 
       <OverlayDialog

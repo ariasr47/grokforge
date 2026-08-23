@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 void React;
+import { Button } from "./ui/Button";
 import {
   gitReviewRowChrome,
   type GitReviewKind,
@@ -113,13 +114,12 @@ function EvidenceRow({
       ) : null}
       {showViewOutput ? (
         <div className="git-review-actions">
-          <button
-            type="button"
-            className="btn ghost"
+          <Button
+            variant="ghost"
             onClick={() => onViewOutput?.(member)}
           >
             {GIT_REVIEW_VIEW_OUTPUT}
-          </button>
+          </Button>
         </div>
       ) : null}
     </li>
