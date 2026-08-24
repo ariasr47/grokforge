@@ -19,7 +19,10 @@ export function Switch({
       onChange={onChange}
       isDisabled={isDisabled}
     >
-      {children}
+      <span className="switch-track" aria-hidden>
+        <span className="switch-thumb" />
+      </span>
+      <span className="switch-label">{children}</span>
     </AriaSwitch>
   );
 }

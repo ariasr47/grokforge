@@ -82,6 +82,52 @@ test("allow_session for shell is remembered on the host after ACP reclaim", asyn
   assert.equal(s.sessionWriteGrant, false);
 });
 
+test("terminal cancel settles leftover permission/diff and drops them from the map", async () => {
+  const appended: unknown[] = [];
+  const s = Object.create(AgentSession.prototype) as any;
+  s.pendingDecisions = new Map([
+    ["perm", {
+      sessionId: "stable",
+      runId: "run",
+      generation: 1,
+      invocationId: "perm",
+      kind: "permission",
+      permissionKind: "write",
+      status: "pending",
+      expiresAt: 0,
+    }],
+    ["diff", {
+      sessionId: "stable",
+      runId: "run",
+      generation: 1,
+      invocationId: "diff",
+      kind: "diff",
+      status: "pending",
+      expiresAt: 0,
+    }],
+    ["plan", {
+      sessionId: "stable",
+      runId: "run",
+      generation: 1,
+      invocationId: "plan",
+      kind: "plan",
+      status: "pending",
+      expiresAt: 0,
+    }],
+  ]);
+  s.runCoordinator = {
+    get: () => ({ sessionId: "stable", runId: "run", state: "running", connectionGeneration: 1, policy }),
+    appendOwnedEvent: async (_runId: string, payload: unknown) => {
+      appended.push(payload);
+    },
+  };
+  await s.cancelPendingToolDecisions("run");
+  assert.equal(s.pendingDecisions.has("perm"), false);
+  assert.equal(s.pendingDecisions.has("diff"), false);
+  assert.equal(s.pendingDecisions.get("plan")?.status, "pending");
+  assert.equal(appended.length, 2);
+});
+
 test("Trusted workspace can be saved while a run is waiting on a permission", async () => {
   const s = Object.create(AgentSession.prototype) as any;
   s.activeRunId = "run";

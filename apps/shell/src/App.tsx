@@ -63,6 +63,7 @@ import { tinykeys } from "tinykeys";
 import { parseRunEventEnvelope } from "./runEventSchema";
 import { checkForAppUpdate, installAppUpdate, type UpdateStatus } from "./desktopUpdate";
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
+import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "./copyDock";
 import { RefreshCw } from "lucide-react";
 import { MessageList, type ChatMessage } from "./MessageList";
 import { RunStatusBar, type RunPhase } from "./RunStatusBar";
@@ -573,15 +574,21 @@ export function App() {
     };
   }, [messages, permissions.length, diffQueue.length, oauth]);
 
-  // Reveal the first activity header inside the transcript viewport once. This
-  // deliberately uses the nearest scroll container and never the page/body.
+  // First-sight of a tool group: stay at the live end if the operator is
+  // already there. Only jump the first header into view when they scrolled away.
   useLayoutEffect(() => {
     const key = activityRevealRef.current;
     if (!key) return;
     const header = document.querySelector<HTMLElement>(
       `[data-activity-run="${CSS.escape(key)}"] .tool-activity-head`,
     );
-    if (header) {
+    const plan = planLiveActivityReveal(stickToBottomRef.current, Boolean(header));
+    if (plan === "keep-end") {
+      bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      activityRevealRef.current = null;
+      return;
+    }
+    if (plan === "show-header" && header) {
       header.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
       const transcript = transcriptRef.current;
       if (transcript) {
@@ -859,6 +866,10 @@ export function App() {
         }
       }
       if (runEvent.payload.kind === "run_terminal") {
+        if (nextRun) {
+          setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+          setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+        }
         setRunStartedAt(null);
         setRunPhase(null);
         setRunPhaseDetail(null);
@@ -1191,11 +1202,6 @@ export function App() {
     }
     if (ev.type === "error") {
       if (epochOk) streamBufRef.current?.flush();
-      // agent_exited / reconnect class
-      if (ev.code === "agent_exited" || ev.code === "prompt_failed") {
-        setSessionWrite(false);
-        setSessionShell(false);
-      }
       reportError(ev.message, {
         code: ev.code,
         source: "agent",
@@ -1540,7 +1546,13 @@ export function App() {
         // Health-poll reconcile is incremental completeness — it must not
         // open a File changes catch-up window (W3).
         const replay = await api.runState(run.runId, run.sessionId, run.lastEventSeq);
-        commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
+        const next = reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events);
+        commitRunProjection(next);
+        const nextRun = next.runsById[run.runId];
+        if (nextRun) {
+          setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+          setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+        }
         return replay.run;
       }));
       const ok = results.every((result) => result.status === "fulfilled");
@@ -1917,12 +1929,20 @@ export function App() {
     if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
       return PLAN_ARM_BLOCKED_UNVOUCHED;
     }
+    if (
+      oauth ||
+      permissions.length > 0 ||
+      diffQueue.length > 0 ||
+      pendingPlanDecision ||
+      sessionHasDockOwnedPending
+    ) {
+      return SETTLE_CARD_BELOW;
+    }
     if (sessionHasNonTerminalRun) return "A run is in progress";
-    if (sessionHasDockOwnedPending) return "Attention required";
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
     if (!draft.trim()) return "Type a message to send";
     return null;
-  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft]);
+  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft, oauth, permissions.length, diffQueue.length, pendingPlanDecision]);
   const overview = useMemo(
     () =>
       computeOverview(
@@ -2372,7 +2392,7 @@ export function App() {
   );
 
   const trustFolder = useCallback(async () => {
-    const workspace = state?.workspace;
+    const workspace = stateRef.current?.workspace;
     if (!sessionId || !workspace) return;
     try {
       const result = await api.saveWorkspacePolicy({
@@ -2380,17 +2400,20 @@ export function App() {
         workspace,
         mode: "trusted_workspace",
       });
-      if (state) {
+      const latest = stateRef.current;
+      if (latest) {
         applyState({
-          ...state,
+          ...latest,
           permissionPolicy: result.policy as PublicState["permissionPolicy"],
         });
       }
-      await decidePermission("allow_session");
+      // Current card only — Trusted applies to later turns via the stored
+      // policy. allow_session would skip diffs for binary writes too.
+      await decidePermission("allow_once");
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err));
     }
-  }, [applyState, decidePermission, reportError, sessionId, state]);
+  }, [applyState, decidePermission, reportError, sessionId]);
 
   const settleOwnedDiff = useCallback(async (id: string, action: "accept" | "reject") => {
     const owner = runProjectionRef.current.runOrder
@@ -2629,6 +2652,14 @@ export function App() {
         return run?.sessionId === sessionId && run.state !== "terminal";
       });
       if (!text || ownedRunActive || !connected || !sessionId) return;
+      if (
+        oauth ||
+        permissions.length > 0 ||
+        diffQueue.length > 0 ||
+        pendingPlanDecision
+      ) {
+        return;
+      }
       // F8 / AC6 — before any credential is stored, no message is sent and
       // no unlabeled provider error appears; the composer's disabled-reason
       // chip is the only signal, so a bypass via Enter (which does not read
@@ -2786,6 +2817,10 @@ export function App() {
       beginStreamRun,
       bindNormalizedRun,
       runProjection,
+      oauth,
+      permissions.length,
+      diffQueue.length,
+      pendingPlanDecision,
     ],
   );
 
@@ -2950,15 +2985,18 @@ export function App() {
     };
     const unbind = tinykeys(window, {
       "$mod+KeyK": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         setPaletteOpen((v) => !v);
       },
       "$mod+KeyL": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         setView("chat");
         setTimeout(() => composerRef.current?.focus(), 0);
       },
       "$mod+KeyN": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         newSession();
       },
@@ -2975,42 +3013,37 @@ export function App() {
       },
       KeyY: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
         if (permissions.length === 0) return;
-        if (inEditable(e.target) && !dockOpen) return;
+        if (inEditable(e.target)) return;
         e.preventDefault();
         void decidePermission("allow_once");
       },
       KeyN: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
         if (permissions.length === 0) return;
-        if (inEditable(e.target) && !dockOpen) return;
+        if (inEditable(e.target)) return;
         e.preventDefault();
         void decidePermission("deny");
       },
       KeyS: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
         if (permissions.length === 0) return;
-        if (inEditable(e.target) && !dockOpen) return;
+        if (inEditable(e.target)) return;
         e.preventDefault();
         void decidePermission("allow_session");
       },
       KeyA: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
         if (diffQueue.length === 0) return;
-        if (inEditable(e.target) && !dockOpen) return;
+        if (inEditable(e.target)) return;
         const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
         e.preventDefault();
         void acceptDiff(active.id);
       },
       KeyR: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const dockOpen = permissions.length > 0 || diffQueue.length > 0 || Boolean(oauth);
         if (diffQueue.length === 0) return;
-        if (inEditable(e.target) && !dockOpen) return;
+        if (inEditable(e.target)) return;
         const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
         e.preventDefault();
         void rejectDiff(active.id);
@@ -3543,9 +3576,10 @@ export function App() {
                       fallbackReason={policy?.fallbackReason}
                       disabled={Boolean(runStartedAt)}
                       onSave={async (mode) => {
-                        if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
-                        const result = await api.saveWorkspacePolicy({ sessionId, workspace: state.workspace, mode });
-                        if (state) applyState({ ...state, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
+                        const latest = stateRef.current;
+                        if (!sessionId || !latest?.workspace) throw new Error("No session or workspace");
+                        const result = await api.saveWorkspacePolicy({ sessionId, workspace: latest.workspace, mode });
+                        applyState({ ...latest, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
                       }}
                     />
                     <TrustedCommandClassesControl
@@ -4166,6 +4200,15 @@ export function App() {
                 onDraftChange={onComposerChange}
                 onComposerKeyDown={onComposerKeyDown}
                 sendDisabledReason={sendDisabledReason}
+                lockedReason={
+                  oauth ||
+                  permissions.length > 0 ||
+                  diffQueue.length > 0 ||
+                  pendingPlanDecision ||
+                  sessionHasDockOwnedPending
+                    ? SETTLE_CARD_BELOW
+                    : null
+                }
                 productMode={productMode}
                 connected={connected}
                 densityCompact={prefs.density === "compact"}

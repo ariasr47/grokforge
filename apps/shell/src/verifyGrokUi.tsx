@@ -55,7 +55,7 @@ createRoot(document.getElementById("root")!).render(
       "div",
       { className: "row", style: { display: "flex", gap: 8, flexWrap: "wrap" } },
       createElement(Button, { variant: "primary", id: "verify-primary" }, "Allow once"),
-      createElement(Button, { id: "verify-secondary" }, "Always this chat"),
+      createElement(Button, { id: "verify-secondary" }, "Always this session"),
       createElement(Button, { variant: "ghost", id: "verify-ghost" }, "Deny"),
       createElement(Button, { variant: "primary", id: "verify-send" },
         createElement(Icon, { icon: Send, size: 15 }),

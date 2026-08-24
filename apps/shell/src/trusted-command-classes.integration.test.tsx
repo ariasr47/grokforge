@@ -194,7 +194,7 @@ test("Review still asks: permission dock is unchanged by a saved list", async ()
   const dock = await screen.findByRole("region", { name: "Pending agent actions" });
   assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
   assert.ok(within(dock).getByRole("button", { name: "Allow once" }));
-  assert.ok(within(dock).getByRole("button", { name: "Always this chat" }));
+  assert.ok(within(dock).getByRole("button", { name: "Always this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
   assert.equal(within(dock).queryByText(/Trusted command class/i), null);
 });

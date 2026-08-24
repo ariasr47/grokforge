@@ -18,10 +18,18 @@ export function permissionChromeFromTitle(title: string): {
   return null;
 }
 
+function isLiveEnvelopeDecision(run: RunProjectionRun, d: DecisionRequest): boolean {
+  if (d.status !== "pending") return false;
+  if (d.kind === "plan" || d.kind === "recovery_confirmation") return true;
+  if (run.state === "terminal") return false;
+  return d.kind === "permission" || d.kind === "diff";
+}
+
 export function pendingPermissionsFromRun(run: RunProjectionRun): PermissionReq[] {
   const out: PermissionReq[] = [];
   for (const d of Object.values(run.decisions)) {
     if (d.kind !== "permission" || d.status !== "pending") continue;
+    if (run.state === "terminal") continue;
     const chrome = permissionChromeFromTitle(d.title);
     if (!chrome) continue; // out of contract for card chrome; still counted by hasDockOwnedPending
     out.push({
@@ -41,7 +49,7 @@ export function mergePendingPermissions(prev: PermissionReq[], run: RunProjectio
   const durableIds = new Set(rebuilt.map((p) => p.id));
   const pendingIds = new Set(
     Object.values(run.decisions)
-      .filter((d) => d.kind === "permission" && d.status === "pending")
+      .filter((d) => d.kind === "permission" && d.status === "pending" && run.state !== "terminal")
       .map((d) => d.requestId),
   );
   const kept = prev.filter((p) => pendingIds.has(p.id) && !durableIds.has(p.id));
@@ -49,11 +57,7 @@ export function mergePendingPermissions(prev: PermissionReq[], run: RunProjectio
 }
 
 export function hasDockOwnedPending(run: RunProjectionRun): boolean {
-  return Object.values(run.decisions).some(
-    (d) =>
-      d.status === "pending" &&
-      (d.kind === "permission" || d.kind === "diff" || d.kind === "plan" || d.kind === "recovery_confirmation"),
-  );
+  return Object.values(run.decisions).some((d) => isLiveEnvelopeDecision(run, d));
 }
 
 export type RailEvidence = { identity: string; content: string };
@@ -190,6 +194,7 @@ export function pendingDiffsFromRun(run: RunProjectionRun): PendingDiff[] {
   const out: PendingDiff[] = [];
   for (const d of Object.values(run.decisions)) {
     if (d.kind !== "diff" || d.status !== "pending") continue;
+    if (run.state === "terminal") continue;
     const activity = Object.values(run.activities).find(
       (a) => a.editId && (a.invocationId === d.invocationId || a.editId === d.requestId),
     );
@@ -208,7 +213,7 @@ export function mergePendingDiffs(prev: PendingDiff[], run: RunProjectionRun): P
   const durableIds = new Set(rebuilt.map((d) => d.id));
   const pendingIds = new Set(
     Object.values(run.decisions)
-      .filter((d) => d.kind === "diff" && d.status === "pending")
+      .filter((d) => d.kind === "diff" && d.status === "pending" && run.state !== "terminal")
       .map((d) => d.requestId),
   );
   const kept = prev.filter((d) => pendingIds.has(d.id) && !durableIds.has(d.id));

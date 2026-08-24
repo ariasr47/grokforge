@@ -849,16 +849,39 @@ export class GrokAcpServer {
 
       // write
       if (!session.sessionWrite && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
-        const decision = await this.waitPermission(
-          call.id,
-          "write",
-          `Write: ${String(args.path ?? "")}`,
-          executionOwner,
-        );
+        let decision: string;
+        try {
+          decision = await this.waitPermission(
+            call.id,
+            "write",
+            `Write: ${String(args.path ?? "")}`,
+            executionOwner,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (message === "cancelled") {
+            const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
+            emitTerminal(msg, false, {
+              execution: "not_executed",
+              status: "rejected",
+              reasonCode: "authorization_refused",
+              reason: "cancelled",
+              automaticEligibility: authorization.automaticEligibility,
+            });
+            return msg;
+          }
+          throw err;
+        }
         if (decision === "allow_session") session.sessionWrite = true;
-        if (decision === "deny") {
-          const msg = JSON.stringify({ error: "User denied write permission" });
-          emitTerminal(msg, false);
+        if (decision === "deny" || decision === "cancelled") {
+          const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
+          emitTerminal(msg, false, {
+            execution: "not_executed",
+            status: "rejected",
+            reasonCode: "authorization_refused",
+            reason: decision === "cancelled" ? "cancelled" : "User denied write permission",
+            automaticEligibility: authorization.automaticEligibility,
+          });
           return msg;
         }
       }
@@ -872,7 +895,16 @@ export class GrokAcpServer {
         session.permissionMode === "bypass_permissions",
       );
       session.pendingEdits.set(editId, edit);
-      const action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || session.sessionWrite ? "accept" : await this.waitEdit(edit, executionOwner, call.id);
+      let action: "accept" | "reject";
+      try {
+        action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || session.sessionWrite
+          ? "accept"
+          : await this.waitEdit(edit, executionOwner, call.id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message !== "cancelled") throw err;
+        action = "reject";
+      }
       if (action === "accept") {
         const lease = await this.mutation.acquire(this.workspaceRoot, call.id);
         try {

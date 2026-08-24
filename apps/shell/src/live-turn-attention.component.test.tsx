@@ -131,7 +131,7 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
     assert.ok(within(group).getByText("echo live-turn-attention"));
     assert.equal(within(group).queryByRole("button", { name: "Allow" }), null);
     assert.equal(within(group).queryByRole("button", { name: "Decline" }), null);
-    assert.ok(within(group).getByText("Settle this in Attention required below."));
+    assert.ok(within(group).getByText("Settle this in the card below."));
     assert.equal(permissionCalls, 0);
     assert.equal(diffCalls, 0);
   } finally {
@@ -176,7 +176,7 @@ test("pending permission card uses pinned title chrome and detail pass-through",
   assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
   assert.ok(within(dock).getByText("echo live-turn-attention"));
   assert.ok(within(dock).getByRole("button", { name: "Allow once" }));
-  assert.ok(within(dock).getByRole("button", { name: "Always this chat" }));
+  assert.ok(within(dock).getByRole("button", { name: "Always this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
   assert.equal(screen.queryByRole("button", { name: "Trust this folder" }), null);
 });

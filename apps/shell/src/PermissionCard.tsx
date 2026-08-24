@@ -1,3 +1,4 @@
+import { ALWAYS_SESSION_HINT, ALWAYS_SESSION_LABEL } from "./copyDock";
 import { Button } from "./ui/Button";
 
 export interface PermissionReq {
@@ -51,9 +52,10 @@ export function PermissionCard({ permission, onDecision, onTrustFolder }: Props)
         </Button>
         <Button
           aria-keyshortcuts="s"
+          title={ALWAYS_SESSION_HINT}
           onClick={() => onDecision("allow_session")}
         >
-          Always this chat
+          {ALWAYS_SESSION_LABEL}
         </Button>
         {!isShell && onTrustFolder ? (
           <Button onClick={onTrustFolder}>

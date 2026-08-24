@@ -948,6 +948,7 @@ export class AgentSession {
         if (ev.type === "done" || ev.type === "error") {
           if (this.activeRunId) {
             const active = this.runCoordinator.get(this.activeRunId);
+            await this.cancelPendingToolDecisions(this.activeRunId);
             const terminal = active?.state === "cancelling" ? "cancelled" : (ev.type === "done" && ev.reason !== "error" ? "answered" : "failed");
             const failureCode = ev.type === "error" ? ({missing_final_answer:"missing_final_answer",provider_liveness_timeout:"provider_liveness_exhausted",provider_liveness_exhausted:"provider_liveness_exhausted",auth_missing:"authentication_required",configuration_required:"configuration_required",execution_owner_lost:"execution_owner_lost"} as Record<string,any>)[ev.code] ?? "provider_unavailable" : null;
             if (active?.executionPhase === "plan") {
@@ -1341,6 +1342,7 @@ export class AgentSession {
       if (pending?.permissionKind === "shell") this.sessionShellGrant = true;
     }
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
+    if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:"Permission",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     return decision === "deny" ? "declined" : "accepted";
   }
@@ -1353,6 +1355,7 @@ export class AgentSession {
     const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="diff"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
     await this.client.respondEdit(id, action, this.sessionId ?? undefined, ownership);
     if(pending) pending.status=action==="accept"?"accepted":"declined";
+    if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"diff",status:action==="accept"?"accepted":"declined",title:"Edit",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     return action === "accept" ? "accepted" : "declined";
   }
@@ -1483,6 +1486,35 @@ export class AgentSession {
         policy: run.policy,
       },
     }, "decision_request").catch(() => undefined);
+  }
+
+  private async cancelPendingToolDecisions(runId: string): Promise<void> {
+    const run = this.runCoordinator.get(runId);
+    for (const [id, pending] of [...this.pendingDecisions]) {
+      if (pending.runId !== runId) continue;
+      if (pending.kind === "plan") continue;
+      if (pending.status !== "pending") {
+        this.pendingDecisions.delete(id);
+        continue;
+      }
+      pending.status = "cancelled";
+      if (run) {
+        await this.runCoordinator.appendOwnedEvent(runId, {
+          kind: "decision_request",
+          request: {
+            requestId: id,
+            invocationId: pending.invocationId,
+            kind: pending.kind,
+            status: "cancelled",
+            title: pending.kind === "diff" ? "Edit file" : "Permission",
+            detail: "",
+            expiresAt: null,
+            policy: run.policy,
+          },
+        }, "decision_request").catch(() => undefined);
+      }
+      this.pendingDecisions.delete(id);
+    }
   }
 
   private cancelPendingPlanDecision(): void {

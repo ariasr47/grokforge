@@ -15,6 +15,7 @@ export function ComposerPane({
   onDraftChange,
   onComposerKeyDown,
   sendDisabledReason,
+  lockedReason = null,
   productMode,
   connected,
   densityCompact,
@@ -37,6 +38,7 @@ export function ComposerPane({
   onDraftChange: (value: string) => void;
   onComposerKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   sendDisabledReason: string | null;
+  lockedReason?: string | null;
   productMode: string;
   connected: boolean;
   densityCompact: boolean;
@@ -76,13 +78,15 @@ export function ComposerPane({
           onKeyDown={onComposerKeyDown}
           aria-label="Message to agent"
           placeholder={
-            sendDisabledReason && !draft.trim()
-              ? sendDisabledReason
-              : productMode === "chat"
-                ? "Speak into the continuum… paste text, attach .txt/.md"
-                : "Speak into the continuum… @file · attach · Enter send"
+            lockedReason
+              ? lockedReason
+              : sendDisabledReason && !draft.trim()
+                ? sendDisabledReason
+                : productMode === "chat"
+                  ? "Speak into the continuum… paste text, attach .txt/.md"
+                  : "Speak into the continuum… @file · attach · Enter send"
           }
-          disabled={!connected}
+          disabled={!connected || Boolean(lockedReason)}
           rows={densityCompact ? 2 : 3}
         />
         <input
@@ -99,7 +103,7 @@ export function ComposerPane({
         <Button
           variant="ghost"
           title="Attach text files into this message"
-          disabled={!connected || busy}
+          disabled={!connected || busy || Boolean(lockedReason)}
           onClick={() => document.getElementById("composer-attach")?.click()}
         >
           <Icon icon={Paperclip} size={15} />

@@ -17,6 +17,7 @@ import { projectProjectInstructionsTurn } from "./projectInstructionsTurn";
 import { ProjectInstructionsTurnChip } from "./ProjectInstructionsTurnChip";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
+import { SETTLE_IN_DOCK } from "./copyDock";
 
 const LIST_AUTO_CHIP = "Ran without asking · Trusted command class";
 const LIST_AUTO_TOOLTIP = "Matched a saved class for this workspace. The process is not sandboxed.";
@@ -182,7 +183,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
                 Recover
               </Button>
             ) : (
-              <p className="run-decision-dock-hint">Settle this in Attention required below.</p>
+              <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
             )}
           </div>
         );

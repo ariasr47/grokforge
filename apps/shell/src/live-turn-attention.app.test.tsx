@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
@@ -280,27 +279,29 @@ describe("live-turn-attention App wiring", () => {
     assert.equal(screen.queryByText(TURN_COPY), null);
     assert.ok(screen.getByRole("button", { name: "Cancel" }));
     assert.equal(screen.queryByRole("button", { name: "Send" }), null);
+    const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
+    assert.equal(composer.disabled, true);
+    assert.equal(composer.placeholder, "Settle the card below");
     assert.equal(screen.queryByText("Run stalled"), null);
     assert.equal(screen.queryByText("No response"), null);
   });
 
-  it("terminal leftover pending withholds Your turn and disables Send with Attention required", async () => {
+  it("terminal leftover permission drops the card and unlocks Send", async () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
+    await screen.findByRole("region", { name: "Allow running a command?" });
     ws.emit(envelope({
       kind: "run_terminal",
-      terminalKind: "answered",
-      finalAnswer: "done",
-      answerVouched: true,
+      terminalKind: "cancelled",
+      finalAnswer: null,
+      answerVouched: false,
       failure: null,
       terminalAt: "",
     }, 3) as unknown as Record<string, unknown>);
-    await screen.findByRole("region", { name: "Allow running a command?" });
-    assert.equal(screen.queryByText(TURN_COPY), null);
     const send = await screen.findByRole("button", { name: "Send" });
-    assert.equal(send.hasAttribute("disabled"), true);
-    assert.equal(send.getAttribute("title"), "Attention required");
+    assert.notEqual(send.getAttribute("title"), "Attention required");
+    assert.equal(screen.queryByRole("region", { name: "Allow running a command?" }), null);
   });
 
   it("clean finish shows the turn delimiter and unlocks Send", async () => {
@@ -321,7 +322,7 @@ describe("live-turn-attention App wiring", () => {
       assert.ok(screen.getByText(TURN_COPY));
     });
     const composer = screen.getByLabelText("Message to agent");
-    await userEvent.setup().type(composer, "next");
+    fireEvent.change(composer, { target: { value: "next" } });
     const send = screen.getByRole("button", { name: "Send" });
     assert.equal(send.hasAttribute("disabled"), false);
   });

@@ -256,6 +256,8 @@
   border: 1px solid var(--border);
   background: rgba(140, 120, 255, 0.08);
   font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 .think-aloud summary {
   cursor: pointer;
@@ -266,6 +268,7 @@
 .think-aloud-body {
   margin: 8px 0 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   max-height: 240px;
   overflow: auto;
@@ -484,7 +487,7 @@
   font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
-  max-height: 140px;
+  max-height: 88px;
   overflow: auto;
 }
 

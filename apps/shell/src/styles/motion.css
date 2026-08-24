@@ -49,7 +49,8 @@
 }
 
 .layout-resize:hover,
-.layout-resize[data-resize-handle-state="drag"] {
+.layout-resize[data-resize-handle-state="drag"],
+.layout-resize[data-separator="active"] {
   background: var(--border-strong);
 }
 
@@ -62,6 +63,8 @@
   color: var(--text);
   font-size: var(--text-xs);
   box-shadow: var(--glow);
+  z-index: 200;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

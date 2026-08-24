@@ -1,6 +1,6 @@
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
@@ -138,8 +138,7 @@ describe("plan-mode App journeys", () => {
     render(<App />);
     await screen.findByLabelText("Message to agent");
     assert.equal(screen.queryByLabelText("Plan"), null);
-    const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Message to agent"), "Hello");
+    fireEvent.change(screen.getByLabelText("Message to agent"), { target: { value: "Hello" } });
     assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
   });
 

@@ -95,6 +95,20 @@ test("waitPermission reject cancelled journals not_executed+rejected (GATE Z)", 
   }
 });
 
+test("write waitPermission reject cancelled journals not_executed+rejected", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "grok-write-cancel-"));
+  try {
+    const h = harness(root, "reject-cancelled");
+    await h.server.executeTool(h.session, call("write_file", { path: "a.txt", content: "hi" }, "w1"));
+    const terminal = h.events.filter((e) => e.type === "tool_run" && e.params.toolCallId === "w1").at(-1);
+    assert.ok(terminal);
+    assert.equal(terminal.params.execution, "not_executed");
+    assert.equal(terminal.params.status, "rejected");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("executed non-zero exit remains executed+failed", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "grok-fail-"));
   try {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { cleanup, render, screen } from "@testing-library/react";
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import { Button } from "./Button";
 
 afterEach(() => cleanup());
@@ -27,6 +27,13 @@ describe("Button", () => {
       screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
       true,
     );
+  });
+
+  it("forwards a ref onto the native button", () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(createElement(Button, { ref }, "Send"));
+    assert.equal(ref.current?.tagName, "BUTTON");
+    assert.equal(ref.current, screen.getByRole("button", { name: "Send" }));
   });
 
   it("cva extra className still keeps Voidglass .btn", () => {

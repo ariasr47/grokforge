@@ -86,7 +86,7 @@ test("session/prompt never clears an in-process Always-this-chat grant", async (
   assert.equal(session.sessionShell, true);
 });
 
-test("Always this chat skips waitEdit for a later write in Review", async () => {
+test("Always this session skips waitEdit for a later write in Review", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "session-grant-write-"));
   try {
     const server = new GrokAcpServer();

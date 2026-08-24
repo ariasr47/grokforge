@@ -59,6 +59,16 @@ test("hasDockOwnedPending includes permission|diff|plan|recovery pending", () =>
   })), true);
 });
 
+test("mergePendingPermissions drops leftover cards once the run is terminal", () => {
+  const live = runWith({
+    a: { requestId: "a", invocationId: "a", kind: "permission", status: "pending", title: "Run shell", detail: "echo", expiresAt: null, policy: {} },
+  });
+  const prev = pendingPermissionsFromRun(live);
+  assert.equal(prev.length, 1);
+  const terminal = { ...live, state: "terminal" as const, terminalKind: "cancelled" as const };
+  assert.deepEqual(mergePendingPermissions(prev, terminal).map((p) => p.id), []);
+});
+
 test("mergePendingPermissions drops settled and keeps durable pending", () => {
   const run = runWith({
     a: { requestId: "a", invocationId: "a", kind: "permission", status: "pending", title: "Run shell", detail: "echo", expiresAt: null, policy: {} },
@@ -76,5 +86,29 @@ test("unknown permission title is excluded from the card queue but still trips h
     d: { requestId: "d", invocationId: "d", kind: "permission", status: "pending", title: "Approval needed", detail: "x", expiresAt: null, policy: {} },
   });
   assert.deepEqual(pendingPermissionsFromRun(run), []);
+  assert.equal(hasDockOwnedPending(run), true);
+});
+
+test("terminal leftover permission/diff does not block Send or keep a card", () => {
+  const run = {
+    ...runWith({
+      p: { requestId: "p", invocationId: "p", kind: "permission", status: "pending", title: "Run shell", detail: "echo", expiresAt: null, policy: {} },
+      d: { requestId: "d", invocationId: "d", kind: "diff", status: "pending", title: "Edit file", detail: "a.txt", expiresAt: null, policy: {} },
+    }),
+    state: "terminal" as const,
+    terminalKind: "cancelled" as const,
+  };
+  assert.equal(hasDockOwnedPending(run), false);
+  assert.deepEqual(pendingPermissionsFromRun(run), []);
+});
+
+test("terminal leftover plan still trips hasDockOwnedPending", () => {
+  const run = {
+    ...runWith({
+      x: { requestId: "x", invocationId: "x", kind: "plan", status: "pending", title: "Plan", detail: "", expiresAt: null, policy: {} },
+    }),
+    state: "terminal" as const,
+    terminalKind: "answered" as const,
+  };
   assert.equal(hasDockOwnedPending(run), true);
 });
