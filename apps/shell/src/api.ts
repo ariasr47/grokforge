@@ -195,6 +195,50 @@ export type ProjectInstructionsPresenceView = {
   vouched: boolean;
 };
 
+/** Pre-send / hydrate Chat pack view. Bound as PublicState.chatPack — always present on a current host. */
+export type ChatPackLastAttempt = "ok" | "pin_failed" | "note_failed" | "hydrate_failed";
+
+export type ChatPackView = {
+  conversationId: string | null;
+  vouched: boolean;
+  confirmFailed: boolean;
+  members: { files: Array<{ path: string }>; note: string | null };
+  lastAttempt: ChatPackLastAttempt;
+};
+
+export type ChatPackMutation = {
+  sessionId: string;
+  conversationId: string;
+} & (
+  | { action: "pin_file"; path: string }
+  | { action: "unpin_file"; path: string }
+  | { action: "set_note"; note: string }
+  | { action: "clear_note" }
+  | { action: "clear_pack" }
+  | {
+      action: "hydrate";
+      members: { files: Array<{ path: string }>; note: string | null };
+    }
+);
+
+export const CODE_CHAT_PACK_VIEW: ChatPackView = {
+  conversationId: null,
+  vouched: true,
+  confirmFailed: false,
+  members: { files: [], note: null },
+  lastAttempt: "ok",
+};
+
+export function emptyChatPackView(conversationId: string | null = null): ChatPackView {
+  return {
+    conversationId,
+    vouched: false,
+    confirmFailed: false,
+    members: { files: [], note: null },
+    lastAttempt: "ok",
+  };
+}
+
 export interface PublicState {
   workspace: string | null;
   workspaceName: string | null;
@@ -252,6 +296,11 @@ export interface PublicState {
    * Missing field → composer treats as unvouched / loading — never invents a path.
    */
   projectInstructions?: ProjectInstructionsPresenceView;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing field → composer treats as checking — never invents members.
+   */
+  chatPack?: ChatPackView;
 }
 
 export type ShellCapabilityView =
@@ -503,7 +552,9 @@ export const api = {
     }>("/api/health"),
   state: () => json<PublicState>("/api/state"),
   runState: (runId: string, sessionId: string, after = 0) => json<{ run: import("./runReducer").RunSnapshot; events: import("./runReducer").RunEventEnvelope[] }>(`/api/runs/${encodeURIComponent(runId)}?sessionId=${encodeURIComponent(sessionId)}&after=${after}`),
-  promptRun: (body: { sessionId: string; text: string; effort?: EffortLevel; history?: Array<{ role: "user" | "assistant" | "system"; content: string }> }) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/prompt", { method: "POST", body: JSON.stringify(body) }),
+  promptRun: (body: { sessionId: string; conversationId: string; text: string; effort?: EffortLevel; history?: Array<{ role: "user" | "assistant" | "system"; content: string }> }) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/prompt", { method: "POST", body: JSON.stringify(body) }),
+  chatPack: (body: ChatPackMutation) =>
+    json<PublicState>("/api/chat-pack", { method: "POST", body: JSON.stringify(body) }),
   cancelRun: (sessionId: string, runId: string) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/cancel", { method: "POST", body: JSON.stringify({ sessionId, runId }) }),
   workspacePolicy: (workspace: string) => json<{ policy: Record<string, unknown> }>(`/api/workspace-policy?workspace=${encodeURIComponent(workspace)}`),
   saveWorkspacePolicy: (body: { sessionId: string; workspace: string; mode: "review" | "trusted_workspace" }) => json<{ policy: Record<string, unknown> }>("/api/workspace-policy", { method: "POST", body: JSON.stringify(body) }),

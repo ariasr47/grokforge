@@ -32,6 +32,24 @@ export type ProjectInstructionsTurnVoucher = {
   path: string | null;
 };
 
+export type ChatPackInclusion =
+  | "included"
+  | "not_included"
+  | "materialization_fault"
+  | "unconfirmed"
+  | "confirm_failed";
+export type ChatPackFault = "path" | "over_cap" | null;
+export type ChatPackTurnVoucher = {
+  runId: string;
+  sessionId: string;
+  conversationId: string;
+  connectionGeneration: number;
+  inclusion: ChatPackInclusion;
+  fault: ChatPackFault;
+  files: Array<{ path: string }>;
+  noteIncluded: boolean;
+};
+
 export interface RunSnapshot {
   sessionId: string; runId: string; connectionGeneration: number; state: RunState;
   acceptedPrompt: string; admittedAt: string; updatedAt: string; lastEventSeq: number;
@@ -52,6 +70,7 @@ export type RunEventPayload =
   | { kind: "decision_request"; request: DecisionRequest }
   | { kind: "plan_record"; plan: PlanRecord }
   | { kind: "project_instructions"; projectInstructions: ProjectInstructionsTurnVoucher }
+  | { kind: "chat_pack"; chatPack: ChatPackTurnVoucher }
   | { kind: "run_terminal"; terminalKind: TerminalKind; finalAnswer: string | null; answerVouched: boolean; failure: RunSnapshot["failure"]; terminalAt: string };
 export interface RunEventEnvelope { schemaVersion: 1; type: RunEventPayload["kind"]; sessionId: string; runId: string; eventSeq: number; connectionGeneration: number; occurredAt: string; payload: RunEventPayload; }
 /** Token-storm kinds. Reduce immediately; paint at most once per frame. */
@@ -67,6 +86,7 @@ export interface RunProjectionRun extends RunSnapshot {
   seenEventSeq: Set<number>; terminalEventSeq: number | null; lastEventSeq: number;
   plan?: PlanRecord | null;
   projectInstructions?: ProjectInstructionsTurnVoucher | null;
+  chatPack?: ChatPackTurnVoucher | null;
 }
 export function initialRunProjection(): RunProjection { return { runsById: {}, runOrder: [], sessionCursors: {} }; }
 /** Admit the host snapshot without manufacturing an event sequence. The
@@ -80,15 +100,15 @@ export function mergeRunSnapshot(state: RunProjection, snapshot: RunSnapshot): R
   // terminal journal truth and its accumulated audit projection win.
   if (existing?.state === "terminal") return state;
   const run: RunProjectionRun = existing
-    ? { ...cloneRun(existing), ...snapshot, lastEventSeq: existing.lastEventSeq, plan: existing.plan, projectInstructions: existing.projectInstructions }
-    : { ...snapshot, reasoning: {}, answer: {}, activities: {}, decisions: {}, seenEventSeq: new Set(), terminalEventSeq: snapshot.state === "terminal" ? snapshot.lastEventSeq || null : null, lastEventSeq: 0, plan: null, projectInstructions: null };
+    ? { ...cloneRun(existing), ...snapshot, lastEventSeq: existing.lastEventSeq, plan: existing.plan, projectInstructions: existing.projectInstructions, chatPack: existing.chatPack }
+    : { ...snapshot, reasoning: {}, answer: {}, activities: {}, decisions: {}, seenEventSeq: new Set(), terminalEventSeq: snapshot.state === "terminal" ? snapshot.lastEventSeq || null : null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null };
   return {
     runsById: { ...state.runsById, [snapshot.runId]: run },
     runOrder: state.runOrder.includes(snapshot.runId) ? state.runOrder : [...state.runOrder, snapshot.runId],
     sessionCursors: { ...state.sessionCursors },
   };
 }
-function cloneRun(r: RunProjectionRun): RunProjectionRun { return { ...r, reasoning: { ...r.reasoning }, answer: { ...r.answer }, activities: { ...r.activities }, decisions: { ...r.decisions }, seenEventSeq: new Set(r.seenEventSeq), plan: r.plan, projectInstructions: r.projectInstructions ?? null }; }
+function cloneRun(r: RunProjectionRun): RunProjectionRun { return { ...r, reasoning: { ...r.reasoning }, answer: { ...r.answer }, activities: { ...r.activities }, decisions: { ...r.decisions }, seenEventSeq: new Set(r.seenEventSeq), plan: r.plan, projectInstructions: r.projectInstructions ?? null, chatPack: r.chatPack ?? null }; }
 export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): RunProjection {
   if (event.schemaVersion !== 1 || event.payload.kind !== event.type || !event.sessionId || !event.runId || event.eventSeq < 1) return state;
   const existing = state.runsById[event.runId];
@@ -100,7 +120,7 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
   if (!existing) {
     if (event.type !== "run_started") return state;
     const snap = (event.payload as Extract<RunEventPayload, { kind: "run_started" }>).run;
-    run = { ...snap, reasoning: {}, answer: {}, activities: {}, decisions: {}, seenEventSeq: new Set(), terminalEventSeq: null, lastEventSeq: 0, plan: null, projectInstructions: null };
+    run = { ...snap, reasoning: {}, answer: {}, activities: {}, decisions: {}, seenEventSeq: new Set(), terminalEventSeq: null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null };
   } else run = cloneRun(existing);
   run.seenEventSeq.add(event.eventSeq); run.lastEventSeq = event.eventSeq;
   switch (event.payload.kind) {
@@ -117,11 +137,30 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
       };
       break;
     }
-    case "decision_request": run.decisions[event.payload.request.requestId] = event.payload.request; break;
+    case "decision_request": {
+      const incoming = event.payload.request;
+      const prev = run.decisions[incoming.requestId];
+      // Host settle/cancel frames reuse the id with a generic title and empty
+      // detail. Keep the first specific title/detail so the run surface still
+      // names the class (Run shell / Edit file) after the run is terminal.
+      const blankIncomingDetail = !incoming.detail;
+      run.decisions[incoming.requestId] = {
+        ...prev,
+        ...incoming,
+        title: prev?.title && blankIncomingDetail ? prev.title : incoming.title,
+        detail: blankIncomingDetail && prev?.detail ? prev.detail : incoming.detail,
+      };
+      break;
+    }
     case "plan_record": run.plan = event.payload.plan; break;
     case "project_instructions":
       if (event.type === "project_instructions" && event.payload.kind === "project_instructions") {
         run.projectInstructions = event.payload.projectInstructions;
+      }
+      break;
+    case "chat_pack":
+      if (event.type === "chat_pack" && event.payload.kind === "chat_pack") {
+        run.chatPack = event.payload.chatPack;
       }
       break;
     case "run_terminal":
@@ -163,6 +202,7 @@ export function restoreRunProjection(raw: unknown): RunProjection {
       activities,
       plan: run.plan ?? null,
       projectInstructions: run.projectInstructions ?? null,
+      chatPack: run.chatPack ?? null,
       seenEventSeq: new Set(Array.isArray(run.seenEventSeq) ? run.seenEventSeq.filter((n): n is number => typeof n === "number") : []),
     };
     runOrder.push(run.runId);

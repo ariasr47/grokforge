@@ -702,6 +702,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (method === "POST" && url.pathname === "/api/chat-pack") {
+      const body = JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
+      const owner = sessionFor(body.sessionId as string | undefined) || session;
+      try {
+        const state = await owner.applyChatPackMutation(body);
+        sendState(res, origin, state);
+      } catch (e) {
+        const code = (e as { code?: string })?.code ?? "invalid_request";
+        sendContractError(res, 400, code, e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+
     if (method === "POST" && url.pathname === "/api/chat-root") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
         path?: string | null;
@@ -722,6 +735,7 @@ const server = http.createServer(async (req, res) => {
     if (method === "POST" && url.pathname === "/api/prompt") {
       const body = JSON.parse((await readBody(req)) || "{}") as {
         sessionId?: string;
+        conversationId?: string;
         text?: string;
         effort?: "auto" | "fast" | "expert" | "heavy";
         history?: Array<{
@@ -741,6 +755,7 @@ const server = http.createServer(async (req, res) => {
           history: Array.isArray(body.history) ? body.history.slice(-40) : undefined,
           originKey: typeof origin === "string" ? origin : null,
           clientSessionId: body.sessionId,
+          conversationId: typeof body.conversationId === "string" ? body.conversationId : undefined,
         });
         sendJson(res, legacyPrompt ? 200 : 202, legacyPrompt ? { ok: true } : { accepted: true, run });
       } catch (e) {

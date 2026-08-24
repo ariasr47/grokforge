@@ -382,6 +382,10 @@ for (const mode of ["chat", "code"] as const) {
     assert.ok(within(runSurface).getAllByText(/Policy:/).length >= 1);
     const runId = runSurface.getAttribute("data-run-id");
     assert.ok(runId);
+    // Admission GET can paint activity before the host has appended
+    // answer_delta (each ACP event is awaited). Wait until the pre-terminal
+    // batch is visible, then read the complete journal.
+    await screen.findByText("answer received before failure", {}, { timeout: 10_000 });
     const replay = await (await fetch(`${h.baseUrl}/api/runs/${runId}?sessionId=${encodeURIComponent(await activeAppSessionId())}&after=0`)).json() as { events: Array<{ sessionId: string; runId: string; payload: { kind: string; request?: { kind?: string } } }> };
     const kinds = replay.events.map(event => event.payload.kind);
     for (const kind of ["run_started", "reasoning_delta", "activity_update", "decision_request", "answer_delta"]) assert.ok(kinds.includes(kind), `${mode} replay missing ${kind}`);

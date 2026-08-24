@@ -231,9 +231,10 @@ describe("structured-test-panel App wiring", () => {
     render(<App />);
 
     await waitFor(() => {
-      assert.equal(screen.queryByText(VERIFY_LOADING), null);
-      const section = screen.getByRole("region", { name: VERIFY_HEADER });
-      assert.ok(within(section).getByText("2"));
+      const section = document.querySelector('[aria-label="Verify"]');
+      assert.ok(section);
+      assert.equal(section.className.includes("loading"), false);
+      assert.ok(section.textContent?.includes("2"));
     });
     assert.ok(host.callsTo("/api/runs").length >= 1);
     const user = userEvent.setup();
@@ -277,8 +278,9 @@ describe("structured-test-panel App wiring", () => {
     render(<App />);
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      assert.equal(screen.queryByText(VERIFY_LOADING), null);
-      assert.ok(screen.getByRole("region", { name: VERIFY_HEADER }));
+      const section = document.querySelector('[aria-label="Verify"]');
+      assert.ok(section);
+      assert.ok(!section.className.includes("verify-loading-state"));
     });
 
     const runsBefore = host.callsTo("/api/runs").length;

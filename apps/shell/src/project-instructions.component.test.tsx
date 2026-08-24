@@ -1,7 +1,6 @@
 import test, { after, afterEach, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
 import { FILE_CHANGES_HEADER } from "./FileChangesSection";
 import {
@@ -166,8 +165,9 @@ test("Send not disabled solely for empty or error presence", async () => {
   await waitFor(() => {
     assert.ok(screen.getByText(PI_COMPOSER_EMPTY));
   });
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Message to agent"), "hello from code");
+  fireEvent.change(screen.getByLabelText("Message to agent"), {
+    target: { value: "hello from code" },
+  });
   assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
 
   FakeWebSocket.latest()?.emit({

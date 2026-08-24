@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { setRuntimePort } from "./api";
@@ -100,7 +100,14 @@ async function sendPrompt(text: string) {
 }
 
 async function waitForGitReview() {
-  return screen.findByRole("region", { name: GIT_REVIEW_HEADER }, { timeout: 15_000 });
+  await waitFor(() => {
+    const section = document.querySelector('[aria-label="Git review"]');
+    assert.ok(section);
+    assert.equal(section.className.includes("git-review-loading-state"), false);
+  }, { timeout: 15_000 });
+  const section = document.querySelector('[aria-label="Git review"]');
+  assert.ok(section);
+  return section as HTMLElement;
 }
 
 const present = await agentAvailable();
@@ -195,7 +202,13 @@ test("reconnect restores the same Git review membership (AC-11/12)", { skip: !pr
   await mountApp(first);
   await sendPrompt("inspect git status and diff");
   await waitForRunEvent(first.ws, (event) => event.type === "activity_update" && event.payload?.activity?.command === "git diff", 15_000);
-  const before = await waitForGitReview();
+  const before = await waitFor(() => {
+    const section = document.querySelector('[aria-label="Git review"]') as HTMLElement | null;
+    assert.ok(section);
+    assert.equal(section.className.includes("git-review-loading-state"), false);
+    assert.ok(within(section).getByText("2"));
+    return section;
+  }, { timeout: 15_000 });
   const beforeCount = within(before).getByText("2").textContent;
   const port = Number(new URL(first.baseUrl).port);
   await first.killPreservingData();
@@ -209,7 +222,13 @@ test("reconnect restores the same Git review membership (AC-11/12)", { skip: !pr
   cleanup();
   reloadSessionsFromDisk();
   await mountApp(replacement, true);
-  const after = await waitForGitReview();
+  const after = await waitFor(() => {
+    const section = document.querySelector('[aria-label="Git review"]') as HTMLElement | null;
+    assert.ok(section);
+    assert.equal(section.className.includes("git-review-loading-state"), false);
+    assert.ok(within(section).getByText("2"));
+    return section;
+  }, { timeout: 15_000 });
   assert.equal(within(after).getByText("2").textContent, beforeCount);
 });
 

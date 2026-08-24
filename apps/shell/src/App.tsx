@@ -41,6 +41,10 @@ import {
 } from "./planArm";
 import { projectProjectInstructionsComposer } from "./projectInstructionsComposer";
 import { ProjectInstructionsStatus } from "./ProjectInstructionsStatus";
+import { projectChatPackComposer } from "./chatPackComposer";
+import { ChatPackStatus } from "./ChatPackStatus";
+import { ChatPackInventory } from "./ChatPackInventory";
+import { ChatHomeName } from "./ChatHomeName";
 import { isLivePlanning } from "./runPlanSection";
 import {
   isOnboardingDone,
@@ -76,6 +80,8 @@ import { type PermissionReq } from "./PermissionCard";
 import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
+  clearPackMembers,
+  commitHomeName,
   createSession,
   deleteSession,
   ensureActiveSession,
@@ -92,6 +98,7 @@ import {
   setExpanded,
   setSessionBranch,
   toggleExpanded,
+  updatePackMembers,
   updateSessionMeta,
   workspaceDisplayName,
   type ChatSession,
@@ -306,6 +313,10 @@ export function App() {
   const [classesView, setClassesView] = useState<TrustedCommandClassesView | null>(null);
   const [classesStatus, setClassesStatus] = useState<TrustedCommandClassesStatus>("no_workspace");
   const [sessionList, setSessionList] = useState<ChatSession[]>([]);
+  const [packInventoryOpen, setPackInventoryOpen] = useState(false);
+  const [packMutationInFlight, setPackMutationInFlight] = useState(false);
+  const [homeNameSaveFailed, setHomeNameSaveFailed] = useState(false);
+  const [homeNameDraft, setHomeNameDraft] = useState("");
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     listPinnedWorkspaces(),
   );
@@ -1505,6 +1516,9 @@ export function App() {
       const nextRun = next.runsById[run.runId];
       commitRunProjection(next);
       if (nextRun) {
+        for (const activity of Object.values(nextRun.activities)) {
+          paintEnvelopeActivityRef.current(activity);
+        }
         setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
         setPermissions((prev) => mergePendingPermissions(prev, nextRun));
         applyRailEvidenceRef.current(nextRun);
@@ -1550,6 +1564,9 @@ export function App() {
         commitRunProjection(next);
         const nextRun = next.runsById[run.runId];
         if (nextRun) {
+          for (const activity of Object.values(nextRun.activities)) {
+            paintEnvelopeActivityRef.current(activity);
+          }
           setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
           setPermissions((prev) => mergePendingPermissions(prev, nextRun));
         }
@@ -1638,8 +1655,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (state?.workspace && hostOk) void refreshFiles();
-  }, [state?.workspace, hostOk, refreshFiles]);
+    if (hostOk && (state?.workspace || state?.mode !== "code")) void refreshFiles();
+  }, [state?.workspace, state?.mode, hostOk, refreshFiles]);
 
   useEffect(() => {
     if (!state?.workspace) {
@@ -1752,6 +1769,30 @@ export function App() {
         : state?.workspaceName || state?.chatRoot?.split(/[/\\]/).pop() || null,
     [state?.chatRoot, state?.workspaceName],
   );
+  const activeHome = sessionId ? loadSession(sessionPartition, sessionId) : null;
+  const chatPackComposer = projectChatPackComposer({
+    mode: productMode,
+    connected,
+    conversationId: productMode === "chat" ? sessionId : null,
+    chatPack: state?.chatPack,
+    durableMembers: activeHome?.packMembers,
+  });
+  const packInventoryVisible =
+    productMode === "chat" &&
+    chatPackComposer.state !== "absent_code" &&
+    (packInventoryOpen ||
+      chatPackComposer.state === "pin_failed" ||
+      chatPackComposer.state === "note_failed" ||
+      chatPackComposer.state === "hydrate_failed" ||
+      chatPackComposer.state === "confirm_error");
+  const vouchedPack = state?.chatPack;
+  const armedPackMembers =
+    vouchedPack &&
+    vouchedPack.conversationId === sessionId &&
+    vouchedPack.vouched &&
+    !vouchedPack.confirmFailed
+      ? vouchedPack.members
+      : { files: [], note: null };
 
   const switchMode = useCallback(
     async (mode: ProductMode) => {
@@ -1864,6 +1905,39 @@ export function App() {
       })),
     );
   }, [boot, productMode, sessionId, sessionPartition, state]);
+
+  useEffect(() => {
+    if (boot !== "ready") return;
+    // Host mode only — do not hydrate during the pre-state window where
+    // productMode defaults to chat, or a Code remount would race restore.
+    if (state?.mode !== "chat" || !sessionId || !hostOk) return;
+    const conversationId = sessionId;
+    const durable = loadSession(sessionPartition, conversationId)?.packMembers ?? {
+      files: [],
+      note: null,
+    };
+    let cancelled = false;
+    void api
+      .chatPack({
+        sessionId: stateRef.current?.sessionId || conversationId,
+        conversationId,
+        action: "hydrate",
+        members: {
+          files: (durable.files ?? []).map((f) => ({ path: f.path })),
+          note: durable.note ?? null,
+        },
+      })
+      .then((s) => {
+        if (cancelled) return;
+        applyState(s);
+      })
+      .catch(() => {
+        // 400 is not PublicState — wait for WS lastAttempt. Do not invent refuse.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [boot, state?.mode, sessionId, hostOk, sessionPartition, applyState]);
 
   // Code sessions must be initialized when the host restores an existing
   // workspace too; otherwise the Send button can appear enabled while
@@ -2164,6 +2238,8 @@ export function App() {
       if (!s) return;
       setActiveSession(partition, id);
       setSessionId(id);
+      setHomeNameSaveFailed(false);
+      setPackInventoryOpen(false);
       setSessionList(listSessions(partition));
       setMessages(
         s.messages.map((m) => ({
@@ -2556,6 +2632,15 @@ export function App() {
 
   const renameSession = useCallback(
     (workspace: string, id: string, title: string) => {
+      if (workspace.startsWith("chat:")) {
+        const ok = commitHomeName(workspace, id, title);
+        setHomeNameSaveFailed(!ok);
+        setHomeNameDraft(title);
+        setSessionList(listSessions(workspace));
+        refreshTree();
+        if (ok) toast.push("Session renamed", "success");
+        return;
+      }
       updateSessionMeta(workspace, id, { title });
       // Compare partition key (chat:… or code path), not host FS workspace alone
       setSessionList(listSessions(workspace));
@@ -2563,6 +2648,77 @@ export function App() {
       toast.push("Session renamed", "success");
     },
     [refreshTree, toast],
+  );
+
+  const persistAcceptedPack = useCallback(
+    (
+      conversationId: string,
+      action: "pin_file" | "unpin_file" | "set_note" | "clear_note" | "clear_pack",
+      body: { path?: string; note?: string },
+    ) => {
+      const prev = loadSession(sessionPartition, conversationId)?.packMembers ?? {
+        files: [],
+        note: null,
+      };
+      if (action === "pin_file" && body.path) {
+        if (!prev.files.some((f) => f.path === body.path)) {
+          updatePackMembers(sessionPartition, conversationId, {
+            files: [...prev.files, { path: body.path }],
+            note: prev.note,
+          });
+        }
+      } else if (action === "unpin_file" && body.path) {
+        updatePackMembers(sessionPartition, conversationId, {
+          files: prev.files.filter((f) => f.path !== body.path),
+          note: prev.note,
+        });
+      } else if (action === "set_note") {
+        const note = body.note === "" || body.note == null ? null : body.note;
+        updatePackMembers(sessionPartition, conversationId, {
+          files: prev.files,
+          note,
+        });
+      } else if (action === "clear_note") {
+        updatePackMembers(sessionPartition, conversationId, {
+          files: prev.files,
+          note: null,
+        });
+      } else if (action === "clear_pack") {
+        clearPackMembers(sessionPartition, conversationId);
+      }
+      setSessionList(listSessions(sessionPartition));
+    },
+    [sessionPartition],
+  );
+
+  const mutateChatPack = useCallback(
+    async (
+      action:
+        | { action: "pin_file"; path: string }
+        | { action: "unpin_file"; path: string }
+        | { action: "set_note"; note: string }
+        | { action: "clear_note" }
+        | { action: "clear_pack" },
+    ) => {
+      if (productMode !== "chat" || !sessionId) return;
+      const conversationId = sessionId;
+      setPackMutationInFlight(true);
+      try {
+        const s = await api.chatPack({
+          sessionId: stateRef.current?.sessionId || conversationId,
+          conversationId,
+          ...action,
+        });
+        applyState(s);
+        if (s.mode === "code" || s.chatPack?.conversationId !== conversationId) return;
+        persistAcceptedPack(conversationId, action.action, action);
+      } catch {
+        // Refuse body is not PublicState. Wait for WS chatPack; do not invent lastAttempt.
+      } finally {
+        setPackMutationInFlight(false);
+      }
+    },
+    [productMode, sessionId, persistAcceptedPack, applyState],
   );
 
   const removeSession = useCallback(
@@ -2758,7 +2914,7 @@ export function App() {
         // Contract path: admission returns the authoritative RunSnapshot (202).
         // A successful response without it is invalid and is never retried via
         // the legacy endpoint, which could dispatch the prompt twice.
-        const admitted = await api.promptRun({ sessionId, text: outbound, effort: effortLevel, history });
+        const admitted = await api.promptRun({ sessionId, conversationId: sessionId, text: outbound, effort: effortLevel, history });
         if (!admitted.run) throw new Error("Host returned no run snapshot; prompt was not admitted");
         {
           const run = admitted.run;
@@ -2775,7 +2931,21 @@ export function App() {
           commitRunProjection(mergeRunSnapshot(runProjectionRef.current, run));
           try {
             const replay = await api.runState(run.runId, run.sessionId, 0);
-            commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
+            const next = reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events);
+            commitRunProjection(next);
+            const nextRun = next.runsById[run.runId];
+            if (nextRun) {
+              // Admission GET can land activity_update before the live WS
+              // frame. Duplicate WS envelopes then no-op the reducer and
+              // never paint Tool activity rows — Chat pack materialize
+              // makes that race common.
+              for (const activity of Object.values(nextRun.activities)) {
+                paintEnvelopeActivityRef.current(activity);
+              }
+              setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
+              setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+              applyRailEvidenceRef.current(nextRun);
+            }
             if (replay.run.state === "terminal") {
               setRunStartedAt(null);
               setRunPhase(null);
@@ -4027,6 +4197,27 @@ export function App() {
                 }
                 onCancel={requestCancel}
               />
+              {productMode === "chat" ? (
+                <ChatHomeName
+                  mode={productMode}
+                  committedName={activeHome?.committedName === true}
+                  title={activeHome?.title ?? ""}
+                  saveFailed={homeNameSaveFailed}
+                  onCommit={(title) => {
+                    if (!sessionId) return;
+                    setHomeNameDraft(title);
+                    renameSession(sessionPartition, sessionId, title);
+                  }}
+                  onRetry={() => {
+                    if (!sessionId) return;
+                    renameSession(
+                      sessionPartition,
+                      sessionId,
+                      homeNameDraft || activeHome?.title || "",
+                    );
+                  }}
+                />
+              ) : null}
               {(openingWs || runFooter || livePlanning) && (
                 <div className="run-footer" role="status">
                   {openingWs ? "Opening workspace…" : livePlanning ? PLAN_LIVE_FOOTER : runFooter}
@@ -4195,6 +4386,7 @@ export function App() {
                 }}
                 atSuggestions={atSuggestions}
                 onInsertAt={insertAtFile}
+                onPinToPack={(file) => void mutateChatPack({ action: "pin_file", path: file })}
                 composerRef={composerRef}
                 draft={draft}
                 onDraftChange={onComposerChange}
@@ -4220,6 +4412,19 @@ export function App() {
                 onSend={() => void send()}
                 footer={
                   <>
+                {packInventoryVisible ? (
+                  <ChatPackInventory
+                    projection={chatPackComposer}
+                    members={armedPackMembers}
+                    mutationInFlight={packMutationInFlight}
+                    workspaceFiles={fileIndex}
+                    onPin={(path) => void mutateChatPack({ action: "pin_file", path })}
+                    onUnpin={(path) => void mutateChatPack({ action: "unpin_file", path })}
+                    onSaveNote={(note) => void mutateChatPack({ action: "set_note", note })}
+                    onClearNote={() => void mutateChatPack({ action: "clear_note" })}
+                    onClearPack={() => void mutateChatPack({ action: "clear_pack" })}
+                  />
+                ) : null}
                 <div className="composer-footer">
                   <EffortControl
                     value={effortLevel}
@@ -4232,6 +4437,13 @@ export function App() {
                       projection={planArm}
                       onToggle={(engaged) => void setPlanEngagementUi(engaged)}
                       onRetry={() => void setPlanEngagementUi(true)}
+                    />
+                  ) : null}
+                  {chatPackComposer.state !== "absent_code" ? (
+                    <ChatPackStatus
+                      projection={chatPackComposer}
+                      inventoryOpen={packInventoryOpen}
+                      onToggleInventory={() => setPackInventoryOpen((open) => !open)}
                     />
                   ) : null}
                   {projectInstructionsComposer.state !== "absent_chat" ? (

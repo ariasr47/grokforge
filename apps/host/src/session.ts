@@ -39,7 +39,7 @@ import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./exe
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { randomUUID } from "node:crypto";
-import type { ActivityRecord, DecisionKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
+import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
 import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
@@ -50,6 +50,19 @@ import {
 } from "./trusted-command-classes.js";
 import { BypassActivation } from "./bypass-activation.js";
 import { resolveProjectInstructions } from "./project-instructions.js";
+import {
+  CHAT_PACK_FILE_CAP,
+  CHAT_PACK_FILE_CONTENTS_CAP,
+  buildChatPackPromptSection,
+  codeChatPackView,
+  emptyChatPackView,
+  membersAreEmpty,
+  noteLengthOk,
+  posixRelative,
+  sumFileContentsLength,
+  validatePinnedTextFile,
+  type ChatPackView,
+} from "./chat-pack.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -258,6 +271,7 @@ export interface PublicState {
   bypassPermissions: { unlocked:boolean; available:boolean; activeForSession:boolean; blockedReason:"managed_disabled"|"local_attestation_required"|"unlock_required"|null; confirmationVersion:number|null };
   planEngagement: PlanEngagementView;
   projectInstructions: ProjectInstructionsPresenceView;
+  chatPack: ChatPackView;
 }
 
 export type PlanEngagementView = { engaged: boolean; vouched: boolean };
@@ -311,6 +325,7 @@ export class AgentSession {
   private projectInstructionsCache: ProjectInstructionsPresenceView = { status: "absent", path: null, vouched: true };
   private projectInstructionsProbeRoot: string | null = null;
   private projectInstructionsVouched = true;
+  private chatPackState: ChatPackView = emptyChatPackView(null);
   /** Serialize restarts so concurrent mode switches don't null the client mid-start. */
   private restartChain: Promise<PublicState> | null = null;
   /**
@@ -428,6 +443,7 @@ export class AgentSession {
       bypassPermissions: this.bypassView(),
       planEngagement: this.planEngagementView(),
       projectInstructions: this.projectInstructionsView(),
+      chatPack: this.chatPackView(),
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
@@ -437,6 +453,11 @@ export class AgentSession {
   private planEngagementView(): PlanEngagementView {
     if (this.cfg.mode !== "code") return { engaged: false, vouched: true };
     return { engaged: this.planEngaged, vouched: this.planEngagementVouched };
+  }
+
+  private chatPackView(): ChatPackView {
+    if (this.cfg.mode === "code") return codeChatPackView();
+    return this.chatPackState ?? emptyChatPackView(null);
   }
 
   private projectInstructionsView(): ProjectInstructionsPresenceView {
@@ -506,6 +527,315 @@ export class AgentSession {
     if (!was && vouched) this.planEngaged = false;
     this.broadcastState();
     return this.getState();
+  }
+
+  private chatPackBoundRoot(): string | null {
+    if (this.cfg.mode === "chat") {
+      return this.workspace || ensureChatRoot(this.cfg.chatRoot);
+    }
+    return this.workspace;
+  }
+
+  private adoptChatPackConversation(conversationId: string): void {
+    if (this.chatPackState?.conversationId === conversationId) return;
+    this.chatPackState = {
+      conversationId,
+      vouched: false,
+      confirmFailed: false,
+      members: { files: [], note: null },
+      lastAttempt: this.chatPackState?.lastAttempt ?? "ok",
+    };
+  }
+
+  private publishChatPackAndThrow(code: string, message: string): never {
+    this.broadcastState();
+    throw Object.assign(new Error(message), { code });
+  }
+
+  async applyChatPackMutation(body: {
+    sessionId?: unknown;
+    conversationId?: unknown;
+    action?: unknown;
+    path?: unknown;
+    note?: unknown;
+    members?: unknown;
+  }): Promise<PublicState> {
+    if (this.cfg.mode === "code") {
+      throw Object.assign(new Error("Chat pack is not applicable in Code"), {
+        code: "chat_pack_not_applicable",
+      });
+    }
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId : "";
+    if (!conversationId) {
+      throw Object.assign(new Error("conversationId required"), { code: "invalid_request" });
+    }
+    const action = body.action;
+    this.adoptChatPackConversation(conversationId);
+    const root = this.chatPackBoundRoot();
+    if (!root) {
+      throw Object.assign(new Error("Chat pack root is not bound"), { code: "invalid_request" });
+    }
+
+    if (action === "pin_file") {
+      if (typeof body.path !== "string" || !body.path) {
+        throw Object.assign(new Error("path required"), { code: "invalid_request" });
+      }
+      const validated = await validatePinnedTextFile(root, body.path);
+      if (!validated.ok) {
+        this.chatPackState = {
+          ...this.chatPackState,
+          conversationId,
+          lastAttempt: "pin_failed",
+        };
+        this.publishChatPackAndThrow("chat_pack_pin_refused", "Couldn’t pin that path.");
+      }
+      const files = this.chatPackState.members.files.slice();
+      if (files.some((f) => f.path === validated.relativePath)) {
+        this.chatPackState = {
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files, note: this.chatPackState.members.note },
+          lastAttempt: "ok",
+        };
+        this.broadcastState();
+        return this.getState();
+      }
+      if (files.length >= CHAT_PACK_FILE_CAP) {
+        this.chatPackState = {
+          ...this.chatPackState,
+          conversationId,
+          lastAttempt: "pin_failed",
+        };
+        this.publishChatPackAndThrow("chat_pack_cap_refused", "Couldn’t pin that path.");
+      }
+      files.push({ path: validated.relativePath });
+      this.chatPackState = {
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files, note: this.chatPackState.members.note },
+        lastAttempt: "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    if (action === "unpin_file") {
+      if (typeof body.path !== "string") {
+        throw Object.assign(new Error("path required"), { code: "invalid_request" });
+      }
+      const candidates = new Set<string>([posixRelative(body.path)]);
+      const validated = await validatePinnedTextFile(root, body.path);
+      if (validated.ok) candidates.add(validated.relativePath);
+      const files = this.chatPackState.members.files.filter((f) => !candidates.has(f.path));
+      this.chatPackState = {
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files, note: this.chatPackState.members.note },
+        lastAttempt: "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    if (action === "set_note") {
+      if (typeof body.note !== "string") {
+        throw Object.assign(new Error("note required"), { code: "invalid_request" });
+      }
+      if (!noteLengthOk(body.note)) {
+        this.chatPackState = {
+          ...this.chatPackState,
+          conversationId,
+          lastAttempt: "note_failed",
+        };
+        this.publishChatPackAndThrow("chat_pack_cap_refused", "Couldn’t save the pack note.");
+      }
+      const note = body.note === "" ? null : body.note;
+      this.chatPackState = {
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files: this.chatPackState.members.files, note },
+        lastAttempt: "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    if (action === "clear_note") {
+      this.chatPackState = {
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files: this.chatPackState.members.files, note: null },
+        lastAttempt: "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    if (action === "clear_pack") {
+      this.chatPackState = {
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files: [], note: null },
+        lastAttempt: "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    if (action === "hydrate") {
+      const priorAttempt = this.chatPackState.lastAttempt;
+      this.chatPackState = {
+        conversationId,
+        vouched: false,
+        confirmFailed: false,
+        members: { files: [], note: null },
+        lastAttempt: priorAttempt,
+      };
+      this.broadcastState();
+
+      const rawMembers = body.members;
+      if (!rawMembers || typeof rawMembers !== "object") {
+        throw Object.assign(new Error("members required"), { code: "invalid_request" });
+      }
+      const filesIn = Array.isArray((rawMembers as { files?: unknown }).files)
+        ? ((rawMembers as { files: unknown[] }).files)
+        : [];
+      const noteIn = (rawMembers as { note?: unknown }).note;
+      const submitted: string[] = [];
+      const seen = new Set<string>();
+      for (const entry of filesIn) {
+        const p =
+          entry && typeof entry === "object" && typeof (entry as { path?: unknown }).path === "string"
+            ? posixRelative((entry as { path: string }).path)
+            : "";
+        if (!p || seen.has(p)) continue;
+        seen.add(p);
+        submitted.push(p);
+      }
+      const noteRaw = typeof noteIn === "string" ? noteIn : noteIn == null ? null : null;
+      const noteOverCap = noteRaw != null && !noteLengthOk(noteRaw);
+      if (submitted.length > CHAT_PACK_FILE_CAP || noteOverCap) {
+        this.chatPackState = {
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files: [], note: null },
+          lastAttempt: "hydrate_failed",
+        };
+        this.publishChatPackAndThrow("chat_pack_cap_refused", "Couldn’t reconfirm the pack — over the pin cap.");
+      }
+
+      const armedFiles: Array<{ path: string }> = [];
+      let dropped = false;
+      for (const rel of submitted) {
+        const validated = await validatePinnedTextFile(root, rel);
+        if (!validated.ok) {
+          dropped = true;
+          continue;
+        }
+        armedFiles.push({ path: validated.relativePath });
+      }
+      const note = noteRaw === "" || noteRaw == null ? null : noteRaw;
+      const confirmFail = process.env.GROKFORGE_CHAT_PACK_CONFIRM_FAIL === "1";
+      this.chatPackState = {
+        conversationId,
+        vouched: !confirmFail,
+        confirmFailed: confirmFail,
+        members: { files: armedFiles, note },
+        lastAttempt: dropped ? "hydrate_failed" : "ok",
+      };
+      this.broadcastState();
+      return this.getState();
+    }
+
+    throw Object.assign(new Error("invalid chat-pack action"), { code: "invalid_request" });
+  }
+
+  async materializeChatPackForSend(input: {
+    runId: string;
+    sessionId: string;
+    conversationId: string | null;
+    connectionGeneration: number;
+  }): Promise<{ promptSection: string | null; turn: ChatPackTurnVoucher }> {
+    const conversationId = input.conversationId ?? "";
+    const base = {
+      runId: input.runId,
+      sessionId: input.sessionId,
+      conversationId,
+      connectionGeneration: input.connectionGeneration,
+    };
+    const unconfirmed = (): { promptSection: string | null; turn: ChatPackTurnVoucher } => ({
+      promptSection: null,
+      turn: { ...base, inclusion: "unconfirmed", fault: null, files: [], noteIncluded: false },
+    });
+    const view = this.chatPackState ?? emptyChatPackView(null);
+    if (!conversationId || view.conversationId !== conversationId) {
+      return unconfirmed();
+    }
+    if (view.confirmFailed) {
+      return {
+        promptSection: null,
+        turn: { ...base, inclusion: "confirm_failed", fault: null, files: [], noteIncluded: false },
+      };
+    }
+    if (!view.vouched) {
+      return unconfirmed();
+    }
+    if (membersAreEmpty(view.members)) {
+      return {
+        promptSection: null,
+        turn: { ...base, inclusion: "not_included", fault: null, files: [], noteIncluded: false },
+      };
+    }
+    const root = this.chatPackBoundRoot();
+    if (!root) {
+      const failing = view.members.files[0] ? [view.members.files[0]] : [];
+      return {
+        promptSection: null,
+        turn: { ...base, inclusion: "materialization_fault", fault: "path", files: failing, noteIncluded: false },
+      };
+    }
+    const loaded: Array<{ path: string; body: string }> = [];
+    for (const member of view.members.files) {
+      const validated = await validatePinnedTextFile(root, member.path);
+      if (!validated.ok) {
+        return {
+          promptSection: null,
+          turn: {
+            ...base,
+            inclusion: "materialization_fault",
+            fault: "path",
+            files: [{ path: member.path }],
+            noteIncluded: false,
+          },
+        };
+      }
+      loaded.push({ path: validated.relativePath, body: validated.body });
+    }
+    if (sumFileContentsLength(loaded.map((f) => f.body)) > CHAT_PACK_FILE_CONTENTS_CAP) {
+      return {
+        promptSection: null,
+        turn: { ...base, inclusion: "materialization_fault", fault: "over_cap", files: [], noteIncluded: false },
+      };
+    }
+    const note = view.members.note;
+    const promptSection = buildChatPackPromptSection({ note, files: loaded });
+    return {
+      promptSection,
+      turn: {
+        ...base,
+        inclusion: "included",
+        fault: null,
+        files: loaded.map((f) => ({ path: f.path })),
+        noteIncluded: note != null,
+      },
+    };
   }
 
   resolveExecutionPhaseForAdmit(mode: ProductMode = this.cfg.mode === "code" ? "code" : "chat"): "plan" | "execute" {
@@ -1072,6 +1402,8 @@ export class AgentSession {
       originKey?: string | null;
       /** Stable shell session identity; ACP session id remains private to this host context. */
       clientSessionId?: string;
+      /** Chat home this send belongs to — pack materialization is keyed by this id. */
+      conversationId?: string;
     },
   ): Promise<RunSnapshot> {
     await this.runHydration;
@@ -1163,7 +1495,25 @@ export class AgentSession {
       agentId: this.cfg.agentId,
     });
     try {
-      await this.client.prompt(this.sessionId, text, {
+      let acpText = text;
+      if (mode === "chat") {
+        const voucher = await this.materializeChatPackForSend({
+          runId: admitted.runId,
+          sessionId: admitted.sessionId,
+          conversationId: opts?.conversationId ?? null,
+          connectionGeneration: admitted.connectionGeneration,
+        });
+        if (voucher.turn.inclusion === "included" && voucher.promptSection) {
+          acpText = text + voucher.promptSection;
+        }
+        await this.runCoordinator.appendOwnedEvent(
+          admitted.runId,
+          { kind: "chat_pack", chatPack: voucher.turn },
+          "chat_pack",
+        ).catch(() => undefined);
+      }
+      if (this.pendingFallback) this.pendingFallback.text = acpText;
+      await this.client.prompt(this.sessionId, acpText, {
         model: modelsChain[0],
         reasoning_effort: binding.reasoning_effort,
         history: opts?.history,

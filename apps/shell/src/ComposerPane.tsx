@@ -10,6 +10,7 @@ export function ComposerPane({
   onDrop,
   atSuggestions,
   onInsertAt,
+  onPinToPack,
   composerRef,
   draft,
   onDraftChange,
@@ -33,6 +34,7 @@ export function ComposerPane({
   onDrop: (e: DragEvent) => void;
   atSuggestions: string[];
   onInsertAt: (file: string) => void;
+  onPinToPack?: (file: string) => void;
   composerRef: RefObject<HTMLTextAreaElement | null>;
   draft: string;
   onDraftChange: (value: string) => void;
@@ -65,6 +67,11 @@ export function ComposerPane({
               <button type="button" onClick={() => onInsertAt(f)}>
                 @{f}
               </button>
+              {onPinToPack && productMode === "chat" ? (
+                <button type="button" onClick={() => onPinToPack(f)}>
+                  Pin to pack
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

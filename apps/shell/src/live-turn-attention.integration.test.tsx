@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "./App";
 import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";
@@ -151,6 +151,12 @@ async function mountApp(h: ReliableRunHost, mode: "chat" | "code") {
 async function observeSpine(mode: "chat" | "code") {
   const h = await host();
   await mountApp(h, mode);
+  if (mode === "chat") {
+    const until = Date.now() + 2000;
+    while (Date.now() < until && screen.queryByText("Checking pack…")) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
   const composer = screen.getByLabelText("Message to agent");
   fireEvent.change(composer, { target: { value: mode === "code" ? "live-turn burst" : "live-turn burst chat" } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -162,7 +168,16 @@ async function observeSpine(mode: "chat" | "code") {
   assert.ok(screen.getByRole("button", { name: "Cancel" }), "AC10: live wait uses Cancel chrome");
   assert.ok(screen.getByText("Permission requested: shell"), "AC5 rail: permission chip present");
 
-  const body = await screen.findByRole("region", { name: "Tool activity details" }, { timeout: 10_000 });
+  await waitFor(() => {
+    assert.ok(document.querySelector("[data-tool-activity]"));
+  }, { timeout: 10_000 });
+  const head = document.querySelector(".tool-activity-head") as HTMLButtonElement | null;
+  if (head?.getAttribute("aria-expanded") === "false") head.click();
+  const body = await waitFor(() => {
+    const el = document.querySelector(".tool-activity-body");
+    assert.ok(el);
+    return el as HTMLElement;
+  }, { timeout: 10_000 });
   const rows = body.querySelectorAll(".tool-row");
   assert.ok(rows.length >= 16, `AC1: expected a long burst, got ${rows.length} rows`);
   const last = rows[rows.length - 1] as HTMLElement;

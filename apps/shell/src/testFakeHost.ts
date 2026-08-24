@@ -2,12 +2,15 @@
 // spire-tech-flow-integration-tests: mock the network boundary only — real
 // session store, real mode reducer, real React tree).
 import type {
+  ChatPackLastAttempt,
+  ChatPackView,
   DesktopHostStatus,
   PublicState,
   TrustedCommandClassCatalogEntry,
   TrustedCommandClassId,
   TrustedCommandClassesView,
 } from "./api";
+import { CODE_CHAT_PACK_VIEW, emptyChatPackView } from "./api";
 import type { DesktopCommand } from "./desktopBridge";
 
 const TRUSTED_CLASS_CATALOG: TrustedCommandClassCatalogEntry[] = [
@@ -141,6 +144,13 @@ export interface FakeHost {
   runJournals: Map<string, FakeRunJournal>;
   nextClassSaveError: { status: number; code: string } | null;
   pendingPlanDecision: boolean;
+  nextChatPackRefuse: {
+    status?: number;
+    code: string;
+    error: string;
+    lastAttempt?: ChatPackLastAttempt;
+  } | null;
+  completeHydrate: () => PublicState | null;
 }
 
 const BASE_STATE: PublicState = {
@@ -166,6 +176,7 @@ const BASE_STATE: PublicState = {
   bypassPermissions: { unlocked: false, available: false, activeForSession: false, blockedReason: "unlock_required", confirmationVersion: null },
   planEngagement: { engaged: false, vouched: true },
   projectInstructions: { status: "absent", path: null, vouched: true },
+  chatPack: emptyChatPackView(null),
 };
 
 export interface FakeHostOptions {
@@ -194,8 +205,23 @@ export interface FakeHostOptions {
   omitPlanEngagement?: boolean;
   /** When true, omit projectInstructions from state snapshots (older-host loading). */
   omitProjectInstructions?: boolean;
+  /** When true, omit chatPack from state snapshots (older-host checking). */
+  omitChatPack?: boolean;
   /** Scripted POST /api/prompt refuse. */
   promptRefuse?: { status: number; code: string; error: string } | null;
+  /**
+   * Hold hydrate at vouched:false until `completeHydrate()` — conversation-switch isolation.
+   */
+  holdHydrate?: boolean;
+  /** Next POST /api/chat-pack refuse (HTTP 400, not PublicState). */
+  chatPackRefuse?: {
+    status?: number;
+    code: string;
+    error: string;
+    lastAttempt?: ChatPackLastAttempt;
+  } | null;
+  /** Hydrate confirm-fail seam (HTTP 200, confirmFailed: true). */
+  chatPackConfirmFailed?: boolean;
 }
 
 export function createFakeHost(
@@ -213,6 +239,19 @@ export function createFakeHost(
   let nextClassSaveError = opts.classSaveError ?? null;
   let nextPromptRefuse = opts.promptRefuse ?? null;
   let pendingPlanDecision = false;
+  let nextChatPackRefuse = opts.chatPackRefuse ?? null;
+  let pendingHydrate: {
+    conversationId: string;
+    members: { files: Array<{ path: string }>; note: string | null };
+  } | null = null;
+
+  function storedChatPack(): ChatPackView {
+    return state.chatPack ?? emptyChatPackView(null);
+  }
+
+  function applyChatPack(next: ChatPackView): void {
+    state.chatPack = next;
+  }
 
   function snapshot(): PublicState {
     const snap = { ...state };
@@ -226,7 +265,67 @@ export function createFakeHost(
     } else if (!snap.workspace) {
       snap.projectInstructions = { status: "absent", path: null, vouched: true };
     }
+    if (opts.omitChatPack) {
+      delete (snap as Partial<PublicState>).chatPack;
+    } else if (snap.mode === "code") {
+      // Overlay Code empty view without wiping stored Chat pack.
+      snap.chatPack = CODE_CHAT_PACK_VIEW;
+    } else {
+      snap.chatPack = storedChatPack();
+    }
     return snap;
+  }
+
+  function finishHydrate(
+    conversationId: string,
+    members: { files: Array<{ path: string }>; note: string | null },
+  ): PublicState | { __error: true; status: number; error: string; code: string } {
+    const submittedFiles = Array.isArray(members.files) ? members.files : [];
+    const submittedNote = members.note === "" ? null : members.note ?? null;
+    if (submittedFiles.length > 5 || (typeof submittedNote === "string" && submittedNote.length > 4000)) {
+      applyChatPack({
+        conversationId,
+        vouched: true,
+        confirmFailed: false,
+        members: { files: [], note: null },
+        lastAttempt: "hydrate_failed",
+      });
+      return {
+        __error: true,
+        status: 400,
+        error: "Pack exceeds pin cap",
+        code: "chat_pack_cap_refused",
+      };
+    }
+    const knownPaths = Object.keys(files);
+    const confine = knownPaths.length > 0;
+    const armedFiles: Array<{ path: string }> = [];
+    let dropped = false;
+    for (const f of submittedFiles) {
+      if (confine && !(f.path in files)) {
+        dropped = true;
+        continue;
+      }
+      armedFiles.push({ path: f.path });
+    }
+    const confirmFailed = opts.chatPackConfirmFailed === true;
+    applyChatPack({
+      conversationId,
+      vouched: !confirmFailed,
+      confirmFailed,
+      members: { files: armedFiles, note: submittedNote },
+      lastAttempt: dropped ? "hydrate_failed" : "ok",
+    });
+    return mutatingSnapshot();
+  }
+
+  function completeHydrate(): PublicState | null {
+    if (!pendingHydrate) return null;
+    const pending = pendingHydrate;
+    pendingHydrate = null;
+    const result = finishHydrate(pending.conversationId, pending.members);
+    if ("__error" in result) return snapshot();
+    return result;
   }
 
   /** Snapshot for a state-mutating POST response — see
@@ -475,6 +574,177 @@ export function createFakeHost(
       trustedClasses.set(workspace, saved);
       return { classes: saved };
     }
+    if (path === "/api/chat-pack" && method === "POST") {
+      if (state.mode === "code") {
+        return {
+          __error: true,
+          status: 400,
+          error: "Chat pack is not applicable in Code",
+          code: "chat_pack_not_applicable",
+        };
+      }
+      const conversationId = typeof body?.conversationId === "string" ? body.conversationId : "";
+      const action = body?.action;
+      if (nextChatPackRefuse) {
+        const err = nextChatPackRefuse;
+        nextChatPackRefuse = null;
+        const current = storedChatPack();
+        applyChatPack({
+          ...current,
+          conversationId: conversationId || current.conversationId,
+          vouched: true,
+          lastAttempt: err.lastAttempt ?? "pin_failed",
+        });
+        return {
+          __error: true,
+          status: err.status ?? 400,
+          error: err.error,
+          code: err.code,
+        };
+      }
+      if (action === "hydrate") {
+        const members = (body?.members as { files?: Array<{ path: string }>; note?: string | null }) ?? {
+          files: [],
+          note: null,
+        };
+        const normalized = {
+          files: Array.isArray(members.files) ? members.files : [],
+          note: members.note ?? null,
+        };
+        applyChatPack({
+          conversationId,
+          vouched: false,
+          confirmFailed: false,
+          members: { files: [], note: null },
+          lastAttempt: storedChatPack().lastAttempt,
+        });
+        if (opts.holdHydrate) {
+          pendingHydrate = { conversationId, members: normalized };
+          return snapshot();
+        }
+        return finishHydrate(conversationId, normalized);
+      }
+      const current = storedChatPack();
+      if (action === "pin_file") {
+        const pinPath = typeof body?.path === "string" ? body.path : "";
+        const existing = current.members.files;
+        if (existing.some((f) => f.path === pinPath)) {
+          applyChatPack({
+            ...current,
+            conversationId,
+            vouched: true,
+            confirmFailed: false,
+            lastAttempt: "ok",
+          });
+          return mutatingSnapshot();
+        }
+        if (existing.length >= 5) {
+          applyChatPack({
+            ...current,
+            conversationId,
+            vouched: true,
+            lastAttempt: "pin_failed",
+          });
+          return {
+            __error: true,
+            status: 400,
+            error: "Pack exceeds pin cap",
+            code: "chat_pack_cap_refused",
+          };
+        }
+        const knownPaths = Object.keys(files);
+        if (
+          pinPath.includes("..") ||
+          (knownPaths.length > 0 && !(pinPath in files))
+        ) {
+          applyChatPack({
+            ...current,
+            conversationId,
+            vouched: true,
+            lastAttempt: "pin_failed",
+          });
+          return {
+            __error: true,
+            status: 400,
+            error: "Pin refused",
+            code: "chat_pack_pin_refused",
+          };
+        }
+        applyChatPack({
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files: [...existing, { path: pinPath }], note: current.members.note },
+          lastAttempt: "ok",
+        });
+        return mutatingSnapshot();
+      }
+      if (action === "unpin_file") {
+        const unpinPath = typeof body?.path === "string" ? body.path : "";
+        applyChatPack({
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: {
+            files: current.members.files.filter((f) => f.path !== unpinPath),
+            note: current.members.note,
+          },
+          lastAttempt: "ok",
+        });
+        return mutatingSnapshot();
+      }
+      if (action === "set_note") {
+        const note = typeof body?.note === "string" ? body.note : "";
+        if (note.length > 4000) {
+          applyChatPack({
+            ...current,
+            conversationId,
+            vouched: true,
+            lastAttempt: "note_failed",
+          });
+          return {
+            __error: true,
+            status: 400,
+            error: "Note exceeds cap",
+            code: "chat_pack_cap_refused",
+          };
+        }
+        applyChatPack({
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files: current.members.files, note: note === "" ? null : note },
+          lastAttempt: "ok",
+        });
+        return mutatingSnapshot();
+      }
+      if (action === "clear_note") {
+        applyChatPack({
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files: current.members.files, note: null },
+          lastAttempt: "ok",
+        });
+        return mutatingSnapshot();
+      }
+      if (action === "clear_pack") {
+        applyChatPack({
+          conversationId,
+          vouched: true,
+          confirmFailed: false,
+          members: { files: [], note: null },
+          lastAttempt: "ok",
+        });
+        return mutatingSnapshot();
+      }
+      return {
+        __error: true,
+        status: 400,
+        error: "invalid chat pack action",
+        code: "invalid_request",
+      };
+    }
     if (path === "/api/permission" && method === "POST") return { ok: true };
     if (path === "/api/diff" && method === "POST") return { ok: true };
     if (path.startsWith("/api/runs/") && method === "GET") {
@@ -550,6 +820,13 @@ export function createFakeHost(
     set pendingPlanDecision(value: boolean) {
       pendingPlanDecision = value;
     },
+    get nextChatPackRefuse() {
+      return nextChatPackRefuse;
+    },
+    set nextChatPackRefuse(value) {
+      nextChatPackRefuse = value;
+    },
+    completeHydrate,
   };
 }
 

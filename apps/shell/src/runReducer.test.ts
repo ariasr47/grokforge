@@ -108,6 +108,40 @@ test("run_started carries executionPhase; plan_record folds into run projection"
   assert.equal(a.runsById.r1.decisions["plan-1"]?.expiresAt, null);
 });
 
+test("later decision_request keeps original title/detail when settle/cancel blanks them", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "decision_request",
+    request: {
+      requestId: "all-permission",
+      invocationId: "all-permission",
+      kind: "permission",
+      status: "pending",
+      title: "Run shell",
+      detail: "Allow the inspected command?",
+      expiresAt: null,
+      policy: {},
+    },
+  }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "decision_request",
+    request: {
+      requestId: "all-permission",
+      invocationId: "all-permission",
+      kind: "permission",
+      status: "cancelled",
+      title: "Permission",
+      detail: "",
+      expiresAt: null,
+      policy: {},
+    },
+  }, 3));
+  const decision = a.runsById.r1.decisions["all-permission"];
+  assert.equal(decision?.status, "cancelled");
+  assert.equal(decision?.title, "Run shell");
+  assert.equal(decision?.detail, "Allow the inspected command?");
+});
+
 test("missing executionPhase on old journals is not plan", () => {
   let a = reduceRunEvent(initialRunProjection(), started());
   assert.equal(a.runsById.r1.executionPhase, undefined);
@@ -209,6 +243,148 @@ test("type/kind mismatch ignored", () => {
   const next = reduceRunEvent(a, mismatched);
   assert.strictEqual(next, a);
   assert.equal(next.runsById.r1.projectInstructions ?? null, null);
+});
+
+test("chat_pack included folds onto run projection", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "chat_pack",
+        chatPack: {
+          runId: "r1",
+          sessionId: "s1",
+          conversationId: "home-a",
+          connectionGeneration: 1,
+          inclusion: "included",
+          fault: null,
+          files: [{ path: "a.md" }],
+          noteIncluded: true,
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.chatPack?.inclusion, "included");
+  assert.equal(a.runsById.r1.chatPack?.noteIncluded, true);
+});
+
+test("chat_pack materialization_fault and confirm_failed are kept — not collapsed to not_included", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "chat_pack",
+        chatPack: {
+          runId: "r1",
+          sessionId: "s1",
+          conversationId: "home-a",
+          connectionGeneration: 1,
+          inclusion: "materialization_fault",
+          fault: "path",
+          files: [{ path: "stale.md" }],
+          noteIncluded: false,
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.chatPack?.inclusion, "materialization_fault");
+  assert.equal(a.runsById.r1.chatPack?.fault, "path");
+  assert.notEqual(a.runsById.r1.chatPack?.inclusion, "not_included");
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "chat_pack",
+        chatPack: {
+          runId: "r1",
+          sessionId: "s1",
+          conversationId: "home-a",
+          connectionGeneration: 1,
+          inclusion: "confirm_failed",
+          fault: null,
+          files: [],
+          noteIncluded: false,
+        },
+      },
+      3,
+    ),
+  );
+  assert.equal(a.runsById.r1.chatPack?.inclusion, "confirm_failed");
+});
+
+test("chat_pack type/kind mismatch ignored", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  const mismatched = event(
+    {
+      kind: "chat_pack",
+      chatPack: {
+        runId: "r1",
+        sessionId: "s1",
+        conversationId: "home-a",
+        connectionGeneration: 1,
+        inclusion: "included",
+        fault: null,
+        files: [],
+        noteIncluded: false,
+      },
+    },
+    2,
+  );
+  mismatched.type = "run_state";
+  const next = reduceRunEvent(a, mismatched);
+  assert.strictEqual(next, a);
+  assert.equal(next.runsById.r1.chatPack ?? null, null);
+});
+
+test("last chat_pack event wins; persist/restore keeps materialization_fault", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "chat_pack",
+        chatPack: {
+          runId: "r1",
+          sessionId: "s1",
+          conversationId: "home-a",
+          connectionGeneration: 1,
+          inclusion: "included",
+          fault: null,
+          files: [{ path: "a.md" }],
+          noteIncluded: true,
+        },
+      },
+      2,
+    ),
+  );
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "chat_pack",
+        chatPack: {
+          runId: "r1",
+          sessionId: "s1",
+          conversationId: "home-a",
+          connectionGeneration: 1,
+          inclusion: "materialization_fault",
+          fault: "over_cap",
+          files: [],
+          noteIncluded: false,
+        },
+      },
+      3,
+    ),
+  );
+  assert.equal(a.runsById.r1.chatPack?.inclusion, "materialization_fault");
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.equal(restored.runsById.r1.chatPack?.inclusion, "materialization_fault");
+  assert.equal(restored.runsById.r1.chatPack?.fault, "over_cap");
+  assert.notEqual(restored.runsById.r1.chatPack?.inclusion, "not_included");
 });
 
 test("last project_instructions event wins; persist/restore keeps failed", () => {

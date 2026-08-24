@@ -157,10 +157,19 @@ export function importSessionsJson(
 }
 
 function sanitizeSession(s: ChatSession, workspace: string): ChatSession {
+  const files = Array.isArray(s.packMembers?.files)
+    ? s.packMembers.files
+        .filter((f) => f && typeof f.path === "string" && f.path.trim())
+        .map((f) => ({ path: String(f.path) }))
+    : [];
+  const note =
+    typeof s.packMembers?.note === "string" ? s.packMembers.note : null;
   return {
     id: s.id,
     workspace: s.workspace || workspace,
     title: String(s.title || "New chat").slice(0, 200),
+    committedName: s.committedName === true,
+    packMembers: { files, note },
     messages: Array.isArray(s.messages)
       ? (s.messages as StoredMessage[]).slice(-200)
       : [],

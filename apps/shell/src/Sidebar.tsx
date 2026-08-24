@@ -9,6 +9,7 @@ import { Icon } from "./ui/Icon";
 import { FolderOpen, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import type { ChatSession, SubagentRecord } from "./sessions";
 import { workspaceDisplayName } from "./sessions";
+import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 import { timeAgo } from "./timeAgo";
 import type { ProductMode } from "./api";
 import { VirtualList } from "./VirtualList";
@@ -96,7 +97,15 @@ const SessionRow = memo(function SessionRow({
           title={sess.status || "idle"}
         />
         <span className="session-body">
-          <span className="session-title">{sess.title || "New chat"}</span>
+          <span
+            className={`session-title${
+              !showBranch && sess.committedName !== true ? " is-placeholder" : ""
+            }`}
+          >
+            {!showBranch && sess.committedName !== true
+              ? HOME_NAME_PLACEHOLDER
+              : sess.title || "New chat"}
+          </span>
           <span className="session-sub">
             {showBranch ? (
               <span className="branch">{branchLabel || "no-git"}</span>

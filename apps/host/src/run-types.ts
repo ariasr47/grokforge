@@ -57,5 +57,35 @@ export type ProjectInstructionsRunEvent = {
     projectInstructions: ProjectInstructionsTurnVoucher;
   };
 };
-export type RunEventPayload = {kind:"run_started";run:RunSnapshot}|{kind:"run_state";state:Exclude<RunState,"terminal">;liveness:"provider"|"tool"|"decision"|"background"|"journal_recovery"|null}|{kind:"reasoning_delta";segmentId:string;delta:string}|{kind:"answer_delta";segmentId:string;delta:string}|{kind:"activity_update";activity:ActivityRecord}|{kind:"decision_request";request:DecisionRequest}|{kind:"plan_record";plan:PlanRecord}|{kind:"project_instructions";projectInstructions:ProjectInstructionsTurnVoucher}|{kind:"run_terminal";terminalKind:TerminalKind;finalAnswer:string|null;answerVouched:boolean;failure:FailureView;terminalAt:string};
-export type RunEventEnvelope = {schemaVersion:1;type:"run_started"|"run_state"|"reasoning_delta"|"answer_delta"|"activity_update"|"decision_request"|"plan_record"|"project_instructions"|"run_terminal";sessionId:string;runId:string;eventSeq:number;connectionGeneration:number;occurredAt:string;payload:RunEventPayload};
+export type ChatPackInclusion =
+  | "included"
+  | "not_included"
+  | "materialization_fault"
+  | "unconfirmed"
+  | "confirm_failed";
+export type ChatPackFault = "path" | "over_cap" | null;
+export type ChatPackTurnVoucher = {
+  runId: string;
+  sessionId: string;
+  conversationId: string;
+  connectionGeneration: number;
+  inclusion: ChatPackInclusion;
+  fault: ChatPackFault;
+  files: Array<{ path: string }>;
+  noteIncluded: boolean;
+};
+export type ChatPackRunEvent = {
+  schemaVersion: 1;
+  type: "chat_pack";
+  sessionId: string;
+  runId: string;
+  eventSeq: number;
+  connectionGeneration: number;
+  occurredAt: string;
+  payload: {
+    kind: "chat_pack";
+    chatPack: ChatPackTurnVoucher;
+  };
+};
+export type RunEventPayload = {kind:"run_started";run:RunSnapshot}|{kind:"run_state";state:Exclude<RunState,"terminal">;liveness:"provider"|"tool"|"decision"|"background"|"journal_recovery"|null}|{kind:"reasoning_delta";segmentId:string;delta:string}|{kind:"answer_delta";segmentId:string;delta:string}|{kind:"activity_update";activity:ActivityRecord}|{kind:"decision_request";request:DecisionRequest}|{kind:"plan_record";plan:PlanRecord}|{kind:"project_instructions";projectInstructions:ProjectInstructionsTurnVoucher}|{kind:"chat_pack";chatPack:ChatPackTurnVoucher}|{kind:"run_terminal";terminalKind:TerminalKind;finalAnswer:string|null;answerVouched:boolean;failure:FailureView;terminalAt:string};
+export type RunEventEnvelope = {schemaVersion:1;type:"run_started"|"run_state"|"reasoning_delta"|"answer_delta"|"activity_update"|"decision_request"|"plan_record"|"project_instructions"|"chat_pack"|"run_terminal";sessionId:string;runId:string;eventSeq:number;connectionGeneration:number;occurredAt:string;payload:RunEventPayload};

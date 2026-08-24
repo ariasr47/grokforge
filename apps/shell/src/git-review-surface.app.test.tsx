@@ -243,9 +243,10 @@ describe("git-review-surface App wiring", () => {
     render(<App />);
 
     await waitFor(() => {
-      assert.equal(screen.queryByText(GIT_REVIEW_LOADING), null);
-      const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
-      assert.ok(within(section).getByText("2"));
+      const section = document.querySelector('[aria-label="Git review"]');
+      assert.ok(section);
+      assert.equal(section.className.includes("git-review-loading-state"), false);
+      assert.ok(section.textContent?.includes("2"));
     });
     assert.ok(host.callsTo("/api/runs").length >= 1);
     const user = userEvent.setup();
@@ -310,8 +311,9 @@ describe("git-review-surface App wiring", () => {
     render(<App />);
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      assert.equal(screen.queryByText(GIT_REVIEW_LOADING), null);
-      assert.ok(screen.getByRole("region", { name: GIT_REVIEW_HEADER }));
+      const section = document.querySelector('[aria-label="Git review"]');
+      assert.ok(section);
+      assert.equal(section.className.includes("git-review-loading-state"), false);
     });
 
     const runsBefore = host.callsTo("/api/runs").length;

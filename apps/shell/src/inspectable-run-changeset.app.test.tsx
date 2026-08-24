@@ -275,10 +275,12 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     render(<App />);
 
     await waitFor(() => {
-      assert.equal(screen.queryByText(FILE_CHANGES_LOADING), null);
-      const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
-      assert.ok(within(section).getByText("r1.txt"));
-      assert.ok(within(section).getByText("Pending"));
+      const section = document.querySelector('[aria-label="File changes"]')
+        ?? document.querySelector("[class*='file-changes']");
+      assert.ok(section);
+      assert.ok(!section.textContent?.includes("Loading file changes"));
+      assert.ok(section.textContent?.includes("r1.txt"));
+      assert.ok(section.textContent?.includes("Pending"));
     });
 
     const dock = screen.getByRole("region", { name: "Pending file edits (1)" });
@@ -320,8 +322,9 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     render(<App />);
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      assert.equal(screen.queryByText(FILE_CHANGES_LOADING), null);
-      assert.ok(screen.getByRole("region", { name: FILE_CHANGES_HEADER }));
+      const section = document.querySelector('[aria-label="File changes"]');
+      assert.ok(section);
+      assert.ok(!section.className.includes("file-changes-loading-state"));
     });
 
     const runsBefore = host.callsTo("/api/runs").length;

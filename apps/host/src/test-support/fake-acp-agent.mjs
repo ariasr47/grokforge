@@ -11,6 +11,7 @@
  */
 import { createInterface } from "node:readline";
 import fs from "node:fs";
+import path from "node:path";
 
 const FAIL_MODEL = process.env.FAKE_AGENT_FAIL_MODEL || "";
 const FIXTURE = process.env.GROKFORGE_FIXTURE || "";
@@ -44,6 +45,16 @@ rl.on("line", (line) => {
       // Real grok-acp responds to the RPC immediately, then runs the turn async — session.ts's
       // `client.prompt()` await only waits for this ack, not the full turn.
       write({ jsonrpc: "2.0", id, result: { ok: true, accepted: true } });
+      const promptText = params && typeof params.prompt === "string" ? params.prompt : "";
+      const dataDir = process.env.GROKFORGE_DATA_DIR;
+      if (dataDir) {
+        try {
+          fs.mkdirSync(dataDir, { recursive: true });
+          fs.writeFileSync(path.join(dataDir, "last-acp-prompt.txt"), promptText, "utf8");
+        } catch {
+          /* ignore capture failures */
+        }
+      }
       const model = params && typeof params.model === "string" ? params.model : "";
       setTimeout(() => {
         if (FIXTURE === "reasoning-only") {

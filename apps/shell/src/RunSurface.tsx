@@ -3,7 +3,7 @@ void React;
 import type { ActivityRecord, RunProjectionRun } from "./runReducer";
 import { RunTerminalNotice } from "./RunTerminalNotice";
 import { api, type ProductMode } from "./api";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
 import { FileChangesSection } from "./FileChangesSection";
@@ -15,6 +15,8 @@ import { projectRunPlanSection } from "./runPlanSection";
 import { PlanSection } from "./PlanSection";
 import { projectProjectInstructionsTurn } from "./projectInstructionsTurn";
 import { ProjectInstructionsTurnChip } from "./ProjectInstructionsTurnChip";
+import { projectChatPackTurn } from "./chatPackTurn";
+import { ChatPackTurnChip } from "./ChatPackTurnChip";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
 import { SETTLE_IN_DOCK } from "./copyDock";
@@ -52,7 +54,7 @@ export interface RunSurfaceProps {
   onFocusDiffRequest?: (requestId: string) => void;
   onChoose?: (label: string, meta?: string) => void;
 }
-export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose }: RunSurfaceProps) {
+export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
@@ -112,6 +114,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
   );
   const planSection = projectRunPlanSection(run, catchUp, { connected: !offline });
   const projectInstructionsTurn = projectProjectInstructionsTurn(run, catchUp, { mode: productMode });
+  const chatPackTurn = projectChatPackTurn(run, catchUp, { mode: productMode });
   const reasoning = Object.values(run.reasoning).join("");
   const answer = run.finalAnswer;
   // answer_delta is durable received provider output, but is not itself a
@@ -122,7 +125,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
   const model = run.model as { requestedModel?: string; appliedModel?: string; selectionProvenance?: string };
   return <article className="run-content" data-run-id={run.runId} aria-label={`Run ${run.acceptedPrompt}`}>
     <div className="run-prompt"><strong>You</strong><p>{run.acceptedPrompt}</p></div>
-    <div className="run-provenance" aria-label="Run provenance"><span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>{model.selectionProvenance && <span>Selection: {model.selectionProvenance}</span>}<span>Policy: {policy.effectiveMode || "unspecified"}</span>{policy.source && <span>Policy source: {policy.source}</span>}<ProjectInstructionsTurnChip projection={projectInstructionsTurn} /></div>
+    <div className="run-provenance" aria-label="Run provenance"><span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>{model.selectionProvenance && <span>Selection: {model.selectionProvenance}</span>}<span>Policy: {policy.effectiveMode || "unspecified"}</span>{policy.source && <span>Policy source: {policy.source}</span>}<ProjectInstructionsTurnChip projection={projectInstructionsTurn} /><ChatPackTurnChip projection={chatPackTurn} /></div>
     {reasoning && <details><summary>Reasoning</summary><p>{reasoning}</p></details>}
     <PlanSection projection={planSection} preserved={run.plan ?? null} offline={offline} />
     {productMode !== "chat" ? (
@@ -167,7 +170,7 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
     ) : null}
     {Object.values(run.activities).length > 0 && <div className="activity-output" aria-label="Activity">{Object.values(run.activities).map(a => { const result = recoveryResult[a.activityId]; return <details key={a.activityId} data-activity-id={a.activityId} open={focusActivityId === a.activityId ? true : undefined} ref={(el) => { if (el && focusActivityId === a.activityId) { el.scrollIntoView({ block: "nearest" }); } }}><summary>{a.name}: {a.status}</summary><p>Input: {typeof a.input === "string" ? a.input : JSON.stringify(a.input)}</p>{a.output != null && <p>Output: {typeof a.output === "string" ? a.output : JSON.stringify(a.output)}</p>}{a.error && <p role="alert">Failure: {a.error}</p>}{a.diff && <><Button variant="ghost" onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}>{openDiff === a.activityId ? "Hide diff" : "View diff"}</Button>{openDiff === a.activityId && <pre>{a.diff}</pre>}</>}<ActivityProvenance activity={a} />{a.recovery?.available && !result && <><p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p><Button variant="ghost" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</Button></>}{result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}{result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}{result === "conflict" && a.diff && <Button variant="ghost" onClick={() => setOpenDiff(a.activityId)}>View diff</Button>}</details>; })}</div>}
     {Object.values(run.decisions)
-      .filter((d) => d.status === "pending" && d.kind !== "plan")
+      .filter((d) => d.kind !== "plan")
       .map((d) => {
         const isRecovery = d.kind === "recovery_confirmation";
         return (
@@ -182,9 +185,9 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
               >
                 Recover
               </Button>
-            ) : (
+            ) : d.status === "pending" ? (
               <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
-            )}
+            ) : null}
           </div>
         );
       })}
@@ -202,4 +205,4 @@ export function RunSurface({ run, catchUp = { phase: "closed" }, offline = false
     {run.terminalKind === "answered" && run.answerVouched && answer && <div className="assistant-answer" role="article" aria-label="Assistant answer"><MarkdownBody text={answer} onChoose={onChoose} /></div>}
     {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}
   </article>;
-}
+});

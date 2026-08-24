@@ -7,6 +7,10 @@ import { spawn } from "node:child_process";
 import { JSDOM } from "jsdom";
 import React from "react";
 
+// Cap Testing Library prettyDOM. Unbounded dumps over jsdom App trees hang
+// (~10s) and surface as file-level "test failed" with no assertion.
+if (!process.env.DEBUG_PRINT_LIMIT) process.env.DEBUG_PRINT_LIMIT = "120";
+
 // tsx's node loader can lower JSX test modules using the classic runtime even
 // when the project tsconfig selects react-jsx. Keep the test DOM equivalent to
 // the browser bundle by exposing the runtime binding before tests import JSX.
@@ -83,6 +87,26 @@ if (!("ResizeObserver" in window)) {
 if (!window.HTMLElement.prototype.scrollIntoView) {
   window.HTMLElement.prototype.scrollIntoView = () => {};
 }
+
+// jsdom stacks every element at 0×0. react-resizable-panels then treats
+// pointerdown at (0,0) as a separator hit and focuses "Resize sidebar",
+// so userEvent.type never reaches the composer. Give zero-size nodes
+// unique boxes so hit-testing can distinguish them.
+{
+  const proto = window.HTMLElement.prototype;
+  const original = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function getBoundingClientRect() {
+    try {
+      if (this instanceof window.HTMLElement) {
+        if (this.id === "composer-input") return new DOMRect(400, 520, 480, 72);
+        if (this.getAttribute("aria-label") === "Resize sidebar") return new DOMRect(254, 0, 6, 24);
+      }
+      return original.apply(this);
+    } catch {
+      return new DOMRect();
+    }
+  };
+}
 if (!(window.Element.prototype as unknown as { scrollTo?: () => void }).scrollTo) {
   (window.Element.prototype as unknown as { scrollTo: () => void }).scrollTo = () => {};
 }
@@ -158,3 +182,17 @@ setInterval(()=>{
   };
   process.on("exit", reap);
 }
+
+// Import after JSDOM is on globalThis so Testing Library binds to this document.
+// Truncate query errors — prettyDOM over the App tree hangs jsdom (~10s) and
+// surfaces as a file-level "test failed" with no assertion. Configure the
+// same @testing-library/react instance the tests import.
+const rtl = await import("@testing-library/react");
+rtl.configure({
+  getElementError: (message) => {
+    const first = String(message ?? "query failed").split("\n")[0];
+    const error = new Error(first);
+    error.name = "TestingLibraryElementError";
+    return error;
+  },
+});

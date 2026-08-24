@@ -27,10 +27,18 @@ export interface SubagentRecord {
   updatedAt: number;
 }
 
+export type PackMembers = { files: Array<{ path: string }>; note: string | null };
+
+export const EMPTY_PACK_MEMBERS: PackMembers = { files: [], note: null };
+
 export interface ChatSession {
   id: string;
   workspace: string;
   title: string;
+  /** false = auto-title / placeholder; true = operator committed keep-or-start name. */
+  committedName?: boolean;
+  /** Accepted pack membership refs — durable until operator unpin/clear. */
+  packMembers?: PackMembers;
   messages: StoredMessage[];
   updatedAt: number;
   branch?: string | null;
@@ -65,6 +73,24 @@ export function getLastSessionSaveError(): string | null {
 
 function emptyStore(): Store {
   return { byWorkspace: {}, activeId: {}, pinned: [], expanded: [] };
+}
+
+function normalizePackMembers(raw: ChatSession["packMembers"]): PackMembers {
+  if (!raw || !Array.isArray(raw.files)) return { ...EMPTY_PACK_MEMBERS };
+  const files = raw.files
+    .filter((f) => f && typeof f.path === "string" && f.path.trim())
+    .map((f) => ({ path: String(f.path) }));
+  const note = typeof raw.note === "string" ? raw.note : null;
+  return { files, note };
+}
+
+/** Legacy records omit named-home fields — treat as uncommitted + honest empty pack. */
+export function withHomeDefaults(s: ChatSession): ChatSession {
+  return {
+    ...s,
+    committedName: s.committedName === true,
+    packMembers: normalizePackMembers(s.packMembers),
+  };
 }
 
 function migrateLegacy(): Store | null {
@@ -242,6 +268,7 @@ export function hasAnyStoredHistory(): boolean {
 export function listSessions(workspace: string): ChatSession[] {
   return (loadStore().byWorkspace[workspace] ?? [])
     .filter((s) => s.open !== false)
+    .map(withHomeDefaults)
     .slice()
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -282,6 +309,8 @@ export function createSession(
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     workspace,
     title,
+    committedName: false,
+    packMembers: { ...EMPTY_PACK_MEMBERS },
     messages: [],
     updatedAt: Date.now(),
     branch: branch ?? null,
@@ -305,7 +334,8 @@ export function loadSession(
   workspace: string,
   id: string,
 ): ChatSession | null {
-  return (loadStore().byWorkspace[workspace] ?? []).find((s) => s.id === id) ?? null;
+  const found = (loadStore().byWorkspace[workspace] ?? []).find((s) => s.id === id);
+  return found ? withHomeDefaults(found) : null;
 }
 
 export function setActiveSession(workspace: string, id: string): void {
@@ -326,21 +356,77 @@ export function saveSessionMessages(
   const idx = list.findIndex((s) => s.id === id);
   if (idx < 0) return;
   const prev = list[idx]!;
-  const nextTitle =
-    title ??
-    (messages.find((m) => m.role === "user")?.content.slice(0, 48) ||
-      prev.title ||
-      "New chat");
+  const committed = prev.committedName === true;
+  const nextTitle = committed
+    ? prev.title
+    : (title ??
+      (messages.find((m) => m.role === "user")?.content.slice(0, 48) ||
+        prev.title ||
+        "New chat"));
   list[idx] = {
     ...prev,
     messages,
     title: nextTitle,
+    committedName: committed,
+    packMembers: normalizePackMembers(prev.packMembers),
     updatedAt: Date.now(),
     open: true,
   };
   store.byWorkspace[workspace] = list;
   pinWorkspace(store, workspace);
   saveStore(store);
+}
+
+export function commitHomeName(
+  workspace: string,
+  id: string,
+  title: string,
+): boolean {
+  const store = loadStore();
+  const list = store.byWorkspace[workspace] ?? [];
+  const idx = list.findIndex((s) => s.id === id);
+  if (idx < 0) return false;
+  const prev = list[idx]!;
+  const nextTitle = String(title || "").trim().slice(0, 200);
+  if (!nextTitle) return false;
+  list[idx] = {
+    ...prev,
+    title: nextTitle,
+    committedName: true,
+    packMembers: normalizePackMembers(prev.packMembers),
+    updatedAt: Date.now(),
+    open: true,
+  };
+  store.byWorkspace[workspace] = list;
+  pinWorkspace(store, workspace);
+  saveStore(store);
+  flushSessions();
+  return getLastSessionSaveError() === null;
+}
+
+export function updatePackMembers(
+  workspace: string,
+  id: string,
+  members: PackMembers,
+): void {
+  const store = loadStore();
+  const list = store.byWorkspace[workspace] ?? [];
+  const idx = list.findIndex((s) => s.id === id);
+  if (idx < 0) return;
+  const prev = list[idx]!;
+  list[idx] = {
+    ...prev,
+    packMembers: normalizePackMembers(members),
+    updatedAt: Date.now(),
+    open: true,
+  };
+  store.byWorkspace[workspace] = list;
+  saveStore(store);
+  flushSessions();
+}
+
+export function clearPackMembers(workspace: string, id: string): void {
+  updatePackMembers(workspace, id, { ...EMPTY_PACK_MEMBERS });
 }
 
 export function updateSessionMeta(
