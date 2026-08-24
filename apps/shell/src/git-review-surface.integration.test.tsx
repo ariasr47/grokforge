@@ -10,7 +10,7 @@ import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";
 import { flushSessions, reloadSessionsFromDisk } from "./sessions";
 import { WebSocket as BrowserWebSocket } from "ws";
-import { GIT_REVIEW_HEADER, GIT_REVIEW_VIEW_OUTPUT } from "./GitReviewSection";
+import { GIT_REVIEW_VIEW_OUTPUT } from "./GitReviewSection";
 
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

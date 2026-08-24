@@ -2711,7 +2711,10 @@ export function App() {
         });
         applyState(s);
         if (s.mode === "code" || s.chatPack?.conversationId !== conversationId) return;
-        persistAcceptedPack(conversationId, action.action, action);
+        persistAcceptedPack(conversationId, action.action, {
+          path: "path" in action ? action.path : undefined,
+          note: "note" in action ? action.note : undefined,
+        });
       } catch {
         // Refuse body is not PublicState. Wait for WS chatPack; do not invent lastAttempt.
       } finally {
