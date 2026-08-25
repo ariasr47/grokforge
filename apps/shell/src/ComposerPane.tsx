@@ -100,7 +100,7 @@ export function ComposerPane({
           type="file"
           id="composer-attach"
           multiple
-          accept=".txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yml,.yaml,.ts,.tsx,.js,.py,.rs,text/*"
+          accept=".txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yml,.yaml,.ts,.tsx,.js,.py,.rs,.pdf,text/*,application/pdf"
           style={{ display: "none" }}
           onChange={(e) => {
             if (e.target.files?.length) onAttachFiles(e.target.files);

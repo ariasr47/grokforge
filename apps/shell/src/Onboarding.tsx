@@ -107,7 +107,7 @@ export function Onboarding({
       done: firstRun.sentMessage,
       action: null,
       hint: isChat
-        ? "Paste text or ask in plain language. New chat = new project/topic. PDF: paste text or .txt export. Stay on Chat."
+        ? "Paste text or ask in plain language. New chat = new project/topic. PDFs: Attach extracts text when available. Stay on Chat."
         : 'Try: "What does this project do?" or "Where is the entrypoint?"',
     },
   ];

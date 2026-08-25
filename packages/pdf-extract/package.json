@@ -1,25 +1,23 @@
 {
-  "name": "@grokforge/grok-acp",
+  "name": "@grokforge/pdf-extract",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "grok-acp": "./dist/index.js"
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
   },
-  "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@grokforge/model-catalog": "*",
-    "@grokforge/pdf-extract": "*"
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "pdf-lib": "^1.17.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }

@@ -60,5 +60,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     clearScreen: false,
+    optimizeDeps: {
+      include: [
+        "pdfjs-dist/legacy/build/pdf.mjs",
+        "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+      ],
+    },
+    worker: {
+      format: "es",
+    },
   };
 });

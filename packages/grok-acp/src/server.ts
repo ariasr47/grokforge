@@ -679,7 +679,7 @@ export class GrokAcpServer {
     if (priorCall) { if (priorCall.args !== normalizedArgs) return JSON.stringify({error:"tool_call_id_reused_with_different_arguments"}); return priorCall.result; }
 
     const capability = session.capability;
-    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : (ok ? null : out), reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null }, executionOwner);
+    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : ok ? null : typeof extra.error === "string" ? extra.error : out, reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null }, executionOwner);
     this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
 
     const fromRun = executionOwner
@@ -738,9 +738,43 @@ export class GrokAcpServer {
 
     try {
       if (perm === "read") {
-        const out = await executeReadTool(this.workspaceRoot, name, args, session.permissionMode === "bypass_permissions");
-        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility });
-        this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
+        const out = await executeReadTool(
+          this.workspaceRoot,
+          name,
+          args,
+          session.permissionMode === "bypass_permissions",
+        );
+        let extractFailed = false;
+        let umbrella: string | undefined;
+        if (name === "read_file") {
+          try {
+            const parsed = JSON.parse(out) as {
+              extract_failed?: unknown;
+              error?: unknown;
+            };
+            if (parsed.extract_failed === true) {
+              extractFailed = true;
+              umbrella =
+                typeof parsed.error === "string" && parsed.error
+                  ? parsed.error
+                  : undefined;
+            }
+          } catch {
+            /* non-JSON read results stay on the success path */
+          }
+        }
+        if (extractFailed) {
+          emitTerminal(out, false, {
+            automaticEligibility: authorization.automaticEligibility,
+            error: umbrella ?? out,
+          });
+        } else {
+          emitTerminal(out, true, {
+            automaticEligibility: authorization.automaticEligibility,
+          });
+        }
+        this.completedToolCalls.set(ownerKey, { args: normalizedArgs, result: out });
+        return out;
       }
 
       if (perm === "shell") {

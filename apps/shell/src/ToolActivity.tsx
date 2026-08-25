@@ -1,7 +1,7 @@
 import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "./messageBlocks";
 import { toolRunStats } from "./messageBlocks";
-import { displayToolName } from "./toolFormat";
+import { displayToolName, formatPdfReadFileFailureLabel } from "./toolFormat";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { Button } from "./ui/Button";
 
@@ -69,6 +69,21 @@ const ToolRow = memo(function ToolRow({
 
   // Peek: first ~40 lines of output when expanded
   const preview = useMemo(() => {
+    const toolName = tool.toolMeta?.name ?? tool.toolMeta?.activityEvent?.name;
+    const output = tool.toolMeta?.activityEvent?.output;
+    if (tool.toolMeta?.status === "failed" && toolName === "read_file") {
+      try {
+        const parsed = output ? (JSON.parse(output) as { extract_failed?: unknown }) : null;
+        if (parsed?.extract_failed === true) {
+          return formatPdfReadFileFailureLabel(
+            tool.toolMeta?.activityEvent?.error,
+            output,
+          );
+        }
+      } catch {
+        /* non-JSON output keeps the existing failed peek */
+      }
+    }
     const authoritative = tool.toolMeta?.execution === "not_executed"
       ? tool.toolMeta.activityEvent?.reason
       : tool.toolMeta?.activityEvent?.error;
@@ -76,7 +91,7 @@ const ToolRow = memo(function ToolRow({
     const lines = body.split("\n");
     if (lines.length <= 48) return body;
     return `${lines.slice(0, 48).join("\n")}\n… (${lines.length - 48} more lines)`;
-  }, [tool.content]);
+  }, [tool.content, tool.toolMeta]);
 
   return (
     <div

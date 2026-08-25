@@ -1,13 +1,26 @@
 /**
  * Read local files for Chat/Code composer attach (browser File API).
- * Text + common office-adjacent formats; PDF gets an honest fallback message.
+ * PDFs extract via the shared `@grokforge/pdf-extract` core (no host round-trip).
+ * Other office binaries keep today's refuse.
  */
+
+import {
+  extractPdfText,
+  PDF_SOURCE_MAX_BYTES,
+  type PdfExtractFailureClass,
+} from "@grokforge/pdf-extract";
 
 const MAX_CHARS = 80_000;
 const MAX_FILES = 8;
 
 export type AttachResult =
   | { ok: true; name: string; text: string; truncated: boolean }
+  | {
+      ok: false;
+      name: string;
+      error: string;
+      extractFailureClass: PdfExtractFailureClass;
+    }
   | { ok: false; name: string; error: string };
 
 const TEXT_EXT = new Set([
@@ -54,9 +67,26 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
+export function capAttachEmittedText(
+  text: string,
+  maxChars = MAX_CHARS,
+): { text: string; truncated: boolean } {
+  if (text.length <= maxChars) return { text, truncated: false };
+  return { text: text.slice(0, maxChars), truncated: true };
+}
+
 export function formatAttachBlock(r: Extract<AttachResult, { ok: true }>): string {
   const note = r.truncated ? "\n…[truncated for message size]" : "";
   return `\n\n--- Attached: ${r.name} ---\n${r.text}${note}\n--- End: ${r.name} ---\n`;
+}
+
+export function formatAttachFailureToast(
+  r: Extract<AttachResult, { ok: false }>,
+): string {
+  if ("extractFailureClass" in r && r.extractFailureClass) {
+    return `${r.error} (${r.extractFailureClass}) Export to .txt/.md or paste the text.`;
+  }
+  return `${r.name}: ${r.error}`;
 }
 
 export async function readFileForAttach(file: File): Promise<AttachResult> {
@@ -64,12 +94,26 @@ export async function readFileForAttach(file: File): Promise<AttachResult> {
   const ext = extOf(name);
 
   if (ext === "pdf") {
-    return {
-      ok: false,
-      name,
-      error:
-        "PDF binary not extracted in the UI yet. Export to .txt/.md or copy-paste text from the PDF.",
-    };
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (buf.length > PDF_SOURCE_MAX_BYTES) {
+      return {
+        ok: false,
+        name,
+        error: `Couldn't extract text from ${name}.`,
+        extractFailureClass: "unreadable",
+      };
+    }
+    const outcome = await extractPdfText(buf);
+    if (outcome.kind === "extract_failed") {
+      return {
+        ok: false,
+        name,
+        error: `Couldn't extract text from ${name}.`,
+        extractFailureClass: outcome.class,
+      };
+    }
+    const capped = capAttachEmittedText(outcome.text);
+    return { ok: true, name, text: capped.text, truncated: capped.truncated };
   }
 
   if (ext === "docx" || ext === "pptx" || ext === "xlsx") {
@@ -114,12 +158,8 @@ export async function readFileForAttach(file: File): Promise<AttachResult> {
         error: "Could not decode as text. Paste content or convert to .txt.",
       };
     }
-    let truncated = false;
-    if (text.length > MAX_CHARS) {
-      text = text.slice(0, MAX_CHARS);
-      truncated = true;
-    }
-    return { ok: true, name, text, truncated };
+    const capped = capAttachEmittedText(text);
+    return { ok: true, name, text: capped.text, truncated: capped.truncated };
   } catch (e) {
     return {
       ok: false,
@@ -131,14 +171,14 @@ export async function readFileForAttach(file: File): Promise<AttachResult> {
 
 export async function readFilesForAttach(
   files: FileList | File[],
-): Promise<{ blocks: string[]; errors: string[] }> {
+): Promise<{ blocks: string[]; toasts: string[] }> {
   const list = Array.from(files).slice(0, MAX_FILES);
   const blocks: string[] = [];
-  const errors: string[] = [];
+  const toasts: string[] = [];
   for (const f of list) {
     const r = await readFileForAttach(f);
     if (r.ok) blocks.push(formatAttachBlock(r));
-    else errors.push(`${r.name}: ${r.error}`);
+    else toasts.push(formatAttachFailureToast(r));
   }
-  return { blocks, errors };
+  return { blocks, toasts };
 }

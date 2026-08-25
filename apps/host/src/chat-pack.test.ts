@@ -47,6 +47,23 @@ test("noteLengthOk refuses >4000 UTF-16 units", () => {
   assert.equal(noteLengthOk(""), true); // empty clears; length ok
 });
 
+test("validatePinnedTextFile still refuses PDF-shaped binary (pack-pin not extract success)", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "cp-pdf-"));
+  try {
+    const bytes = Buffer.concat([
+      Buffer.from("%PDF-1.4\n"),
+      Buffer.from([0]),
+      Buffer.from("\n%%EOF\n"),
+    ]);
+    await fs.writeFile(path.join(root, "doc.pdf"), bytes);
+    const result = await validatePinnedTextFile(root, "doc.pdf");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.reason, "binary");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("validatePinnedTextFile accepts in-root UTF-8 text and refuses binary/dir/outside", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "cp-pin-"));
   try {

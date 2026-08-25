@@ -1,9 +1,27 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { extractPdfText, PDF_SOURCE_MAX_BYTES } from "@grokforge/pdf-extract";
 import type { ExecutionEnvironmentCapability } from "./executionCapability.js";
 import { ensureDirForFile, relativeToWorkspace, resolveUnderWorkspace } from "./paths.js";
 import { checkShellCommand } from "./shell-policy.js";
+
+export const READ_FILE_EMIT_MAX_UTF8 = 100_000;
+
+/** Cap emitted extract text for read_file (UTF-8 bytes). */
+export function capReadFileEmittedText(
+  text: string,
+  maxUtf8 = READ_FILE_EMIT_MAX_UTF8,
+): { content: string; truncated: boolean; bytes: number } {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= maxUtf8) {
+    return { content: text, truncated: false, bytes: buf.length };
+  }
+  let end = maxUtf8;
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end -= 1;
+  const content = buf.subarray(0, end).toString("utf8");
+  return { content, truncated: true, bytes: Buffer.byteLength(content, "utf8") };
+}
 
 export const TOOL_DEFINITIONS = [
   {
@@ -243,13 +261,35 @@ export async function executeReadTool(
       const rel = relativeToWorkspace(workspaceRoot, abs);
       const lower = abs.toLowerCase();
       if (lower.endsWith(".pdf")) {
+        if (buf.length > PDF_SOURCE_MAX_BYTES) {
+          const error = `Couldn't extract text from ${rel}.`;
+          return JSON.stringify({
+            path: rel,
+            bytes: 0,
+            content: "",
+            extract_failed: true,
+            extract_failure_class: "unreadable",
+            error,
+          });
+        }
+        const outcome = await extractPdfText(new Uint8Array(buf));
+        if (outcome.kind === "extract_failed") {
+          const error = `Couldn't extract text from ${rel}.`;
+          return JSON.stringify({
+            path: rel,
+            bytes: 0,
+            content: "",
+            extract_failed: true,
+            extract_failure_class: outcome.class,
+            error,
+          });
+        }
+        const capped = capReadFileEmittedText(outcome.text);
         return JSON.stringify({
           path: rel,
-          bytes: buf.length,
-          binary: true,
-          error:
-            "PDF is binary — text extraction is not available in this tool yet. Ask the user to paste text or export the PDF to .txt/.md.",
-          content: "",
+          bytes: capped.bytes,
+          truncated: capped.truncated,
+          content: capped.content,
         });
       }
       // Null-byte sniff for other binaries

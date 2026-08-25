@@ -143,6 +143,91 @@ test("returning to atEnd resumes follow", () => {
   assert.equal(activityBody().scrollTop, more.length * 20 - 40);
 });
 
+function pdfReadTool(overrides: {
+  status: "failed" | "succeeded";
+  error?: string | null;
+  output?: string | null;
+  content?: string;
+}): ChatMessage {
+  return {
+    id: "tool-pdf",
+    role: "tool",
+    content: overrides.content ?? overrides.output ?? "",
+    toolMeta: {
+      name: "read_file",
+      summary: "enc.pdf",
+      done: true,
+      ok: overrides.status !== "failed",
+      execution: "executed",
+      status: overrides.status,
+      detailAvailable: true,
+      activityEvent: {
+        schemaVersion: 2,
+        type: "tool_run",
+        activityId: "pdf-act",
+        toolCallId: "pdf-call",
+        lifecycle: "terminal",
+        execution: "executed",
+        status: overrides.status,
+        name: "read_file",
+        input: { path: "enc.pdf" },
+        summary: "enc.pdf",
+        command: null,
+        output: overrides.output ?? null,
+        error: overrides.error ?? null,
+        reasonCode: null,
+        reason: null,
+        shellDisplayName: null,
+        detailAvailable: true,
+      },
+    },
+  };
+}
+
+test("PDF extract-failed read_file paints failed with vouched class, never OCR", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        pdfReadTool({
+          status: "failed",
+          error: "Couldn't extract text from enc.pdf.",
+          output: JSON.stringify({
+            extract_failed: true,
+            extract_failure_class: "encrypted",
+            content: "",
+            error: "Couldn't extract text from enc.pdf.",
+          }),
+        }),
+      ]}
+      groupKey="activity-run:pdf-enc"
+    />,
+  );
+  assert.ok(screen.getByText("failed"));
+  assert.ok(screen.getByText("Couldn't extract text from enc.pdf. (encrypted)"));
+  assert.equal(screen.queryByText(/OCR/i), null);
+  assert.equal(screen.queryByText(/PDF viewer/i), null);
+});
+
+test("missing/confine read_file failure does not reuse extract-failed copy", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        pdfReadTool({
+          status: "failed",
+          error: "File not found",
+          output: JSON.stringify({ error: "ENOENT" }),
+          content: "File not found",
+        }),
+      ]}
+      groupKey="activity-run:pdf-miss"
+    />,
+  );
+  assert.ok(screen.getByText("failed"));
+  assert.ok(screen.getByText("File not found"));
+  assert.equal(screen.queryByText(/Couldn't extract text/i), null);
+  assert.equal(screen.queryByText(/empty-extract/i), null);
+});
+
 test("explicit collapse mid-burst does not auto-expand on new rows", () => {
   const initial = [row(1), row(2)];
   const { rerender } = render(<ToolActivityGroup tools={initial} groupKey="activity-run:collapse" />);

@@ -141,6 +141,7 @@ import {
   type LiveActivityRun,
 } from "./activityRun";
 import { readFilesForAttach } from "./contextAttach";
+import { scheduleExtractingCue } from "./attachBusy";
 import {
   downloadMarkdown,
   suggestChatFilename,
@@ -3064,16 +3065,27 @@ export function App() {
 
   const attachFilesToComposer = useCallback(
     async (files: FileList | File[]) => {
-      const { blocks, errors } = await readFilesForAttach(files);
-      if (blocks.length) {
-        setDraft((d) => d + blocks.join(""));
-        toast.push(
-          `Attached ${blocks.length} file${blocks.length === 1 ? "" : "s"} as text`,
-          "success",
-        );
-      }
-      for (const e of errors.slice(0, 3)) {
-        toast.push(e, "error");
+      const list = Array.from(files);
+      const isPdfBatch = list.some((f) => /\.pdf$/i.test(f.name || ""));
+      const cue = scheduleExtractingCue(isPdfBatch, () => {
+        toast.push("Extracting PDF…", "info");
+      });
+      try {
+        const { blocks, toasts } = await readFilesForAttach(list);
+        cue.settle();
+        if (blocks.length) {
+          setDraft((d) => d + blocks.join(""));
+          toast.push(
+            `Attached ${blocks.length} file${blocks.length === 1 ? "" : "s"} as text`,
+            "success",
+          );
+        }
+        for (const t of toasts.slice(0, 3)) {
+          toast.push(t, "error");
+        }
+      } catch (e) {
+        cue.settle();
+        throw e;
       }
       composerRef.current?.focus();
     },

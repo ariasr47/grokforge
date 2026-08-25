@@ -131,3 +131,31 @@ export function displayToolName(name?: string): string {
   if (!name) return "tool";
   return name.replace(/_/g, " ");
 }
+
+const EXTRACT_FAILURE_CLASSES = new Set(["encrypted", "empty-extract", "unreadable"]);
+
+export function formatPdfReadFileFailureLabel(
+  error: string | null | undefined,
+  output: string | null | undefined,
+): string {
+  const umbrella =
+    (error && error.trim()) || "Couldn't extract text from file.";
+  if (!output) return umbrella;
+  try {
+    const body = JSON.parse(output) as {
+      extract_failed?: unknown;
+      extract_failure_class?: unknown;
+    };
+    if (
+      body.extract_failed === true &&
+      typeof body.extract_failure_class === "string" &&
+      EXTRACT_FAILURE_CLASSES.has(body.extract_failure_class)
+    ) {
+      return `${umbrella} (${body.extract_failure_class})`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return umbrella;
+}
+
