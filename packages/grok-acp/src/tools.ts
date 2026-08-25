@@ -120,6 +120,33 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "delete_file",
+      description: "Delete one confined regular UTF-8 text file under the workspace (staged until accept in Review; auto in Trusted).",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string", description: "Workspace-relative path" } },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "rename_file",
+      description: "Rename/move one confined regular UTF-8 text file within the workspace (staged until accept in Review; auto in Trusted).",
+      parameters: {
+        type: "object",
+        properties: {
+          fromPath: { type: "string" },
+          toPath: { type: "string" },
+        },
+        required: ["fromPath", "toPath"],
+      },
+    },
+  },
 ];
 export function toolDefinitionsFor(capability: { status: string; displayName?: string | null; dialect?: string | null }) {
   if (!capability) return TOOL_DEFINITIONS;
@@ -132,23 +159,40 @@ export type ToolName =
   | "grep"
   | "write_file"
   | "apply_patch"
-  | "run_shell";
+  | "run_shell"
+  | "delete_file"
+  | "rename_file";
+
+export type MutationKind = "content" | "delete" | "rename";
 
 export function toolPermissionKind(
   name: string,
 ): "read" | "write" | "shell" {
   if (name === "run_shell") return "shell";
-  if (name === "write_file" || name === "apply_patch") return "write";
+  if (
+    name === "write_file" ||
+    name === "apply_patch" ||
+    name === "delete_file" ||
+    name === "rename_file"
+  ) {
+    return "write";
+  }
   return "read";
 }
 
 export interface PendingEdit {
   id: string;
+  kind: MutationKind;
+  /** Display / binding path: delete+content target; rename pending binds fromPath. */
   path: string;
   absolutePath: string;
+  fromPath?: string;
+  toPath?: string;
+  absoluteFromPath?: string;
+  absoluteToPath?: string;
   previous: string | null;
   next: string;
-  diff: string;
+  diff: string | null;
 }
 
 function simpleUnifiedDiff(
@@ -400,6 +444,7 @@ export async function prepareWriteEdit(
   const diff = simpleUnifiedDiff(displayPath, previous ?? "", next);
   return {
     id: editId,
+    kind: "content",
     path: displayPath,
     absolutePath: abs,
     previous,
@@ -408,7 +453,102 @@ export async function prepareWriteEdit(
   };
 }
 
+async function assertRegularTextFile(abs: string): Promise<string> {
+  let st;
+  try {
+    st = await fs.lstat(abs);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw Object.assign(new Error("missing_target"), { code: "missing_target" });
+    }
+    throw e;
+  }
+  if (!st.isFile() || st.isSymbolicLink() === true) {
+    throw Object.assign(new Error("non_regular_file"), { code: "non_regular_file" });
+  }
+  const body = await fs.readFile(abs);
+  if (body.includes(0)) {
+    throw Object.assign(new Error("non_regular_text"), { code: "non_regular_text" });
+  }
+  return body.toString("utf8");
+}
+
+function isCaseOnlyRename(fromRel: string, toRel: string): boolean {
+  return fromRel !== toRel && fromRel.toLowerCase() === toRel.toLowerCase();
+}
+
+export async function prepareDeleteEdit(
+  workspaceRoot: string,
+  args: Record<string, unknown>,
+  editId: string,
+  allowOutside = false,
+): Promise<PendingEdit> {
+  const rel = String(args.path ?? "");
+  const abs = allowOutside
+    ? path.isAbsolute(rel) ? path.resolve(rel) : path.resolve(workspaceRoot, rel)
+    : resolveUnderWorkspace(workspaceRoot, rel);
+  const previous = await assertRegularTextFile(abs);
+  const displayPath = relativeToWorkspace(workspaceRoot, abs) || rel;
+  return {
+    id: editId,
+    kind: "delete",
+    path: displayPath,
+    absolutePath: abs,
+    previous,
+    next: "",
+    diff: null,
+  };
+}
+
+export async function prepareRenameEdit(
+  workspaceRoot: string,
+  args: Record<string, unknown>,
+  editId: string,
+  allowOutside = false,
+): Promise<PendingEdit> {
+  const fromRel = String(args.fromPath ?? "");
+  const toRel = String(args.toPath ?? "");
+  const resolve = (rel: string) =>
+    allowOutside
+      ? path.isAbsolute(rel) ? path.resolve(rel) : path.resolve(workspaceRoot, rel)
+      : resolveUnderWorkspace(workspaceRoot, rel);
+  const fromAbs = resolve(fromRel);
+  const toAbs = resolve(toRel);
+  const previous = await assertRegularTextFile(fromAbs);
+  const caseOnly = isCaseOnlyRename(
+    relativeToWorkspace(workspaceRoot, fromAbs) || fromRel,
+    relativeToWorkspace(workspaceRoot, toAbs) || toRel,
+  );
+  const destExists = await fs.stat(toAbs).then(() => true, () => false);
+  if (destExists && !caseOnly) {
+    throw Object.assign(new Error("dest_exists"), { code: "dest_exists" });
+  }
+  const fromPath = relativeToWorkspace(workspaceRoot, fromAbs) || fromRel;
+  const toPath = relativeToWorkspace(workspaceRoot, toAbs) || toRel;
+  return {
+    id: editId,
+    kind: "rename",
+    path: fromPath,
+    absolutePath: fromAbs,
+    fromPath,
+    toPath,
+    absoluteFromPath: fromAbs,
+    absoluteToPath: toAbs,
+    previous,
+    next: previous,
+    diff: null,
+  };
+}
+
 export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
+  if (edit.kind === "delete") {
+    await fs.unlink(edit.absolutePath);
+    return;
+  }
+  if (edit.kind === "rename") {
+    await fs.rename(edit.absoluteFromPath!, edit.absoluteToPath!);
+    return;
+  }
   ensureDirForFile(edit.absolutePath);
   await fs.writeFile(edit.absolutePath, edit.next, "utf8");
 }

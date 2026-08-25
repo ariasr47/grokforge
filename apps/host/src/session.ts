@@ -39,7 +39,7 @@ import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./exe
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { randomUUID } from "node:crypto";
-import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
+import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
 import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
@@ -113,6 +113,14 @@ export type BusEvent =
 
 export type Listener = (event: BusEvent) => void;
 
+function mutationKindOf(value: unknown): MutationKind | null {
+  return value === "content" || value === "delete" || value === "rename" ? value : null;
+}
+
+function nullablePath(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 export function activityRecordFromToolRun(
   ev: Extract<AcpUiEvent, { type: "tool_run" }> & { path?: string | null },
   policy: PolicySnapshot,
@@ -121,6 +129,7 @@ export function activityRecordFromToolRun(
     typeof (ev as { path?: unknown }).path === "string" && (ev as { path: string }).path.length > 0
       ? (ev as { path: string }).path
       : null;
+  const kind = mutationKindOf((ev as { kind?: unknown }).kind);
   return {
     activityId: ev.activityId,
     invocationId: ev.toolCallId,
@@ -133,6 +142,9 @@ export function activityRecordFromToolRun(
     error: ev.error ?? ev.reason ?? ev.reasonCode,
     diff: ev.diff ?? null,
     path,
+    kind,
+    fromPath: kind === "rename" ? nullablePath((ev as { fromPath?: unknown }).fromPath) : null,
+    toPath: kind === "rename" ? nullablePath((ev as { toPath?: unknown }).toPath) : null,
     policy,
     automaticEligibility: ev.automaticEligibility ?? "not_eligible",
     autoApplied: ev.autoApplied === true,
@@ -146,13 +158,18 @@ export function activityRecordFromProposedEdit(input: {
   editId: string;
   invocationId: string;
   path: string;
-  diff: string;
+  diff: string | null;
   policy: PolicySnapshot;
+  kind?: MutationKind | null;
+  fromPath?: string | null;
+  toPath?: string | null;
+  name?: string;
 }): ActivityRecord {
+  const kind = input.kind ?? (typeof input.diff === "string" && input.diff.length > 0 ? "content" : null);
   return {
     activityId: input.editId,
     invocationId: input.invocationId,
-    name: "write_file",
+    name: input.name ?? (kind === "delete" ? "delete_file" : kind === "rename" ? "rename_file" : "write_file"),
     lifecycle: "pending",
     execution: null,
     status: "running",
@@ -161,6 +178,9 @@ export function activityRecordFromProposedEdit(input: {
     error: null,
     diff: input.diff,
     path: input.path,
+    kind,
+    fromPath: kind === "rename" ? nullablePath(input.fromPath) : null,
+    toPath: kind === "rename" ? nullablePath(input.toPath) : null,
     policy: input.policy,
     automaticEligibility: "not_eligible",
     autoApplied: false,
@@ -190,7 +210,10 @@ export function retainActivityAfterDiff(
     output: prior?.output ?? null,
     error: null,
     diff: prior?.diff ?? null,
-    path: prior?.path ?? null,
+    path: input.action === "accept" && prior?.kind === "rename" ? prior.toPath : prior?.path ?? null,
+    kind: prior?.kind ?? null,
+    fromPath: prior?.fromPath ?? null,
+    toPath: prior?.toPath ?? null,
     policy: input.policy,
     automaticEligibility: prior?.automaticEligibility ?? "not_eligible",
     autoApplied: false,
@@ -220,7 +243,10 @@ export function retainActivityAfterRecovery(
     output: prior?.output ?? null,
     error: input.status === "reverted" ? null : "Edit not reverted",
     diff: prior?.diff ?? input.fallbackDiff,
-    path: prior?.path ?? null,
+    path: input.status === "reverted" && prior?.kind === "rename" ? prior.fromPath : prior?.path ?? null,
+    kind: prior?.kind ?? null,
+    fromPath: prior?.fromPath ?? null,
+    toPath: prior?.toPath ?? null,
     policy: input.policy,
     automaticEligibility: prior?.automaticEligibility ?? "text_edit",
     autoApplied: prior?.autoApplied === true,
@@ -1178,8 +1204,24 @@ export class AgentSession {
               const invocationId=ev.invocationId??ev.toolCallId??editId;
               this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt:0});
               const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined);
-              if (ev.path && ev.diff && editId) {
-                const activity=activityRecordFromProposedEdit({editId,invocationId,path:ev.path,diff:ev.diff,policy:run.policy});
+              const kind = ev.kind ?? (ev.diff ? "content" : null);
+              const canJournal =
+                Boolean(editId) &&
+                ((kind === "content" && ev.path && typeof ev.diff === "string" && ev.diff.length > 0) ||
+                  (kind === "delete" && ev.path) ||
+                  (kind === "rename" && ev.fromPath && ev.toPath));
+              if (canJournal) {
+                const activity=activityRecordFromProposedEdit({
+                  editId,
+                  invocationId,
+                  path: kind === "rename" ? String(ev.fromPath) : ev.path!,
+                  diff: ev.diff ?? null,
+                  kind: kind as MutationKind,
+                  fromPath: ev.fromPath ?? null,
+                  toPath: ev.toPath ?? null,
+                  name: kind === "delete" ? "delete_file" : kind === "rename" ? "rename_file" : "write_file",
+                  policy:run.policy,
+                });
                 await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined);
               }
               if(envelope){ return; }

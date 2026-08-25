@@ -23,6 +23,76 @@ export const FILE_CHANGES_REVERT_CONFLICT_TITLE = "Edit not reverted";
 export const FILE_CHANGES_REVERT_CONFLICT_BODY =
   "The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.";
 
+export const FILE_CHANGES_KIND_DELETED = "Deleted";
+export const FILE_CHANGES_KIND_RENAMED = "Renamed";
+
+export const FILE_CHANGES_RESTORE_FILE = "Restore file";
+export const FILE_CHANGES_RESTORE_GUARD =
+  "Restore this deleted file to its content from immediately before the delete. Forge will stop if the path exists again.";
+export const FILE_CHANGES_RESTORE_SUCCESS_TITLE = "File restored";
+export const FILE_CHANGES_RESTORE_SUCCESS_BODY =
+  "The file was restored to its content from immediately before this delete.";
+export const FILE_CHANGES_RESTORE_CONFLICT_TITLE = "File not restored";
+export const FILE_CHANGES_RESTORE_CONFLICT_BODY =
+  "The path exists again after Forge applied this delete, so Forge left it unchanged. Review the current path and this delete’s stored diff before deciding what to do next.";
+
+export const FILE_CHANGES_REVERT_RENAME = "Revert rename";
+export const FILE_CHANGES_REVERT_RENAME_GUARD =
+  "Restore this file to its previous path. Forge will stop if the previous path is not safely restorable.";
+export const FILE_CHANGES_REVERT_RENAME_SUCCESS_TITLE = "Rename reverted";
+export const FILE_CHANGES_REVERT_RENAME_SUCCESS_BODY =
+  "The file was restored to its previous path.";
+export const FILE_CHANGES_REVERT_RENAME_CONFLICT_TITLE = "Rename not reverted";
+export const FILE_CHANGES_REVERT_RENAME_CONFLICT_BODY =
+  "The paths changed after Forge applied this rename, so Forge left them unchanged. Review the current paths and this rename’s stored diff before deciding what to do next.";
+
+function rowLabel(member: RunChangeMember): { text: string; title: string } {
+  if (
+    member.kind === "rename" &&
+    member.fromPath &&
+    member.toPath &&
+    (member.settlement === "applied" ||
+      member.settlement === "accepted" ||
+      member.settlement === "reverted" ||
+      member.settlement === "conflict")
+  ) {
+    const text = `${member.fromPath} → ${member.toPath}`;
+    return { text, title: text };
+  }
+  return { text: member.path, title: member.path };
+}
+
+function recoveryCopy(kind: RunChangeMember["kind"]) {
+  if (kind === "delete") {
+    return {
+      control: FILE_CHANGES_RESTORE_FILE,
+      guard: FILE_CHANGES_RESTORE_GUARD,
+      successTitle: FILE_CHANGES_RESTORE_SUCCESS_TITLE,
+      successBody: FILE_CHANGES_RESTORE_SUCCESS_BODY,
+      conflictTitle: FILE_CHANGES_RESTORE_CONFLICT_TITLE,
+      conflictBody: FILE_CHANGES_RESTORE_CONFLICT_BODY,
+    };
+  }
+  if (kind === "rename") {
+    return {
+      control: FILE_CHANGES_REVERT_RENAME,
+      guard: FILE_CHANGES_REVERT_RENAME_GUARD,
+      successTitle: FILE_CHANGES_REVERT_RENAME_SUCCESS_TITLE,
+      successBody: FILE_CHANGES_REVERT_RENAME_SUCCESS_BODY,
+      conflictTitle: FILE_CHANGES_REVERT_RENAME_CONFLICT_TITLE,
+      conflictBody: FILE_CHANGES_REVERT_RENAME_CONFLICT_BODY,
+    };
+  }
+  return {
+    control: "Revert edit",
+    guard: FILE_CHANGES_REVERT_GUARD,
+    successTitle: FILE_CHANGES_REVERT_SUCCESS_TITLE,
+    successBody: FILE_CHANGES_REVERT_SUCCESS_BODY,
+    conflictTitle: FILE_CHANGES_REVERT_CONFLICT_TITLE,
+    conflictBody: FILE_CHANGES_REVERT_CONFLICT_BODY,
+  };
+}
+
 const SETTLEMENT_CHIP: Record<Exclude<RunChangeMember["settlement"], "conflict">, string> = {
   pending: "Pending",
   applied: "Applied",
@@ -84,6 +154,8 @@ function PathRow({
         ? "reverted"
         : member.settlement;
   const showRevert = member.recoveryAvailable && !conflict && !reverted && !revertPending;
+  const copy = recoveryCopy(member.kind);
+  const label = rowLabel(member);
   const [expanded, setExpanded] = useState(true);
   return (
     <li className="file-changes-row">
@@ -100,9 +172,15 @@ function PathRow({
         }}
       >
         <summary className="file-changes-row-head">
-          <span className="file-changes-path" title={member.path}>
-            {member.path}
+          <span className="file-changes-path" title={label.title} aria-label={label.title}>
+            {label.text}
           </span>
+          {member.kind === "delete" ? (
+            <span className="chip file-changes-kind file-changes-kind-deleted">{FILE_CHANGES_KIND_DELETED}</span>
+          ) : null}
+          {member.kind === "rename" ? (
+            <span className="chip file-changes-kind file-changes-kind-renamed">{FILE_CHANGES_KIND_RENAMED}</span>
+          ) : null}
           {chipKind ? (
             <span className={`chip file-changes-chip file-changes-chip-${chipKind}`}>{SETTLEMENT_CHIP[chipKind]}</span>
           ) : null}
@@ -115,14 +193,14 @@ function PathRow({
         ) : null}
         {conflict ? (
           <p className="file-changes-conflict" role="alert">
-            <strong>{FILE_CHANGES_REVERT_CONFLICT_TITLE}</strong>
-            <span>{FILE_CHANGES_REVERT_CONFLICT_BODY}</span>
+            <strong>{copy.conflictTitle}</strong>
+            <span>{copy.conflictBody}</span>
           </p>
         ) : null}
         {reverted && !conflict ? (
           <p className="file-changes-reverted" role="status">
-            <strong>{FILE_CHANGES_REVERT_SUCCESS_TITLE}</strong>
-            <span>{FILE_CHANGES_REVERT_SUCCESS_BODY}</span>
+            <strong>{copy.successTitle}</strong>
+            <span>{copy.successBody}</span>
           </p>
         ) : null}
         {member.diffUnavailable ? (
@@ -141,13 +219,13 @@ function PathRow({
         {open && member.diff ? <ColorizedDiff diff={member.diff} /> : null}
         {showRevert ? (
           <div className="file-changes-revert">
-            <p className="recovery-guard">{FILE_CHANGES_REVERT_GUARD}</p>
+            <p className="recovery-guard">{copy.guard}</p>
             <Button
               variant="ghost"
               disabled={revertPending}
               onClick={() => onRevert?.(member)}
             >
-              Revert edit
+              {copy.control}
             </Button>
           </div>
         ) : null}

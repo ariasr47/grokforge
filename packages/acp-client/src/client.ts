@@ -358,13 +358,16 @@ export class StdioAcpClient implements AcpClient {
         this.emit({
           type: "file_edit",
           path: String(p.path ?? ""),
-          diff: String(p.diff ?? ""),
+          diff: typeof p.diff === "string" ? p.diff : p.diff === null ? null : String(p.diff ?? ""),
           status:
             (p.status as "proposed" | "accepted" | "rejected") ?? "proposed",
           id: String(p.id ?? ""),
           editId: String(p.editId ?? p.id ?? ""),
           invocationId: p.invocationId != null ? String(p.invocationId) : undefined,
           toolCallId: p.toolCallId != null ? String(p.toolCallId) : undefined,
+          kind: p.kind === "content" || p.kind === "delete" || p.kind === "rename" ? p.kind : undefined,
+          fromPath: typeof p.fromPath === "string" ? p.fromPath : p.fromPath === null ? null : undefined,
+          toPath: typeof p.toPath === "string" ? p.toPath : p.toPath === null ? null : undefined,
         });
         break;
       case "error":

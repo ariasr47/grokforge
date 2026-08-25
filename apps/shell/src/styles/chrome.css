@@ -604,6 +604,14 @@ html[data-motion="calm"] .brand-mark {
 .file-changes-chip {
   flex: 0 0 auto;
 }
+.file-changes-kind {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+}
+.file-changes-kind-deleted {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
 .file-changes-actions {
   display: flex;
   flex-wrap: wrap;

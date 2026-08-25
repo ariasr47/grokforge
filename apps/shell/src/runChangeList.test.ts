@@ -564,3 +564,299 @@ test("mergeRunSnapshot lastEventSeq does not invent completeness for the fold", 
   const projection = projectRunChangeList(admitted.runsById.r1, { phase: "open" });
   assert.equal(projection.state, "loading");
 });
+
+test("Trusted delete with null diff is a Deleted member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "delete_file",
+        path: "gone.txt",
+        editId: "e-del",
+        kind: "delete",
+        fromPath: null,
+        toPath: null,
+        diff: null,
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].kind, "delete");
+  assert.equal(projection.members[0].diffUnavailable, true);
+  assert.equal(projection.members[0].path, "gone.txt");
+  assert.equal(projection.members[0].fromPath, null);
+  assert.equal(projection.members[0].toPath, null);
+  assert.equal(projection.members[0].diff, null);
+  assert.equal(projection.members[0].settlement, "applied");
+});
+
+test("rename pending binds path to fromPath; applied uses toPath with pair", () => {
+  const pendingRun = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "rename_file",
+        path: "to.txt",
+        editId: "e-ren",
+        kind: "rename",
+        fromPath: "from.txt",
+        toPath: "to.txt",
+        diff: null,
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: null,
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({ requestId: "req-ren", invocationId: "i1", detail: "from.txt" }),
+    }, 3),
+  ]);
+  const pending = projectRunChangeList(pendingRun, { phase: "closed" });
+  assert.equal(pending.state, "ready");
+  if (pending.state !== "ready") return;
+  assert.equal(pending.members[0].kind, "rename");
+  assert.equal(pending.members[0].path, "from.txt");
+  assert.equal(pending.members[0].fromPath, "from.txt");
+  assert.equal(pending.members[0].toPath, "to.txt");
+  assert.equal(pending.members[0].settlement, "pending");
+  assert.equal(pending.members[0].diffUnavailable, true);
+
+  const appliedRun = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "rename_file",
+        path: "to.txt",
+        editId: "e-ren",
+        kind: "rename",
+        fromPath: "from.txt",
+        toPath: "to.txt",
+        diff: null,
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+      }),
+    }, 2),
+  ]);
+  const applied = projectRunChangeList(appliedRun, { phase: "closed" });
+  assert.equal(applied.state, "ready");
+  if (applied.state !== "ready") return;
+  assert.equal(applied.members[0].kind, "rename");
+  assert.equal(applied.members[0].path, "to.txt");
+  assert.equal(applied.members[0].fromPath, "from.txt");
+  assert.equal(applied.members[0].toPath, "to.txt");
+  assert.equal(applied.members[0].settlement, "applied");
+});
+
+test("rename without both path identities is not a member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "rename_file",
+        path: "from.txt",
+        editId: "e-ren-partial",
+        kind: "rename",
+        fromPath: "from.txt",
+        toPath: null,
+        diff: null,
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+      }),
+    }, 2),
+  ]);
+  assert.deepEqual(projectRunChangeList(run, { phase: "closed" }), { state: "absent" });
+});
+
+test("null kind shell-like activity is not a member even with path-ish fields", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "run_shell",
+        path: "gone.txt",
+        editId: "e-shell",
+        kind: null,
+        fromPath: null,
+        toPath: null,
+        diff: null,
+        autoApplied: true,
+        automaticEligibility: "trusted_command_class",
+        command: "del gone.txt",
+        recovery: null,
+      }),
+    }, 2),
+  ]);
+  assert.deepEqual(projectRunChangeList(run, { phase: "closed" }), { state: "absent" });
+});
+
+test("content without kind still members as content (legacy)", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        path: "legacy.ts",
+        editId: "e-legacy",
+        kind: undefined,
+        fromPath: null,
+        toPath: null,
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].kind, "content");
+  assert.equal(projection.members[0].path, "legacy.ts");
+});
+
+test("delete_file tool name without vouched kind is not a Deleted member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "delete_file",
+        path: "gone.txt",
+        editId: "e-name",
+        kind: undefined,
+        fromPath: null,
+        toPath: null,
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].kind, "content");
+  assert.notEqual(projection.members[0].kind, "delete");
+});
+
+test("Review deny/cancel without a staged diff decision mints no File changes member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "delete_file",
+        path: "gone.txt",
+        editId: null,
+        kind: null,
+        diff: null,
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        execution: "not_executed",
+        status: "rejected",
+        recovery: null,
+      }),
+    }, 2),
+  ]);
+  assert.deepEqual(projectRunChangeList(run, { phase: "closed" }), { state: "absent" });
+});
+
+test("dock Reject of a staged pending rename keeps Rejected on fromPath", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "rename_file",
+        path: "from.txt",
+        editId: "e-ren",
+        kind: "rename",
+        fromPath: "from.txt",
+        toPath: "to.txt",
+        diff: null,
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: null,
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({ requestId: "req-ren", invocationId: "i1", status: "declined" }),
+    }, 3),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].kind, "rename");
+  assert.equal(projection.members[0].settlement, "rejected");
+  assert.equal(projection.members[0].path, "from.txt");
+  assert.equal(projection.members[0].fromPath, "from.txt");
+  assert.equal(projection.members[0].toPath, "to.txt");
+});
+
+test("recovery.status failed keeps applied without recoveryAvailable", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "delete_file",
+        path: "gone.txt",
+        editId: "e-del",
+        kind: "delete",
+        diff: null,
+        recovery: { kind: "guarded_revert", available: false, status: "failed" },
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].kind, "delete");
+  assert.equal(projection.members[0].settlement, "applied");
+  assert.equal(projection.members[0].recoveryAvailable, false);
+});
+
+test("pendingDiffsFromRun rename uses fromPath", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "rename_file",
+        path: null,
+        editId: "e-ren",
+        kind: "rename",
+        fromPath: "from.txt",
+        toPath: "to.txt",
+        diff: null,
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: null,
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({ requestId: "req-ren", invocationId: "i1", detail: "from.txt" }),
+    }, 3),
+  ]);
+  const diffs = pendingDiffsFromRun(run);
+  assert.equal(diffs.length, 1);
+  assert.equal(diffs[0].path, "from.txt");
+  assert.equal(diffs[0].id, "req-ren");
+});
+
+test("delete-only run with null diff is ready, not absent", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "delete_file",
+        path: "only-del.txt",
+        editId: "e-only",
+        kind: "delete",
+        diff: null,
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members.length, 1);
+  assert.equal(projection.members[0].kind, "delete");
+  assert.equal(projection.members[0].diffUnavailable, true);
+});

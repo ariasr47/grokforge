@@ -17,6 +17,13 @@ function plan(prompt: string): ToolCall[] {
     case "fixture:review-pending-two": return [tool("write_file",{path:"r1.txt",content:"one"}),tool("write_file",{path:"r2.txt",content:"two"})];
     case "fixture:bypass-edit": return [tool("write_file",{path:"bypass.txt",content:"x"})];
     case "fixture:binary-edit": return [tool("write_file",{path:"binary.bin",content:"before\u0000after"})];
+    case "fixture:trusted-delete": return [tool("delete_file",{path:"victim.txt"})];
+    case "fixture:trusted-rename": return [tool("rename_file",{fromPath:"old.txt",toPath:"new.txt"})];
+    case "fixture:review-delete": return [tool("delete_file",{path:"victim.txt"})];
+    case "fixture:review-rename": return [tool("rename_file",{fromPath:"old.txt",toPath:"new.txt"})];
+    case "fixture:delete-directory": return [tool("delete_file",{path:"subdir"})];
+    case "fixture:shell-rm": return [tool("run_shell",{command:"del victim.txt"})];
+    case "fixture:bypass-delete": return [tool("delete_file",{path:"victim.txt"})];
     case "fixture:protected-delete": return [tool("run_shell",{command:"rmdir /s /q ."})];
     case "fixture:symlink-escape": return [tool("read_file",{path:"link.txt"})];
     default: throw new Error(`Unknown deterministic tool fixture: ${prompt}`);

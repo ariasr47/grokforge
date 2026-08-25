@@ -31,6 +31,108 @@ test("activity_update copies original command and defaults missing command to nu
   a=reduceRunEvent(a,event({kind:"activity_update",activity:{activityId:"a2",invocationId:"i2",name:"read_file",lifecycle:"terminal",execution:"executed",status:"succeeded",input:{},output:"ok",error:null,diff:null,path:null,policy:{},automaticEligibility:"read",autoApplied:false,command:undefined as unknown as string,editId:null,recovery:null}},3));
   assert.equal(a.runsById.r1.activities.a2.command,null);
 });
+test("activity_update preserves vouched kind and rename pair without inventing from tool name", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a-del",
+          invocationId: "i-del",
+          name: "delete_file",
+          lifecycle: "terminal",
+          execution: "executed",
+          status: "succeeded",
+          input: {},
+          output: null,
+          error: null,
+          diff: null,
+          path: "gone.txt",
+          kind: "delete",
+          fromPath: null,
+          toPath: null,
+          policy: {},
+          automaticEligibility: "text_edit",
+          autoApplied: true,
+          command: null,
+          editId: "e-del",
+          recovery: { kind: "guarded_revert", available: true, status: "available" },
+        },
+      },
+      2,
+    ),
+  );
+  assert.equal(a.runsById.r1.activities["a-del"].kind, "delete");
+  assert.equal(a.runsById.r1.activities["a-del"].path, "gone.txt");
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a-ren",
+          invocationId: "i-ren",
+          name: "rename_file",
+          lifecycle: "terminal",
+          execution: "executed",
+          status: "succeeded",
+          input: {},
+          output: null,
+          error: null,
+          diff: null,
+          path: "to.txt",
+          kind: "rename",
+          fromPath: "from.txt",
+          toPath: "to.txt",
+          policy: {},
+          automaticEligibility: "text_edit",
+          autoApplied: true,
+          command: null,
+          editId: "e-ren",
+          recovery: { kind: "guarded_revert", available: true, status: "available" },
+        },
+      },
+      3,
+    ),
+  );
+  assert.equal(a.runsById.r1.activities["a-ren"].kind, "rename");
+  assert.equal(a.runsById.r1.activities["a-ren"].fromPath, "from.txt");
+  assert.equal(a.runsById.r1.activities["a-ren"].toPath, "to.txt");
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a-name-only",
+          invocationId: "i-name",
+          name: "delete_file",
+          lifecycle: "terminal",
+          execution: "executed",
+          status: "succeeded",
+          input: {},
+          output: null,
+          error: null,
+          diff: null,
+          path: "maybe.txt",
+          policy: {},
+          automaticEligibility: "text_edit",
+          autoApplied: true,
+          command: null,
+          editId: "e-name",
+          recovery: null,
+        },
+      },
+      4,
+    ),
+  );
+  assert.equal(a.runsById.r1.activities["a-name-only"].kind ?? null, null);
+  assert.equal(a.runsById.r1.activities["a-name-only"].fromPath ?? null, null);
+  assert.equal(a.runsById.r1.activities["a-name-only"].toPath ?? null, null);
+});
+
 test("activity_update retains first-class path with diff and editId", () => {
   let a = reduceRunEvent(initialRunProjection(), started());
   a = reduceRunEvent(

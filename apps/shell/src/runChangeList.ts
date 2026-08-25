@@ -1,6 +1,7 @@
 import type { PendingDiff } from "./DiffPanel";
 import type { PermissionReq } from "./PermissionCard";
-import type { ActivityRecord, DecisionRequest, RunProjectionRun } from "./runReducer";
+import type { ActivityRecord, DecisionRequest, MutationKind, RunProjectionRun } from "./runReducer";
+export type { MutationKind };
 
 export type PermissionTitle = "Run shell" | "Write file";
 
@@ -75,7 +76,9 @@ export function railEvidenceFromRun(run: RunProjectionRun): RailEvidence[] {
       const activity = Object.values(run.activities).find(
         (a) => a.editId && (a.invocationId === d.invocationId || a.editId === d.requestId),
       );
-      const path = activity?.path ?? (d.detail || null);
+      const path = activity?.kind === "rename"
+        ? nonemptyRelPath(activity.fromPath) ?? nonemptyRelPath(activity.path) ?? (d.detail || null)
+        : nonemptyRelPath(activity?.path) ?? (d.detail || null);
       if (path) out.push({ identity: `diff:${d.requestId}`, content: `Diff proposed: ${path}` });
     }
   }
@@ -93,6 +96,9 @@ export type ChangeMemberSettlement =
 export type RunChangeMember = {
   editId: string;
   path: string;
+  kind: MutationKind;
+  fromPath: string | null;
+  toPath: string | null;
   activityId: string;
   invocationId: string;
   requestId: string | null;
@@ -129,14 +135,49 @@ function linkedDiffDecision(
   );
 }
 
+function nonemptyRelPath(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Vouched kind only. Legacy content when kind is omitted; never invent delete/rename. */
+function resolvedKind(activity: ActivityRecord): MutationKind | null {
+  if (activity.kind === "delete" || activity.kind === "rename" || activity.kind === "content") {
+    return activity.kind;
+  }
+  if (activity.editId && nonemptyRelPath(activity.path)) return "content";
+  return null;
+}
+
 function isChangeListMember(
   activity: ActivityRecord,
   decisions: Record<string, DecisionRequest>,
 ): boolean {
-  if (!activity.editId || !activity.path) return false;
+  if (!activity.editId) return false;
   if (activity.automaticEligibility === "bypass") return false;
-  if (activity.autoApplied === true && activity.automaticEligibility === "text_edit") return true;
-  return Boolean(linkedDiffDecision(activity, decisions));
+  const kind = resolvedKind(activity);
+  if (kind == null) return false;
+  if (kind === "rename") {
+    if (!nonemptyRelPath(activity.fromPath) || !nonemptyRelPath(activity.toPath)) return false;
+  } else if (!nonemptyRelPath(activity.path)) {
+    return false;
+  }
+  const trusted = activity.autoApplied === true && activity.automaticEligibility === "text_edit";
+  const review = Boolean(linkedDiffDecision(activity, decisions));
+  return trusted || review;
+}
+
+function displayPathFor(
+  kind: MutationKind,
+  activity: ActivityRecord,
+  settlement: ChangeMemberSettlement,
+): string {
+  if (kind === "rename") {
+    if (settlement === "pending" || settlement === "rejected") {
+      return nonemptyRelPath(activity.fromPath) ?? nonemptyRelPath(activity.path) ?? "";
+    }
+    return nonemptyRelPath(activity.toPath) ?? nonemptyRelPath(activity.path) ?? "";
+  }
+  return nonemptyRelPath(activity.path) ?? "";
 }
 
 function settlementFor(
@@ -169,11 +210,15 @@ export function projectRunChangeList(
   for (const activity of Object.values(run.activities)) {
     if (!isChangeListMember(activity, run.decisions)) continue;
     const editId = activity.editId!;
+    const kind = resolvedKind(activity)!;
     const { settlement, recoveryAvailable, requestId } = settlementFor(activity, run.decisions);
     const diff = typeof activity.diff === "string" && activity.diff.length > 0 ? activity.diff : null;
     const member: RunChangeMember = {
       editId,
-      path: activity.path!,
+      path: displayPathFor(kind, activity, settlement),
+      kind,
+      fromPath: kind === "rename" ? nonemptyRelPath(activity.fromPath) : null,
+      toPath: kind === "rename" ? nonemptyRelPath(activity.toPath) : null,
       activityId: activity.activityId,
       invocationId: activity.invocationId,
       requestId,
@@ -198,10 +243,14 @@ export function pendingDiffsFromRun(run: RunProjectionRun): PendingDiff[] {
     const activity = Object.values(run.activities).find(
       (a) => a.editId && (a.invocationId === d.invocationId || a.editId === d.requestId),
     );
-    if (!activity?.path) continue;
+    if (!activity) continue;
+    const path = activity.kind === "rename"
+      ? nonemptyRelPath(activity.fromPath) ?? nonemptyRelPath(activity.path)
+      : nonemptyRelPath(activity.path);
+    if (!path) continue;
     out.push({
       id: d.requestId,
-      path: activity.path,
+      path,
       diff: activity.diff ?? "",
     });
   }

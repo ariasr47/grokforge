@@ -60,7 +60,49 @@ export interface RunSnapshot {
   executionPhase?: ExecutionPhase;
 }
 export interface DecisionRequest { requestId: string; invocationId: string; kind: "permission" | "diff" | "recovery_confirmation" | "plan"; status: "pending" | "accepted" | "declined" | "expired" | "kept_planning" | "cancelled"; title: string; detail: string; expiresAt: string | null; policy: Record<string, unknown>; }
-export interface ActivityRecord { activityId: string; invocationId: string; name: string; lifecycle: "pending" | "terminal"; execution: "executed" | "not_executed" | null; status: "running" | "succeeded" | "failed" | "rejected"; input: unknown; output: unknown | null; error: string | null; diff: string | null; path: string | null; policy: Record<string, unknown>; automaticEligibility: string; autoApplied: boolean; command: string | null; editId: string | null; recovery: { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" } | null; }
+export type MutationKind = "content" | "delete" | "rename";
+export interface ActivityRecord {
+  activityId: string;
+  invocationId: string;
+  name: string;
+  lifecycle: "pending" | "terminal";
+  execution: "executed" | "not_executed" | null;
+  status: "running" | "succeeded" | "failed" | "rejected";
+  input: unknown;
+  output: unknown | null;
+  error: string | null;
+  diff: string | null;
+  path: string | null;
+  /** Host-vouched mutation kind. Null/absent for non-members and legacy content. Never inferred from tool name. */
+  kind?: MutationKind | null;
+  fromPath?: string | null;
+  toPath?: string | null;
+  policy: Record<string, unknown>;
+  automaticEligibility: string;
+  autoApplied: boolean;
+  command: string | null;
+  editId: string | null;
+  recovery: { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" } | null;
+}
+
+function nonemptyPath(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function vouchedMutationKind(value: unknown): MutationKind | null {
+  return value === "content" || value === "delete" || value === "rename" ? value : null;
+}
+
+function normalizeActivity(incoming: ActivityRecord): ActivityRecord {
+  return {
+    ...incoming,
+    command: incoming.command ?? null,
+    path: nonemptyPath(incoming.path),
+    kind: vouchedMutationKind(incoming.kind),
+    fromPath: nonemptyPath(incoming.fromPath),
+    toPath: nonemptyPath(incoming.toPath),
+  };
+}
 export type RunEventPayload =
   | { kind: "run_started"; run: RunSnapshot }
   | { kind: "run_state"; state: Exclude<RunState, "terminal">; liveness: string | null }
@@ -130,11 +172,7 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
     case "answer_delta": if (event.payload.delta) run.answer[event.payload.segmentId] = (run.answer[event.payload.segmentId] ?? "") + event.payload.delta; break;
     case "activity_update": {
       const incoming = event.payload.activity;
-      run.activities[incoming.activityId] = {
-        ...incoming,
-        command: incoming.command ?? null,
-        path: typeof incoming.path === "string" && incoming.path.length > 0 ? incoming.path : null,
-      };
+      run.activities[incoming.activityId] = normalizeActivity(incoming);
       break;
     }
     case "decision_request": {
@@ -191,11 +229,7 @@ export function restoreRunProjection(raw: unknown): RunProjection {
     const activities: Record<string, ActivityRecord> = {};
     for (const [activityId, activity] of Object.entries(run.activities ?? {})) {
       if (!activity || typeof activity !== "object") continue;
-      activities[activityId] = {
-        ...activity,
-        command: activity.command ?? null,
-        path: typeof activity.path === "string" && activity.path.length > 0 ? activity.path : null,
-      };
+      activities[activityId] = normalizeActivity(activity);
     }
     runsById[run.runId] = {
       ...run,

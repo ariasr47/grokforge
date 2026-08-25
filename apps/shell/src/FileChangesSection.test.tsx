@@ -5,14 +5,28 @@ import {
   FILE_CHANGES_APPLIED_HELPER,
   FILE_CHANGES_DIFF_UNAVAILABLE,
   FILE_CHANGES_HEADER,
+  FILE_CHANGES_KIND_DELETED,
+  FILE_CHANGES_KIND_RENAMED,
   FILE_CHANGES_LIVE_GROWING,
   FILE_CHANGES_LOAD_FAILURE,
   FILE_CHANGES_LOADING,
   FILE_CHANGES_OFFLINE,
   FILE_CHANGES_PENDING_HELPER,
+  FILE_CHANGES_RESTORE_CONFLICT_BODY,
+  FILE_CHANGES_RESTORE_CONFLICT_TITLE,
+  FILE_CHANGES_RESTORE_FILE,
+  FILE_CHANGES_RESTORE_GUARD,
+  FILE_CHANGES_RESTORE_SUCCESS_BODY,
+  FILE_CHANGES_RESTORE_SUCCESS_TITLE,
   FILE_CHANGES_REVERT_CONFLICT_BODY,
   FILE_CHANGES_REVERT_CONFLICT_TITLE,
   FILE_CHANGES_REVERT_GUARD,
+  FILE_CHANGES_REVERT_RENAME,
+  FILE_CHANGES_REVERT_RENAME_CONFLICT_BODY,
+  FILE_CHANGES_REVERT_RENAME_CONFLICT_TITLE,
+  FILE_CHANGES_REVERT_RENAME_GUARD,
+  FILE_CHANGES_REVERT_RENAME_SUCCESS_BODY,
+  FILE_CHANGES_REVERT_RENAME_SUCCESS_TITLE,
   FILE_CHANGES_REVERT_SUCCESS_BODY,
   FILE_CHANGES_REVERT_SUCCESS_TITLE,
   FileChangesSection,
@@ -25,6 +39,9 @@ function member(overrides: Partial<RunChangeMember> = {}): RunChangeMember {
   return {
     editId: "e1",
     path: "src/a.ts",
+    kind: "content",
+    fromPath: null,
+    toPath: null,
     activityId: "a1",
     invocationId: "i1",
     requestId: null,
@@ -257,6 +274,212 @@ test("accepted and rejected chips use vouched labels and keep View diff", () => 
   assert.ok(screen.getByText("Accepted"));
   assert.ok(screen.getByText("Rejected"));
   assert.equal(screen.getAllByRole("button", { name: "View diff" }).length, 2);
+});
+
+test("delete applied row shows Deleted chip, Restore file, and delete conflict copy", () => {
+  const { rerender } = render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "delete",
+          path: "gone.txt",
+          recoveryAvailable: true,
+          diff: "--- a/gone.txt\n+++ /dev/null\n-old",
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_KIND_DELETED));
+  assert.ok(screen.getByText("gone.txt"));
+  assert.ok(screen.getByText("Applied"));
+  assert.ok(screen.getByText(FILE_CHANGES_RESTORE_GUARD));
+  assert.ok(screen.getByRole("button", { name: FILE_CHANGES_RESTORE_FILE }));
+  assert.equal(screen.queryByRole("button", { name: "Revert edit" }), null);
+  assert.equal(screen.queryByText("Edit not reverted"), null);
+
+  rerender(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "delete",
+          path: "gone.txt",
+          settlement: "conflict",
+          recoveryAvailable: false,
+          diff: "--- a/gone.txt\n+++ /dev/null\n-old",
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_KIND_DELETED));
+  assert.ok(screen.getByText(FILE_CHANGES_RESTORE_CONFLICT_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_RESTORE_CONFLICT_BODY));
+  assert.equal(screen.queryByRole("button", { name: FILE_CHANGES_RESTORE_FILE }), null);
+  assert.ok(screen.getByRole("button", { name: "View diff" }));
+});
+
+test("rename applied row shows Renamed and from → to; Revert rename", () => {
+  render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "rename",
+          path: "to.txt",
+          fromPath: "from.txt",
+          toPath: "to.txt",
+          recoveryAvailable: true,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_KIND_RENAMED));
+  assert.ok(screen.getByText("from.txt → to.txt"));
+  assert.ok(screen.getByTitle("from.txt → to.txt"));
+  assert.ok(screen.getByLabelText("from.txt → to.txt"));
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_RENAME_GUARD));
+  assert.ok(screen.getByRole("button", { name: FILE_CHANGES_REVERT_RENAME }));
+  assert.equal(screen.queryByRole("button", { name: "Revert edit" }), null);
+  assert.equal(screen.queryByRole("button", { name: FILE_CHANGES_RESTORE_FILE }), null);
+});
+
+test("pending rename shows fromPath only + Pending helper", () => {
+  render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "rename",
+          path: "from.txt",
+          fromPath: "from.txt",
+          toPath: "to.txt",
+          settlement: "pending",
+          requestId: "req-ren",
+          recoveryAvailable: false,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_KIND_RENAMED));
+  assert.ok(screen.getByText("from.txt"));
+  assert.equal(screen.queryByText("from.txt → to.txt"), null);
+  assert.ok(screen.getByText("Pending"));
+  assert.ok(screen.getByText(FILE_CHANGES_PENDING_HELPER));
+  assert.equal(screen.queryByRole("button", { name: "Accept" }), null);
+  assert.equal(screen.queryByRole("button", { name: FILE_CHANGES_REVERT_RENAME }), null);
+});
+
+test("content row still says Revert edit / Edit reverted / Edit not reverted", () => {
+  const { rerender } = render(
+    <FileChangesSection
+      projection={{ state: "ready", members: [member({ kind: "content", recoveryAvailable: true })] }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_GUARD));
+  assert.ok(screen.getByRole("button", { name: "Revert edit" }));
+  assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
+  assert.equal(screen.queryByText(FILE_CHANGES_KIND_RENAMED), null);
+  rerender(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({ kind: "content", settlement: "reverted", recoveryAvailable: false })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_SUCCESS_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_SUCCESS_BODY));
+  rerender(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({ kind: "content", settlement: "conflict", recoveryAvailable: false })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_CONFLICT_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_CONFLICT_BODY));
+});
+
+test("diffUnavailable delete still listed without View diff", () => {
+  render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "delete",
+          path: "gone.txt",
+          diff: null,
+          diffUnavailable: true,
+          recoveryAvailable: true,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText("gone.txt"));
+  assert.ok(screen.getByText(FILE_CHANGES_KIND_DELETED));
+  assert.ok(screen.getByText(FILE_CHANGES_DIFF_UNAVAILABLE));
+  assert.equal(screen.queryByRole("button", { name: "View diff" }), null);
+  assert.ok(screen.getByRole("button", { name: FILE_CHANGES_RESTORE_FILE }));
+});
+
+test("delete restored and rename reverted use kind-true success copy", () => {
+  const { rerender } = render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "delete",
+          path: "gone.txt",
+          settlement: "reverted",
+          recoveryAvailable: false,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_RESTORE_SUCCESS_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_RESTORE_SUCCESS_BODY));
+  assert.equal(screen.queryByText(FILE_CHANGES_REVERT_SUCCESS_TITLE), null);
+  rerender(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "rename",
+          path: "to.txt",
+          fromPath: "from.txt",
+          toPath: "to.txt",
+          settlement: "reverted",
+          recoveryAvailable: false,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_RENAME_SUCCESS_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_RENAME_SUCCESS_BODY));
+  assert.ok(screen.getByText("from.txt → to.txt"));
+});
+
+test("rename conflict uses Rename not reverted copy", () => {
+  render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({
+          kind: "rename",
+          path: "to.txt",
+          fromPath: "from.txt",
+          toPath: "to.txt",
+          settlement: "conflict",
+          recoveryAvailable: false,
+        })],
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_RENAME_CONFLICT_TITLE));
+  assert.ok(screen.getByText(FILE_CHANGES_REVERT_RENAME_CONFLICT_BODY));
+  assert.equal(screen.queryByRole("button", { name: FILE_CHANGES_REVERT_RENAME }), null);
 });
 
 test("banned framing is absent from the ready section", () => {

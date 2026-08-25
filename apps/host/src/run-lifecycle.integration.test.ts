@@ -227,7 +227,7 @@ test("terminal activity is published before run_terminal with no late activity",
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"rar-order-"));
   const j=new RunJournal(root); const published:any[]=[]; const c=new RunCoordinator(j,e=>published.push(e));
   const run=await c.admit({sessionId:"ordered",prompt:"x",connectionGeneration:1,policy,model});
-  await c.appendOwnedEvent(run.runId,{kind:"activity_update",activity:{activityId:"a",invocationId:"i",name:"tool",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"ok",error:null,diff:null,path:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null}},"activity_update");
+  await c.appendOwnedEvent(run.runId,{kind:"activity_update",activity:{activityId:"a",invocationId:"i",name:"tool",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"ok",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null}},"activity_update");
   await c.finalize(run.runId,"failed",null,{code:"provider_unavailable",message:"done",retryable:true,recoveryAction:"retry_prompt"});
   const terminalIndex=published.findIndex(e=>e.type==="run_terminal");
   assert.ok(terminalIndex>0);
@@ -242,7 +242,7 @@ test("terminal runs reject every late payload without publication or mutation", 
     const run=await c.admit({sessionId:"late",prompt:"x",connectionGeneration:1,policy,model});
     await c.appendOwnedEvent(run.runId,{kind:"answer_delta",segmentId:"a",delta:"answer"},"answer_delta");
     await c.finalize(run.runId,"answered"); const before=published.length;
-    const activity:any={activityId:"a",invocationId:"i",name:"write",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"late",error:null,diff:null,path:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null};
+    const activity:any={activityId:"a",invocationId:"i",name:"write",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"late",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null};
     const payloads:any[]=[
       {kind:"run_state",state:"running",liveness:"provider"},
       {kind:"reasoning_delta",segmentId:"r",delta:"late"},
