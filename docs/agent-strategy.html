@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forge · two ways to be Grok’s desktop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-2: rgba(255, 255, 255, 0.07);
+      --stroke: rgba(255, 255, 255, 0.08);
+      --stroke-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --cyan: #5ce1ff;
+      --violet: #a78bfa;
+      --gold: #f0b45a;
+      --danger: #ff7a90;
+      --ok: #5ee4a8;
+      --glow: 0 0 40px rgba(92, 225, 255, 0.14);
+      --r: 16px;
+      --font: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(1100px 520px at 8% -8%, rgba(92, 225, 255, 0.09), transparent 55%),
+        radial-gradient(900px 480px at 100% 0%, rgba(167, 139, 250, 0.11), transparent 50%),
+        var(--void);
+      line-height: 1.55;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--stroke);
+      background: rgba(5, 5, 8, 0.78);
+      backdrop-filter: blur(18px) saturate(1.2);
+    }
+    .brand {
+      font-weight: 600; letter-spacing: -0.03em; font-size: 14px;
+    }
+    .brand em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--cyan), var(--violet));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+    .nav a {
+      color: var(--muted); font-size: 12px; padding: 6px 10px; border-radius: 999px;
+      border: 1px solid transparent;
+    }
+    .nav a:hover { color: var(--text); border-color: var(--stroke); text-decoration: none; background: var(--panel); }
+
+    main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 80px; }
+
+    .eyebrow {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--cyan); margin: 0 0 8px;
+    }
+    h1 {
+      font-size: clamp(28px, 4.4vw, 48px); letter-spacing: -0.04em;
+      line-height: 1.1; font-weight: 600; margin: 0 0 14px;
+    }
+    h2 {
+      font-size: 22px; letter-spacing: -0.03em; margin: 0 0 10px; font-weight: 600;
+    }
+    h3 { font-size: 16px; margin: 0 0 8px; font-weight: 600; }
+    p { color: var(--text); margin: 0 0 12px; }
+    .lede { font-size: 18px; color: var(--muted); max-width: 46rem; }
+
+    section { margin: 56px 0; }
+    .sec-head { margin-bottom: 22px; }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 11px; padding: 4px 10px;
+      border-radius: 999px; border: 1px solid var(--stroke);
+      color: var(--muted); background: var(--panel);
+    }
+    .pill.cyan { color: var(--cyan); border-color: var(--stroke-strong); box-shadow: var(--glow); }
+    .pill.gold { color: var(--gold); border-color: rgba(240, 180, 90, 0.4); }
+    .pill.danger { color: var(--danger); border-color: rgba(255, 122, 144, 0.4); }
+    .pill.ok { color: var(--ok); border-color: rgba(94, 228, 168, 0.35); }
+    .pill.violet { color: var(--violet); border-color: rgba(167, 139, 250, 0.4); }
+
+    .hero-grid {
+      display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 22px; align-items: start;
+    }
+    @media (max-width: 860px) { .hero-grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      padding: 18px 18px 16px;
+    }
+    .card.glow { border-color: var(--stroke-strong); box-shadow: var(--glow); }
+    .card.a { border-color: rgba(92, 225, 255, 0.28); }
+    .card.b { border-color: rgba(167, 139, 250, 0.28); }
+
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 900px) {
+      .two, .three, .four { grid-template-columns: 1fr; }
+    }
+    @media (min-width: 700px) and (max-width: 900px) {
+      .four { grid-template-columns: 1fr 1fr; }
+    }
+
+    .option {
+      padding: 20px;
+      min-height: 100%;
+    }
+    .option h3 { font-size: 20px; letter-spacing: -0.03em; }
+    .option .who { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .option ul { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); }
+    .option li { margin: 6px 0; }
+
+    .vs {
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+    }
+
+    /* evidence */
+    .score {
+      display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch;
+    }
+    @media (max-width: 760px) { .score { grid-template-columns: 1fr; } }
+    .score-col h3 { display: flex; align-items: center; gap: 8px; }
+    .stat {
+      font-family: var(--mono); font-size: 28px; letter-spacing: -0.04em;
+      color: var(--cyan); margin: 4px 0;
+    }
+    .stat.bad { color: var(--danger); }
+    .stat.ok { color: var(--ok); }
+    .tiny { font-size: 12px; color: var(--muted); }
+
+    /* diagrams */
+    .diagram {
+      background: rgba(0,0,0,0.28);
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      padding: 16px;
+      overflow-x: auto;
+    }
+    .diagram svg { display: block; width: 100%; height: auto; min-width: 640px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tabs button {
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      background: var(--panel); color: var(--muted);
+      border: 1px solid var(--stroke); border-radius: 999px;
+      padding: 7px 14px; cursor: pointer;
+    }
+    .tabs button[aria-selected="true"] {
+      color: #041016; background: linear-gradient(90deg, var(--cyan), #7ab8ff);
+      border-color: transparent; box-shadow: var(--glow);
+    }
+    .pane { display: none; }
+    .pane.on { display: block; }
+
+    .flow {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .step {
+      display: grid; grid-template-columns: 42px 1fr; gap: 12px; align-items: start;
+    }
+    .n {
+      width: 32px; height: 32px; border-radius: 10px;
+      display: grid; place-items: center;
+      font-family: var(--mono); font-size: 12px; color: var(--cyan);
+      border: 1px solid var(--stroke-strong); background: rgba(92,225,255,0.06);
+    }
+    .arrow {
+      text-align: center; color: var(--muted); font-size: 16px; opacity: 0.6;
+    }
+
+    table.cmp {
+      width: 100%; border-collapse: collapse; font-size: 14px;
+    }
+    table.cmp th, table.cmp td {
+      text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--stroke);
+      vertical-align: top;
+    }
+    table.cmp th { color: var(--muted); font-weight: 500; font-size: 12px; letter-spacing: 0.04em; }
+    table.cmp td.a { border-left: 2px solid rgba(92,225,255,0.4); }
+    table.cmp td.b { border-left: 2px solid rgba(167,139,250,0.4); }
+
+    .lock {
+      min-height: 180px;
+    }
+    .keep li { margin: 6px 0; color: var(--muted); }
+
+    .callout {
+      border-radius: var(--r);
+      padding: 16px 18px;
+      border: 1px solid rgba(240, 180, 90, 0.35);
+      background: rgba(240, 180, 90, 0.06);
+    }
+    .callout.danger {
+      border-color: rgba(255, 122, 144, 0.35);
+      background: rgba(255, 122, 144, 0.06);
+    }
+    .callout.ok {
+      border-color: rgba(94, 228, 168, 0.3);
+      background: rgba(94, 228, 168, 0.05);
+    }
+
+    .rec {
+      padding: 22px;
+      border: 1px solid var(--stroke-strong);
+      box-shadow: var(--glow);
+      background: linear-gradient(180deg, rgba(92,225,255,0.06), rgba(167,139,250,0.05));
+    }
+
+    footer.page {
+      margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--stroke);
+      font-size: 12px; color: var(--muted);
+    }
+    code, .mono { font-family: var(--mono); font-size: 0.92em; }
+    .muted { color: var(--muted); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">FORGE <em>choice</em></div>
+    <span class="pill cyan">A vs B</span>
+    <span class="pill">plain English brief</span>
+    <nav class="nav">
+      <a href="#choice">The choice</a>
+      <a href="#night">Last night</a>
+      <a href="#maps">How it works</a>
+      <a href="#trap">The trap</a>
+      <a href="#compare">Compare</a>
+      <a href="#locks">Lock-in</a>
+      <a href="#future">Future</a>
+      <a href="#keep">Keep</a>
+      <a href="#rec">Recommend</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="choice">
+      <p class="eyebrow">One product decision · locked 25 Aug 2026</p>
+      <h1>Forge can be Grok’s desktop — or a thinner cousin.</h1>
+      <p class="lede" style="margin-bottom:18px"><span class="pill cyan">Locked · Option A</span> &nbsp; Forge is the GUI. Grok’s real agent is the Code brain. Not a terminal skin.</p>
+      <p class="lede">Same prompt. Same repo. Same day. The terminal Grok app finished the job. Forge Code did not. This page is the two ways to fix that, in pictures, without jargon.</p>
+
+      <div class="hero-grid" style="margin-top:28px">
+        <article class="card option a">
+          <div class="row"><span class="pill cyan">Option A · recommended</span></div>
+          <h3>Plug into Grok’s real agent</h3>
+          <p class="who">Forge stays the <strong>window, the rules, and the taste</strong>. Grok’s own coding agent does the thinking and tools — the same one the terminal uses.</p>
+          <ul>
+            <li>Skills like <code>/spire-tech</code> just work.</li>
+            <li>Thinking, tools, and long jobs match the terminal.</li>
+            <li>Later, Codex or Claude can plug in the same way.</li>
+          </ul>
+        </article>
+        <article class="card option b">
+          <div class="row"><span class="pill violet">Option B</span></div>
+          <h3>Keep writing our own Grok</h3>
+          <p class="who">Forge keeps its private mini-Grok (eight tools, our rules). We rebuild slash commands, skills, thinking, and long runs <strong>ourselves</strong>.</p>
+          <ul>
+            <li>We own every rule and the installer stays simple.</li>
+            <li>We will always lag the terminal on “real Grok Code.”</li>
+            <li>Codex/Claude each need a whole new mini-agent.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="callout" style="margin-top:18px">
+        <strong>In one sentence.</strong>
+        The product we said we are building is a desktop that can host <em>any</em> coding agent. Grok is the first guest — not the whole house. Option A is that sentence. Option B is “we said that, then we kept building a private Grok.”
+      </div>
+    </section>
+
+    <section id="night">
+      <div class="sec-head">
+        <p class="eyebrow">Evidence · 25 Aug 2026</p>
+        <h2>What happened when we typed the same command</h2>
+        <p class="muted">Command: <code>/spire-tech</code> — “start the Spire Tech conductor in this repo.”</p>
+      </div>
+
+      <div class="score">
+        <div class="card">
+          <h3><span class="pill ok">Terminal Grok</span></h3>
+          <div class="stat ok">1m 43s</div>
+          <p class="tiny">Finished. Showed a clear “where we are / what next” card.</p>
+          <ul class="muted">
+            <li>Treated <code>/</code> as a skill, not a guess</li>
+            <li>Ran the right command first: <code>--provider grok</code></li>
+            <li>Model: Grok 4.6 · extra-high thinking · skip-ask mode</li>
+            <li>Live “thinking…”, then compact tool rows, then the answer</li>
+            <li>Showed context used: 88k / 500k</li>
+          </ul>
+        </div>
+        <div class="vs">vs</div>
+        <div class="card">
+          <h3><span class="pill danger">Forge Code</span></h3>
+          <div class="stat bad">failed</div>
+          <p class="tiny">~3 minutes. No answer. “No final answer was received.”</p>
+          <ul class="muted">
+            <li>No slash menu — typed text into the void</li>
+            <li>27 searches of the folder to guess what the command meant</li>
+            <li>First try: wrong provider <code>Codex</code> (error)</li>
+            <li>Then the right command — then the run died</li>
+            <li>Status bar said “Awaiting presence” the whole time</li>
+            <li>Heavy effort quietly used <strong>grok-4</strong>, not grok-4.6</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="two" style="margin-top:16px">
+        <div class="card">
+          <h3>Terminal story (what you see)</h3>
+          <div class="flow">
+            <div class="step"><div class="n">1</div><div>You type <code>/spire-tech</code>. A menu knows it is a skill.</div></div>
+            <div class="arrow">↓</div>
+            <div class="step"><div class="n">2</div><div>The skill text is handed to the model <em>before</em> it thinks.</div></div>
+            <div class="arrow">↓</div>
+            <div class="step"><div class="n">3</div><div>It runs one command, reads a few files, writes the status card.</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Forge story (what we watched)</h3>
+          <div class="flow">
+            <div class="step"><div class="n">1</div><div>You type the same string. Forge treats it as a normal message.</div></div>
+            <div class="arrow">↓</div>
+            <div class="step"><div class="n">2</div><div>The model wanders the repo: list, read, search, repeat.</div></div>
+            <div class="arrow">↓</div>
+            <div class="step"><div class="n">3</div><div>Asks to run a command. Wrong provider, then right one. Then silence.</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="maps">
+      <div class="sec-head">
+        <p class="eyebrow">Pictures of the plumbing</p>
+        <h2>Three maps: today, A, and B</h2>
+        <p class="muted">You do not need to remember the names. Follow the arrows. The yellow box is “who does the Grok thinking.”</p>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" data-tab="today">Today</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="optA">Option A</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="optB">Option B</button>
+      </div>
+
+      <div id="pane-today" class="pane on">
+        <div class="diagram" aria-label="Architecture today">
+          <svg viewBox="0 0 980 280" xmlns="http://www.w3.org/2000/svg" role="img">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#5ce1ff"/><stop offset="1" stop-color="#a78bfa"/>
+              </linearGradient>
+            </defs>
+            <rect x="20" y="70" width="170" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(120,220,255,0.35)"/>
+            <text x="105" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">You · Forge window</text>
+            <text x="105" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">glass, Chat | Code, dock</text>
+            <text x="200" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="230" y="70" width="170" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)"/>
+            <text x="315" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">Forge host</text>
+            <text x="315" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">rules, folders, history</text>
+            <text x="410" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="440" y="58" width="210" height="112" rx="14" fill="rgba(240,180,90,0.08)" stroke="#f0b45a"/>
+            <text x="545" y="96" text-anchor="middle" fill="#f0b45a" font-family="Geist Mono,monospace" font-size="10" letter-spacing="1">OUR MINI-GROK</text>
+            <text x="545" y="118" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">grok-acp</text>
+            <text x="545" y="138" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">8 tools · 20-step cap</text>
+            <text x="660" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="690" y="70" width="250" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)"/>
+            <text x="815" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">xAI chat API</text>
+            <text x="815" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">raw model · not the terminal agent</text>
+            <text x="490" y="210" fill="#8b93a7" font-family="Geist,sans-serif" font-size="13">The terminal Grok app is off to the side. Forge does not talk to it.</text>
+          </svg>
+        </div>
+        <p class="tiny" style="margin-top:8px">Today Forge calls the model like a chatbot with a short tool list. The terminal calls Grok’s full coding agent (skills, long memory, extra-high thinking).</p>
+      </div>
+
+      <div id="pane-optA" class="pane">
+        <div class="diagram">
+          <svg viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg" role="img">
+            <rect x="20" y="70" width="170" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(120,220,255,0.35)"/>
+            <text x="105" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">You · Forge window</text>
+            <text x="105" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">same glass, same dock</text>
+            <text x="200" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="230" y="70" width="190" height="88" rx="14" fill="rgba(92,225,255,0.08)" stroke="#5ce1ff"/>
+            <text x="325" y="104" text-anchor="middle" fill="#5ce1ff" font-family="Geist Mono,monospace" font-size="10">TRANSLATOR</text>
+            <text x="325" y="124" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">Forge host</text>
+            <text x="325" y="144" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">rules stay here</text>
+            <text x="430" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="460" y="48" width="230" height="132" rx="14" fill="rgba(92,225,255,0.1)" stroke="#5ce1ff"/>
+            <text x="575" y="88" text-anchor="middle" fill="#5ce1ff" font-family="Geist Mono,monospace" font-size="10">SAME AS TERMINAL</text>
+            <text x="575" y="112" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">Grok’s real agent</text>
+            <text x="575" y="132" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">skills · thinking · long jobs</text>
+            <text x="575" y="152" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">pluggable: later Codex / Claude</text>
+            <rect x="740" y="30" width="210" height="54" rx="12" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)"/>
+            <text x="845" y="62" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="12">fallback: our mini-Grok if CLI missing</text>
+            <rect x="740" y="100" width="210" height="54" rx="12" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)"/>
+            <text x="845" y="132" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="12">Chat can stay on mini-Grok longer</text>
+          </svg>
+        </div>
+        <p class="tiny" style="margin-top:8px">Good A: Forge is the house. Grok’s agent is a guest in Code. Our mini-Grok can still sit in the spare room (Chat, or if Grok isn’t installed).</p>
+      </div>
+
+      <div id="pane-optB" class="pane">
+        <div class="diagram">
+          <svg viewBox="0 0 980 280" xmlns="http://www.w3.org/2000/svg" role="img">
+            <rect x="20" y="70" width="170" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(167,139,250,0.45)"/>
+            <text x="105" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">You · Forge window</text>
+            <text x="105" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">we restyle thinking &amp; tools</text>
+            <text x="200" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="230" y="70" width="170" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)"/>
+            <text x="315" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">Forge host</text>
+            <text x="410" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="440" y="40" width="240" height="148" rx="14" fill="rgba(167,139,250,0.1)" stroke="#a78bfa"/>
+            <text x="560" y="78" text-anchor="middle" fill="#a78bfa" font-family="Geist Mono,monospace" font-size="10">WE KEEP BUILDING THIS</text>
+            <text x="560" y="102" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">bigger mini-Grok</text>
+            <text x="560" y="122" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">skills · slash · thought · more tools</text>
+            <text x="560" y="142" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">years of catch-up vs the terminal</text>
+            <text x="560" y="162" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">then rebuild it for Codex, Claude…</text>
+            <text x="700" y="116" fill="#8b93a7" font-size="18">→</text>
+            <rect x="730" y="70" width="220" height="88" rx="14" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)"/>
+            <text x="840" y="108" text-anchor="middle" fill="#f2f4f8" font-family="Geist,sans-serif" font-size="14" font-weight="600">xAI chat API</text>
+            <text x="840" y="128" text-anchor="middle" fill="#8b93a7" font-family="Geist,sans-serif" font-size="11">still not the terminal agent</text>
+          </svg>
+        </div>
+        <p class="tiny" style="margin-top:8px">B is honest ownership. It is also a promise to compete with Grok’s own agent team, forever, on their home ground.</p>
+      </div>
+    </section>
+
+    <section id="trap">
+      <div class="sec-head">
+        <p class="eyebrow">Read this twice</p>
+        <h2>There is a good A and a bad A</h2>
+      </div>
+      <div class="two">
+        <article class="card glow">
+          <span class="pill ok">Good A</span>
+          <h3 style="margin-top:10px">Forge is the house. Agents are guests.</h3>
+          <p>The window, the ask-before-edit rules, File changes, Chat homes — those stay ours. Grok’s full agent is invited in for Code. Later we invite Codex or Claude. If Grok isn’t installed, our mini-Grok still answers the door.</p>
+        </article>
+        <article class="card" style="border-color:rgba(255,122,144,0.35)">
+          <span class="pill danger">Bad A</span>
+          <h3 style="margin-top:10px">Forge becomes a skin on the terminal</h3>
+          <p>Rip out our agent, skip our ask-before-edit rules, copy the terminal’s look. Fast TUI parity. Then we are Grok-only, and the “any agent desktop” story is dead.</p>
+        </article>
+      </div>
+      <div class="callout danger" style="margin-top:16px">
+        <strong>Do not pick bad A.</strong> The rest of this page means <em>good A</em> whenever it says A.
+      </div>
+    </section>
+
+    <section id="compare">
+      <div class="sec-head">
+        <p class="eyebrow">Plain compare</p>
+        <h2>What you gain, what you give up</h2>
+      </div>
+
+      <div class="card" style="overflow-x:auto">
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th style="width:22%">Topic</th>
+              <th class="a" style="width:39%">A · plug into Grok’s agent</th>
+              <th class="b" style="width:39%">B · keep writing our Grok</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Will <code>/spire-tech</code> work?</strong></td>
+              <td class="a">Yes, once slash skills are shown in the box. The skill is handed over before thinking starts.</td>
+              <td class="b">Only after we build a skill system. Until then, the model hunts the folder and often dies.</td>
+            </tr>
+            <tr>
+              <td><strong>Thinking on screen</strong></td>
+              <td class="a">The agent already streams “thought / tools / words.” We just have to draw it well.</td>
+              <td class="b">We invent live thought, human tool titles, and a status that doesn’t lie.</td>
+            </tr>
+            <tr>
+              <td><strong>Ask-before-edit rules</strong></td>
+              <td class="a">Must be wired onto Grok’s own permission prompts. Hardest A work. Must not be skipped.</td>
+              <td class="b">Already ours. Review / Trusted / Bypass stay native.</td>
+            </tr>
+            <tr>
+              <td><strong>Installer / brother PC</strong></td>
+              <td class="a">Needs Grok installed or bundled. Extra update and “Grok missing” states.</td>
+              <td class="b">One Forge installer, like today. Simpler walkthrough.</td>
+            </tr>
+            <tr>
+              <td><strong>Chat homes &amp; packs</strong></td>
+              <td class="a">Keep Chat on our mini-Grok for a while. Don’t force coding-agent storage onto Chat.</td>
+              <td class="b">Chat and Code stay one stack. No split.</td>
+            </tr>
+            <tr>
+              <td><strong>Codex / Claude later</strong></td>
+              <td class="a">New guest: start their agent, same window.</td>
+              <td class="b">Write a whole new mini-agent for each. Slow. Stays on the “later” pile.</td>
+            </tr>
+            <tr>
+              <td><strong>Who fixes agent bugs</strong></td>
+              <td class="a">Grok (or Codex, or Claude).</td>
+              <td class="b">Us. Forever. 20-step cap, silent fail, wrong model — those were ours last night.</td>
+            </tr>
+            <tr>
+              <td><strong>Speed to “as good as the terminal”</strong></td>
+              <td class="a">Months of wiring and drawing — not inventing an agent.</td>
+              <td class="b">Years of catch-up. The terminal will keep moving.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="three" style="margin-top:18px">
+        <div class="card">
+          <h3>A is good at</h3>
+          <p class="muted">Being a <strong>great Grok Code desktop</strong> without cloning their brain. New Grok powers show up when they ship. The window can still look like Forge.</p>
+        </div>
+        <div class="card">
+          <h3>B is good at</h3>
+          <p class="muted">Being a <strong>Grok we fully control</strong>: rules, installer, Chat+Code as one. Quality of “real Grok Code” will stay behind the terminal.</p>
+        </div>
+        <div class="card">
+          <h3>Neither should drop</h3>
+          <p class="muted">Ask-before-edit. File changes. Verify. Plan. Chat names. “Thinking is not the answer.” Voidglass — not a black terminal in a window.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="locks">
+      <div class="sec-head">
+        <p class="eyebrow">Will we get stuck?</p>
+        <h2>Four different kinds of lock-in</h2>
+        <p class="muted">“Lock-in” is not one monster. These are four smaller ones. Good A unlocks the first. Bad A and B lock the others.</p>
+      </div>
+      <div class="four">
+        <article class="card lock">
+          <span class="pill cyan">1 · language</span>
+          <h3 style="margin-top:10px">How they talk</h3>
+          <p class="tiny">ACP is the shared language. If Forge learns the public language, guests can come. If we only speak our private slang, only our mini-Grok can.</p>
+        </article>
+        <article class="card lock">
+          <span class="pill gold">2 · vendor</span>
+          <h3 style="margin-top:10px">Whose brain</h3>
+          <p class="tiny">Bad A: stuck on Grok forever. Good A: stuck on “anyone who speaks ACP” — the bet we already made. B: stuck on our Grok-shaped toolkit; Codex can’t reuse it.</p>
+        </article>
+        <article class="card lock">
+          <span class="pill ok">3 · trust rules</span>
+          <h3 style="margin-top:10px">Ask before edit</h3>
+          <p class="tiny">This is our moat versus the terminal. A must map Grok’s “may I run this?” into our dock. B already has it. Don’t trade this away for pretty thinking.</p>
+        </article>
+        <article class="card lock">
+          <span class="pill violet">4 · shipping</span>
+          <h3 style="margin-top:10px">What’s in the box</h3>
+          <p class="tiny">A: we depend on (or bundle) Grok’s program. Updates follow them. B: one box we already know. Simpler for a first-time PC. Thinner Grok inside.</p>
+        </article>
+      </div>
+      <div class="callout ok" style="margin-top:16px">
+        <strong>The reversible door.</strong> Starting Grok’s agent is one line in the host. Keep our mini-Grok as backup. B gets expensive to leave <em>only if</em> we keep inventing private messages the rest of the world doesn’t send. If we might ever do A, stop deepening that private slang now.
+      </div>
+    </section>
+
+    <section id="future">
+      <div class="sec-head">
+        <p class="eyebrow">Tomorrow and later</p>
+        <h2>How each choice changes the next years</h2>
+      </div>
+
+      <div class="two">
+        <article class="card a">
+          <h3>If we pick A, day-to-day building becomes…</h3>
+          <ul class="muted">
+            <li>Less “invent a coding agent,” more “draw the stream and keep our rules.”</li>
+            <li>A new provider is “invite a new guest,” not “write a new brain.”</li>
+            <li><code>/spire-tech</code> and friends start working when skills appear in the box.</li>
+            <li>Tests must watch a real (or recorded) vendor agent — not only our fake one.</li>
+          </ul>
+        </article>
+        <article class="card b">
+          <h3>If we pick B, day-to-day building becomes…</h3>
+          <ul class="muted">
+            <li>Every terminal screenshot is a Forge ticket: slash, skills, thought, long runs.</li>
+            <li>“Skills and hooks” becomes a long project, not a menu on Grok’s skills.</li>
+            <li>Codex/Claude stay on the later pile because each is a product.</li>
+            <li>We keep shipping beautiful panels on an agent people won’t use for hard jobs.</li>
+          </ul>
+        </article>
+      </div>
+
+      <h3 style="margin:28px 0 12px">The parked roadmap, colored in</h3>
+      <div class="card" style="overflow-x:auto">
+        <table class="cmp">
+          <thead>
+            <tr><th>Thing we already said “later”</th><th class="a">Under A</th><th class="b">Under B</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Skills &amp; hooks</td>
+              <td class="a">Mostly Grok’s. We show them and maybe gate hooks.</td>
+              <td class="b">We build a whole skill engine.</td>
+            </tr>
+            <tr>
+              <td>Codex / Claude in the same window</td>
+              <td class="a">Natural once Grok-as-guest works.</td>
+              <td class="b">Stays expensive. Stays later.</td>
+            </tr>
+            <tr>
+              <td>MCP / extra connectors</td>
+              <td class="a">Can ride Grok’s MCP after the installer is honest.</td>
+              <td class="b">Still a Forge-built MCP host.</td>
+            </tr>
+            <tr>
+              <td>Mac + signed Windows installer</td>
+              <td class="a">Also ship or fetch Grok’s program. More moving parts.</td>
+              <td class="b">Same path we already walk.</td>
+            </tr>
+            <tr>
+              <td>File changes, Verify, git review, Plan</td>
+              <td class="a">Keep. They read the stream. Don’t delete them.</td>
+              <td class="b">Already native. Safe.</td>
+            </tr>
+            <tr>
+              <td>Chat names + pinned files</td>
+              <td class="a">Keep on our mini-Grok. Don’t dump Chat into a coding agent.</td>
+              <td class="b">No split. Easy.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="three" style="margin-top:18px">
+        <div class="card">
+          <span class="pill">Now</span>
+          <h3>Grok desktop gap</h3>
+          <p class="tiny">A closes “Code feels worse than the terminal.” B keeps the gap and polishes Chat.</p>
+        </div>
+        <div class="card">
+          <span class="pill">Next</span>
+          <h3>Installable product</h3>
+          <p class="tiny">B is easier to put on a brother’s PC. A needs a clear “Grok missing” path or a bundle.</p>
+        </div>
+        <div class="card">
+          <span class="pill">Later</span>
+          <h3>Any-agent desktop</h3>
+          <p class="tiny">A is how that story comes true. B slowly makes the story a slide, not a product.</p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:16px">
+        <strong>Late-stage company shape.</strong>
+        Good A: we sell the <em>desktop</em> (trust, taste, projects) — not “we rewrote Grok.”
+        B done well: a Grok-only studio with better manners. Strong if they never ship a GUI. Weak if they already have a terminal the operator prefers for real work — they do.
+      </div>
+    </section>
+
+    <section id="keep">
+      <div class="sec-head">
+        <p class="eyebrow">Non-negotiables</p>
+        <h2>What we keep on either path</h2>
+      </div>
+      <div class="two">
+        <ul class="keep">
+          <li><strong>Ask before dangerous work</strong> — Review, Trusted, Bypass. The dock stays.</li>
+          <li><strong>File changes, Verify, git review, Plan</strong> — first-class panels, not buried tool rows.</li>
+          <li><strong>Chat names and pinned files</strong> — everyday Chat is a product, not a leftover.</li>
+        </ul>
+        <ul class="keep">
+          <li><strong>Stay in the folder</strong> — no sneaking out. Shell is honestly not a sandbox after you allow it.</li>
+          <li><strong>Thinking is not the answer</strong> — the reply is the reply. Thought can collapse.</li>
+          <li><strong>Voidglass</strong> — cyan on night glass. We do not paste the terminal into a webview.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="rec">
+      <div class="sec-head">
+        <p class="eyebrow">If we had to ship a sentence</p>
+        <h2>Recommendation</h2>
+      </div>
+      <article class="card rec">
+        <span class="pill cyan">Pick good A · with a seatbelt</span>
+        <ol class="muted" style="margin:12px 0 0; padding-left:18px">
+          <li style="margin:8px 0"><strong>Teach Forge the public language</strong> — thought, tools, and words as separate live streams — even while our mini-Grok still runs.</li>
+          <li style="margin:8px 0"><strong>Invite Grok’s real agent for Code</strong> when it is installed. Keep our ask-before-edit dock in front. Never “always allow” as the only mode.</li>
+          <li style="margin:8px 0"><strong>Keep our mini-Grok as backup</strong> — no Grok program, Chat, or Forge-only tricks (PDF text, Trusted catalog).</li>
+          <li style="margin:8px 0"><strong>Do not grow the mini-Grok into a fake terminal</strong> — no home-grown skill engine, nested agents, or extra-high harness. That is B in disguise.</li>
+        </ol>
+        <p style="margin-top:16px">Pick B only if we are willing to say out loud: “Forge Code will stay a thinner Grok. The terminal remains the real Grok Code.” That can be an honest Chat-first product. It is not “the GUI should feel as good as the terminal or better.”</p>
+      </article>
+
+      <div class="two" style="margin-top:16px">
+        <div class="card">
+          <h3>How to answer</h3>
+          <p class="muted"><strong>A</strong> — good A, seatbelt, Grok agent for Code.<br /><strong>B</strong> — stay on our mini-Grok and catch up ourselves.</p>
+        </div>
+        <div class="card">
+          <h3>Where to look</h3>
+          <p class="tiny">This file: <code>docs/agent-strategy.html</code><br />Last night’s Forge was on isolated <code>localhost:5174</code> (dev host <code>:8788</code>), not the installed app.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page">
+      Forge · Grok Code Shell · briefing from the 25 Aug 2026 terminal vs Forge Code session.
+      Not a spec. Not a ship. A picture so the letter A or B is easy to say.
+    </footer>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll('[role="tab"]');
+    const panes = { today: "pane-today", optA: "pane-optA", optB: "pane-optB" };
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
+        Object.entries(panes).forEach(([key, id]) => {
+          document.getElementById(id).classList.toggle("on", tab.dataset.tab === key);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

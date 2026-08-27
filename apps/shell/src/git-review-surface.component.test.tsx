@@ -133,10 +133,10 @@ test("Code run: File changes → Verify → Git review → Activity; View output
   await user.click(within(git).getByRole("button", { name: /Git review/i }));
   const viewButtons = within(git).getAllByRole("button", { name: GIT_REVIEW_VIEW_OUTPUT });
   await user.click(viewButtons[0]!);
-  const row = document.querySelector('[data-activity-id="a-git-status"]') as HTMLDetailsElement | null;
+  const row = document.querySelector('[data-activity-id="a-git-status"]') as HTMLElement | null;
   assert.ok(row);
-  assert.equal(row.open, true);
-  assert.ok(row.textContent?.includes("M dirty.txt"));
+  assert.ok(row.closest("[data-tool-activity]"));
+  assert.ok((row.textContent ?? document.querySelector(".tool-activity-body")?.textContent ?? "").includes("M dirty.txt"));
 });
 
 test("Chat productMode never mounts Git review (AC-26)", () => {

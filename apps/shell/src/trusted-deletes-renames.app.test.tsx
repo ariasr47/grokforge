@@ -254,7 +254,7 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     }, 2) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
-      assert.ok(screen.getByText(/run_shell/));
+      assert.ok(screen.getByText(/run_shell|run shell/i));
     });
     assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
     assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);

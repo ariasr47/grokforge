@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { vendorSpawnEnv } from "./codeAgent.js";
 
 export type AgentStatus = "ready" | "planned" | "disabled";
 
@@ -22,6 +23,21 @@ export interface AgentSpawnSpec {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  cwd?: string;
+}
+
+export function resolveVendorCodeSpawn(input: {
+  command: string;
+  cwd: string;
+  baseEnv: Record<string, string>;
+}): AgentSpawnSpec {
+  return {
+    id: "grok-agent-stdio",
+    command: input.command,
+    args: ["agent", "stdio"],
+    cwd: input.cwd,
+    env: vendorSpawnEnv(input.baseEnv),
+  };
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));

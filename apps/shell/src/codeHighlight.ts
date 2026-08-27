@@ -129,9 +129,130 @@ export function tokenizeLine(line: string): Token[] {
   return out;
 }
 
-export function shouldHighlight(lang?: string): boolean {
-  if (!lang) return true;
-  const l = lang.toLowerCase();
-  if (l === "text" || l === "plain" || l === "txt" || l === "output") return false;
-  return true;
+/** Closed loaded langs — v1 canonical ids (SPEC §2). */
+export const LOADED_LANGS = [
+  "typescript",
+  "javascript",
+  "tsx",
+  "jsx",
+  "json",
+  "rust",
+  "python",
+  "bash",
+  "shell",
+  "css",
+  "html",
+  "markdown",
+  "toml",
+  "yaml",
+] as const;
+
+const LOADED = new Set<string>(LOADED_LANGS);
+
+/** Closed alias table → canonical loaded id. */
+export const LANG_ALIASES: Record<string, (typeof LOADED_LANGS)[number]> = {
+  ts: "typescript",
+  js: "javascript",
+  py: "python",
+  sh: "bash",
+  yml: "yaml",
+  md: "markdown",
+};
+
+const EXPLICIT_PLAIN = new Set(["text", "plain", "txt", "output", "plaintext"]);
+
+export type FenceClass =
+  | "unlabeled"
+  | "explicit-plain"
+  | "loaded"
+  | "oversize"
+  | "typed-unknown";
+
+export type FenceGate = {
+  class: FenceClass;
+  token: string;
+  resolvedLang: string | null;
+  lineCount: number;
+  gatePassed: boolean;
+};
+
+export function fenceInfoToken(langInfo?: string): string {
+  const raw = (langInfo ?? "").trim();
+  if (!raw) return "";
+  const first = raw.split(/\s+/)[0] ?? "";
+  return first.toLowerCase();
+}
+
+export function lineCountOf(code: string): number {
+  return code.replace(/\r\n/g, "\n").split("\n").length;
+}
+
+export function classifyFence(code: string, langInfo?: string): FenceGate {
+  const lineCount = lineCountOf(code);
+  const token = fenceInfoToken(langInfo);
+
+  if (token && EXPLICIT_PLAIN.has(token)) {
+    return {
+      class: "explicit-plain",
+      token,
+      resolvedLang: null,
+      lineCount,
+      gatePassed: false,
+    };
+  }
+
+  if (!token) {
+    if (lineCount > 400) {
+      return {
+        class: "oversize",
+        token: "",
+        resolvedLang: null,
+        lineCount,
+        gatePassed: false,
+      };
+    }
+    return {
+      class: "unlabeled",
+      token: "",
+      resolvedLang: "plaintext",
+      lineCount,
+      gatePassed: true,
+    };
+  }
+
+  const resolved = LOADED.has(token)
+    ? token
+    : (LANG_ALIASES[token] ?? null);
+
+  if (resolved) {
+    if (lineCount > 400) {
+      return {
+        class: "oversize",
+        token,
+        resolvedLang: resolved,
+        lineCount,
+        gatePassed: false,
+      };
+    }
+    return {
+      class: "loaded",
+      token,
+      resolvedLang: resolved,
+      lineCount,
+      gatePassed: true,
+    };
+  }
+
+  return {
+    class: "typed-unknown",
+    token,
+    resolvedLang: null,
+    lineCount,
+    gatePassed: false,
+  };
+}
+
+/** Back-compat name: true only when the shared gate passes (tokenizer/rich eligible). */
+export function shouldHighlight(lang?: string, code = "x"): boolean {
+  return classifyFence(code, lang).gatePassed;
 }

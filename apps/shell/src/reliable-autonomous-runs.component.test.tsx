@@ -26,7 +26,7 @@ const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
 
 test("renders reasoning as one disclosure and does not promote it to an answer", () => {
   render(<RunSurface run={run({ reasoning: { seg: "private reasoning" } })} />);
-  assert.ok(screen.getByText("Reasoning"));
+  assert.ok(screen.getByText("Thought…"));
   assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
 });
 test("renders only a vouched terminal answer once", () => {

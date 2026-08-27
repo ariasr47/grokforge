@@ -31,7 +31,42 @@ import {
   resolveEffort,
   type Effort,
 } from "./effort.js";
-import { getAgent, listAgents, resolveAgentSpawn } from "./agents.js";
+import { getAgent, listAgents, resolveAgentSpawn, resolveVendorCodeSpawn } from "./agents.js";
+import { resolveVendorCliPath, stampCodeAgentFact, vendorSpawnEnv, type CodeAgentFact, type CodeRunAgentProvenance } from "./codeAgent.js";
+import {
+  ABSENT_NON_VENDOR,
+  applyValidCommands,
+  clearToAbsent,
+  enterAwaiting,
+  ignoreMalformed,
+  markObtainFailed,
+  markTransportDisconnect,
+  type SkillsCatalogFact,
+} from "./skillsCatalog.js";
+import {
+  ABSENT_NON_CODE_OR_NON_VENDOR,
+  applyChildUpdate,
+  clearToAbsent as clearChildAgentsToAbsent,
+  enterHydrating,
+  foldMembersFromUpdates,
+  markObtainFailed as markChildAgentsObtainFailed,
+  markReady,
+  parseCompleteChildAgentFrame,
+  type ChildAgentsMembershipFact,
+} from "./childAgents.js";
+import {
+  ABSENT_FOR_NON_CODE_OR_NON_VENDOR,
+  applyFetchMember,
+  clearToAbsent as clearBrowserWorkToAbsent,
+  enterHydrating as enterBrowserHydrating,
+  foldMembersFromActivities,
+  markObtainFailed as markBrowserObtainFailed,
+  markReady as markBrowserReady,
+  memberFromFetchActivity,
+  type BrowserWorkMembershipFact,
+  type FetchActivityInput,
+} from "./browserWork.js";
+import { decideSkillHandoff } from "./skillHandoff.js";
 import { audit } from "./audit.js";
 import { clampEffort, loadPolicy } from "./policy.js";
 import { recordCompletedConversation } from "./shell-history.js";
@@ -39,7 +74,7 @@ import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./exe
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { randomUUID } from "node:crypto";
-import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, TerminalKind } from "./run-types.js";
+import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, RunState, TerminalKind } from "./run-types.js";
 import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
@@ -130,6 +165,10 @@ export function activityRecordFromToolRun(
       ? (ev as { path: string }).path
       : null;
   const kind = mutationKindOf((ev as { kind?: unknown }).kind);
+  const titleRaw = (ev as { title?: unknown }).title;
+  const acpToolKindRaw = (ev as { acpToolKind?: unknown }).acpToolKind;
+  const urlRaw = (ev as { url?: unknown }).url;
+  const snapRaw = (ev as { snapshotJournaled?: unknown }).snapshotJournaled;
   return {
     activityId: ev.activityId,
     invocationId: ev.toolCallId,
@@ -151,6 +190,11 @@ export function activityRecordFromToolRun(
     command: typeof ev.command === "string" ? ev.command : null,
     editId: ev.editId ?? null,
     recovery: ev.recovery ?? null,
+    summary: typeof ev.summary === "string" ? ev.summary : ev.summary === null ? null : null,
+    title: typeof titleRaw === "string" ? titleRaw : null,
+    acpToolKind: typeof acpToolKindRaw === "string" ? acpToolKindRaw : null,
+    url: typeof urlRaw === "string" ? urlRaw : null,
+    snapshotJournaled: snapRaw === true,
   };
 }
 
@@ -187,6 +231,11 @@ export function activityRecordFromProposedEdit(input: {
     command: null,
     editId: input.editId,
     recovery: null,
+    summary: null,
+    title: null,
+    acpToolKind: null,
+    url: null,
+    snapshotJournaled: false,
   };
 }
 
@@ -220,6 +269,11 @@ export function retainActivityAfterDiff(
     command: null,
     editId: input.editId,
     recovery: null,
+    summary: prior?.summary ?? null,
+    title: prior?.title ?? null,
+    acpToolKind: prior?.acpToolKind ?? null,
+    url: prior?.url ?? null,
+    snapshotJournaled: prior?.snapshotJournaled === true,
   };
 }
 
@@ -257,6 +311,11 @@ export function retainActivityAfterRecovery(
       available: prior?.recovery?.available ?? true,
       status: input.status,
     },
+    summary: prior?.summary ?? null,
+    title: prior?.title ?? null,
+    acpToolKind: prior?.acpToolKind ?? null,
+    url: prior?.url ?? null,
+    snapshotJournaled: prior?.snapshotJournaled === true,
   };
 }
 
@@ -298,6 +357,10 @@ export interface PublicState {
   planEngagement: PlanEngagementView;
   projectInstructions: ProjectInstructionsPresenceView;
   chatPack: ChatPackView;
+  codeAgent: CodeAgentFact | null;
+  skillsCatalog: SkillsCatalogFact;
+  childAgents: ChildAgentsMembershipFact;
+  browserWork: BrowserWorkMembershipFact;
 }
 
 export type PlanEngagementView = { engaged: boolean; vouched: boolean };
@@ -344,7 +407,7 @@ export class AgentSession {
   private connectionGeneration = 0;
   private sessionWriteGrant = false;
   private sessionShellGrant = false;
-  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number}>();
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
   private planEngaged = false;
   private planEngagementVouched = true;
   private lastReadyPlanRunId: string | null = null;
@@ -370,11 +433,25 @@ export class AgentSession {
   } | null = null;
   private readonly executionEnvironment = resolveHostExecutionEnvironment({ platform: process.platform, environment: process.env });
   private readonly ready: Promise<void>;
+  private codeAgent: CodeAgentFact | null = null;
+  /** True only after both initialize and session/new succeeded for the current child. */
+  private spawnLive = false;
+  private skillsCatalog: SkillsCatalogFact = ABSENT_NON_VENDOR;
+  private skillsObtainTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly skillsCatalogObtainTimeoutMs: number;
+  private skillsWarm: Promise<void> | null = null;
+  private childAgents: ChildAgentsMembershipFact = ABSENT_NON_CODE_OR_NON_VENDOR;
+  private browserWork: BrowserWorkMembershipFact = ABSENT_FOR_NON_CODE_OR_NON_VENDOR;
+  private lastOwnedRunId: string | null = null;
 
-  constructor(stableSessionId?: string) {
+  constructor(stableSessionId?: string, opts?: { skillsCatalogObtainTimeoutMs?: number }) {
     this.stableClientSessionId = stableSessionId ?? null;
     this.runHydration = this.runCoordinator.hydrate(stableSessionId).then(() => this.restorePlanDecisions()).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
     this.cfg = loadConfig();
+    const timeoutRaw = Number(process.env.GROKFORGE_SKILLS_OBTAIN_TIMEOUT_MS);
+    this.skillsCatalogObtainTimeoutMs =
+      opts?.skillsCatalogObtainTimeoutMs ??
+      (Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : 15_000);
     if (!this.cfg.mode) this.cfg.mode = "chat";
     if (!this.cfg.effort) this.cfg.effort = "auto";
     if (this.cfg.mode === "chat") {
@@ -384,7 +461,9 @@ export class AgentSession {
     }
     if (process.env.GROKFORGE_PLAN_UNVOUCHED === "1") this.planEngagementVouched = false;
     if (process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED === "1") this.projectInstructionsVouched = false;
-    this.ready = this.hydrateWorkspacePolicy(this.workspace).then(() => this.refreshProjectInstructionsPresence());
+    this.ready = this.hydrateWorkspacePolicy(this.workspace).then(() => this.refreshProjectInstructionsPresence()).then(() => {
+      if (this.cfg.mode === "code" && this.workspace) this.eagerResolveCodeAgent();
+    }).then(() => this.restoreChildAgentsFromJournal()).then(() => this.restoreBrowserWorkFromJournal());
   }
 
   private async hydrateWorkspacePolicy(workspace: string | null): Promise<void> {
@@ -449,7 +528,7 @@ export class AgentSession {
       hasApiKey: auth.hasApiKey,
       authSource: auth.source,
       model: this.cfg.model,
-      connected: Boolean(this.client),
+      connected: Boolean(this.client && this.sessionId),
       busy: this.busy,
       sessionId: this.sessionId,
       recent: this.cfg.recent,
@@ -473,7 +552,303 @@ export class AgentSession {
       agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
+      codeAgent: this.cfg.mode === "code" ? (this.codeAgent ?? null) : null,
+      skillsCatalog: this.skillsCatalog,
+      childAgents: this.childAgents,
+      browserWork: this.browserWork,
     };
+  }
+
+  getSkillsCatalog(): SkillsCatalogFact {
+    return this.skillsCatalog;
+  }
+
+  private vendorChildAgentsEligible(): boolean {
+    return this.cfg.mode === "code" && this.codeAgent?.identity === "vendor";
+  }
+
+  private replaceChildAgents(next: ChildAgentsMembershipFact): void {
+    const same =
+      next.disposition === this.childAgents.disposition &&
+      next.members === this.childAgents.members;
+    this.childAgents = next;
+    if (!same) this.broadcastState();
+  }
+
+  private syncChildAgentsEligibility(): void {
+    if (!this.vendorChildAgentsEligible()) {
+      this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+    }
+  }
+
+  private childUpdatesFromEvents(events: RunEventEnvelope[]): Array<{
+    childId: string;
+    identityLabel: string;
+    status: "running" | "done" | "failed";
+    eventSeq: number;
+  }> {
+    const out: Array<{
+      childId: string;
+      identityLabel: string;
+      status: "running" | "done" | "failed";
+      eventSeq: number;
+    }> = [];
+    for (const e of events) {
+      if (e.type !== "child_agent_update" || e.payload.kind !== "child_agent_update") continue;
+      const parsed = parseCompleteChildAgentFrame({
+        childId: e.payload.childId,
+        identityLabel: e.payload.identityLabel,
+        status: e.payload.status,
+      });
+      if (!parsed) {
+        log("warn", "malformed child_agent_update ignored", { sessionId: this.sessionId });
+        continue;
+      }
+      out.push({ ...parsed, eventSeq: e.eventSeq });
+    }
+    return out;
+  }
+
+  private markChildAgentsReadyFromEvents(events: RunEventEnvelope[]): void {
+    if (!this.vendorChildAgentsEligible()) {
+      this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+      return;
+    }
+    this.replaceChildAgents(markReady(this.childAgents, foldMembersFromUpdates(this.childUpdatesFromEvents(events))));
+  }
+
+  private isJournalObtainFailure(error: unknown): boolean {
+    const code = (error as { code?: string })?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    return code === "journal_unavailable" || /journal_corrupt/.test(message);
+  }
+
+  private async restoreChildAgentsFromJournal(runId?: string | null, sessionId?: string | null): Promise<void> {
+    if (!this.vendorChildAgentsEligible()) {
+      this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+      return;
+    }
+    this.replaceChildAgents(enterHydrating(this.childAgents));
+    try {
+      await this.runHydration;
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceChildAgents(markChildAgentsObtainFailed(this.childAgents));
+        return;
+      }
+      throw error;
+    }
+    try {
+      let sid = sessionId ?? this.stableClientSessionId;
+      let rid = runId ?? this.activeRunId ?? this.lastOwnedRunId;
+      if (!rid || !sid) {
+        const snapshots = await this.runCoordinator.listSnapshots();
+        const owned = this.stableClientSessionId
+          ? snapshots.filter((s) => s.sessionId === this.stableClientSessionId)
+          : snapshots;
+        const latest = owned.slice().sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+        if (!latest) {
+          this.replaceChildAgents(markReady(this.childAgents, []));
+          return;
+        }
+        sid = latest.sessionId;
+        rid = latest.runId;
+      }
+      const { events } = await this.runCoordinator.replay(sid, rid, 0);
+      this.markChildAgentsReadyFromEvents(events);
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceChildAgents(markChildAgentsObtainFailed(this.childAgents));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async applyLiveChildAgentEvent(ev: Extract<AcpUiEvent, { type: "child_agent" }>): Promise<void> {
+    if (this.codeAgent?.identity !== "vendor") return;
+    const runId = this.activeRunId ?? this.lastOwnedRunId;
+    if (!runId) return;
+    const run = this.runCoordinator.get(runId);
+    if (!run) return;
+    if (run.connectionGeneration !== this.connectionGeneration) return;
+    const payload = {
+      kind: "child_agent_update" as const,
+      childId: ev.childId,
+      identityLabel: ev.identityLabel,
+      status: ev.status,
+    };
+    let envelope: RunEventEnvelope | undefined;
+    try {
+      if (run.state === "terminal") {
+        if (ev.status !== "done" && ev.status !== "failed") return;
+        envelope = await this.runCoordinator.appendAfterTerminalEvent(runId, payload, "child_agent_update");
+      } else {
+        envelope = await this.runCoordinator.appendOwnedEvent(
+          runId,
+          payload,
+          "child_agent_update",
+          this.connectionGeneration,
+        );
+      }
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === "stale_generation") return;
+      log("warn", "child_agent_update journal apply failed", {
+        message: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionId,
+      });
+      return;
+    }
+    if (!envelope) return;
+    const prior =
+      this.childAgents.disposition === "ready" || this.childAgents.disposition === "hydrating"
+        ? (this.childAgents.members ?? [])
+        : [];
+    const members = applyChildUpdate(prior, {
+      childId: ev.childId,
+      identityLabel: ev.identityLabel,
+      status: ev.status,
+      eventSeq: envelope.eventSeq,
+    });
+    this.replaceChildAgents(markReady(this.childAgents, members));
+  }
+
+  private vendorBrowserWorkEligible(): boolean {
+    return this.cfg.mode === "code" && this.codeAgent?.identity === "vendor";
+  }
+
+  private replaceBrowserWork(next: BrowserWorkMembershipFact): void {
+    const same =
+      next.disposition === this.browserWork.disposition &&
+      next.members === this.browserWork.members;
+    this.browserWork = next;
+    if (!same) this.broadcastState();
+  }
+
+  private syncBrowserWorkEligibility(): void {
+    if (!this.vendorBrowserWorkEligible()) {
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+    }
+  }
+
+  private browserUpdatesFromEvents(events: RunEventEnvelope[]): FetchActivityInput[] {
+    const out: FetchActivityInput[] = [];
+    for (const e of events) {
+      if (e.type !== "activity_update" || e.payload.kind !== "activity_update") continue;
+      const a = e.payload.activity;
+      out.push({
+        toolCallId: a.invocationId || a.activityId,
+        acpToolKind: a.acpToolKind ?? null,
+        status: a.status,
+        execution: a.execution,
+        title: a.title ?? null,
+        url: a.url ?? null,
+        snapshotJournaled: a.snapshotJournaled === true,
+        eventSeq: e.eventSeq,
+      });
+    }
+    return out;
+  }
+
+  private markBrowserWorkReadyFromEvents(events: RunEventEnvelope[]): void {
+    if (!this.vendorBrowserWorkEligible()) {
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      return;
+    }
+    this.replaceBrowserWork(
+      markBrowserReady(this.browserWork, foldMembersFromActivities(this.browserUpdatesFromEvents(events))),
+    );
+  }
+
+  private async restoreBrowserWorkFromJournal(runId?: string | null, sessionId?: string | null): Promise<void> {
+    if (!this.vendorBrowserWorkEligible()) {
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      return;
+    }
+    this.replaceBrowserWork(enterBrowserHydrating(this.browserWork));
+    try {
+      await this.runHydration;
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceBrowserWork(markBrowserObtainFailed(this.browserWork));
+        return;
+      }
+      throw error;
+    }
+    try {
+      let sid = sessionId ?? this.stableClientSessionId;
+      let rid = runId ?? this.activeRunId ?? this.lastOwnedRunId;
+      if (!rid || !sid) {
+        const snapshots = await this.runCoordinator.listSnapshots();
+        const owned = this.stableClientSessionId
+          ? snapshots.filter((s) => s.sessionId === this.stableClientSessionId)
+          : snapshots;
+        const latest = owned.slice().sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+        if (!latest) {
+          this.replaceBrowserWork(markBrowserReady(this.browserWork, []));
+          return;
+        }
+        sid = latest.sessionId;
+        rid = latest.runId;
+      }
+      const { events } = await this.runCoordinator.replay(sid, rid, 0);
+      this.markBrowserWorkReadyFromEvents(events);
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceBrowserWork(markBrowserObtainFailed(this.browserWork));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private applyLiveBrowserWork(activity: ActivityRecord, eventSeq: number): void {
+    if (!this.vendorBrowserWorkEligible()) {
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      return;
+    }
+    const input: FetchActivityInput = {
+      toolCallId: activity.invocationId || activity.activityId,
+      acpToolKind: activity.acpToolKind ?? null,
+      status: activity.status,
+      execution: activity.execution,
+      title: activity.title ?? null,
+      url: activity.url ?? null,
+      snapshotJournaled: activity.snapshotJournaled === true,
+      eventSeq,
+    };
+    const priorMembers =
+      this.browserWork.disposition === "ready" || this.browserWork.disposition === "hydrating"
+        ? (this.browserWork.members ?? [])
+        : [];
+    if (input.toolCallId && input.acpToolKind === "fetch" && (input.execution === "not_executed" || input.status === "rejected")) {
+      this.replaceBrowserWork(
+        markBrowserReady(this.browserWork, priorMembers.filter((m) => m.toolCallId !== input.toolCallId)),
+      );
+      return;
+    }
+    const member = memberFromFetchActivity(input);
+    if (!member) return;
+    this.replaceBrowserWork(markBrowserReady(this.browserWork, applyFetchMember(priorMembers, member)));
+  }
+
+  /** Idle vendor handshake so GET /api/state / WS can populate catalog without a Send. */
+  warmSkillsCatalog(): void {
+    if (this.cfg.mode !== "code") return;
+    if (this.codeAgent?.identity !== "vendor") return;
+    if (this.busy || this.activeRunId) return;
+    if (this.client && this.sessionId && this.spawnLive) return;
+    if (this.skillsWarm) return;
+    this.skillsWarm = this.acquireCodeAgent(null)
+      .catch((error) => {
+        log("warn", "skills catalog warm failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        this.skillsWarm = null;
+      });
   }
 
   private planEngagementView(): PlanEngagementView {
@@ -961,7 +1336,21 @@ export class AgentSession {
           : null;
     }
     log("info", "mode set", { mode: next, workspace: this.workspace });
-    await this.restartAgent();
+    if (next === "chat") {
+      this.codeAgent = null;
+      this.clearSkillsCatalogToAbsent();
+      this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      await this.restartAgent();
+    } else {
+      await this.disposeAgentClient();
+      if (this.workspace) this.eagerResolveCodeAgent();
+      else this.codeAgent = null;
+      this.syncChildAgentsEligibility();
+      this.syncBrowserWorkEligibility();
+      if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
+      if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
+    }
     await this.refreshProjectInstructionsPresence();
     this.broadcastState();
     return this.getState();
@@ -1032,113 +1421,164 @@ export class AgentSession {
     log("info", "workspace opened", { path: resolved, mode: this.cfg.mode });
     audit("workspace_open", { path: resolved, mode: this.cfg.mode });
 
-    await this.restartAgent();
+    await this.disposeAgentClient();
+    this.eagerResolveCodeAgent();
+    this.syncChildAgentsEligibility();
+    this.syncBrowserWorkEligibility();
+    if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
+    if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
     await this.refreshProjectInstructionsPresence();
     this.broadcastState();
     return this.getState();
   }
 
-  private agentEntry(): { command: string; args: string[] } {
-    const root = process.env.GROKFORGE_ROOT || repoRoot;
-    const agentId = this.cfg.agentId || loadPolicy().agentId || "grok-acp";
-    const spec = resolveAgentSpawn(agentId, root);
-    return { command: spec.command, args: spec.args };
+  private probeVendorCli(): string | null {
+    return resolveVendorCliPath({
+      platform: process.platform,
+      pathEnv: process.env.Path ?? process.env.PATH ?? "",
+      pathExt: process.env.PATHEXT,
+      isFile: (p) => {
+        try { return fs.statSync(p).isFile(); } catch { return false; }
+      },
+    });
   }
 
-  listAgents() {
-    return listAgents();
-  }
-
-  getAgentInfo() {
-    const id = this.cfg.agentId || loadPolicy().agentId || "grok-acp";
-    return getAgent(id);
-  }
-
-  setAgentId(agentId: string): PublicState {
-    const agent = getAgent(agentId);
-    if (agent.status !== "ready") {
-      throw new Error(
-        `${agent.name} is not available yet (${agent.status}). Grok remains the ready ACP backend.`,
-      );
-    }
-    this.cfg = loadConfig();
-    this.cfg.agentId = agent.id;
-    saveConfig(this.cfg);
-    audit("agent_select", { agentId: agent.id });
-    void this.restartAgent();
+  private eagerResolveCodeAgent(): void {
+    this.codeAgent = stampCodeAgentFact({ kind: "resolving" });
     this.broadcastState();
-    return this.getState();
+    const cli = this.probeVendorCli();
+    this.codeAgent = cli
+      ? stampCodeAgentFact({ kind: "vendor" })
+      : stampCodeAgentFact({ kind: "cli_missing" });
+    this.syncChildAgentsEligibility();
+    this.syncBrowserWorkEligibility();
+    this.broadcastState();
   }
 
-  async ensureAgent(): Promise<void> {
-    if (this.client && this.sessionId) return;
-    await this.restartAgent();
+  private clearSkillsObtainTimer(): void {
+    if (this.skillsObtainTimer) {
+      clearTimeout(this.skillsObtainTimer);
+      this.skillsObtainTimer = null;
+    }
   }
 
-  async restartAgent(): Promise<PublicState> {
-    // Chain concurrent restarts so setMode + prompt don't race dispose vs newSession
-    const run = async (): Promise<PublicState> => {
-      // A restart always clears any in-flight fallback retry — it belongs to the client about to
-      // be disposed, not the next one. Same for a stale prompt-origin attribution (D1): the
-      // in-flight run's completion events are about to be dropped by the disposed client, so no
-      // `done` will ever arrive to record it — clear it rather than leak it onto the next prompt.
-      this.pendingFallback = null;
-      this.pendingPromptOrigin = null;
-      if (this.client) {
-        const prev = this.client;
-        this.client = null;
-        this.sessionId = null;
-        try {
-          await prev.dispose();
-        } catch {
-          /* ignore */
+  private replaceSkillsCatalog(next: SkillsCatalogFact, timer: "obtain" | "off"): void {
+    const same =
+      next.disposition === this.skillsCatalog.disposition && next.commands === this.skillsCatalog.commands;
+    this.skillsCatalog = next;
+    this.clearSkillsObtainTimer();
+    if (timer === "obtain" && next.disposition === "awaiting_first_valid") {
+      this.skillsObtainTimer = setTimeout(() => {
+        this.skillsObtainTimer = null;
+        if (this.codeAgent?.identity !== "vendor") return;
+        const after = markObtainFailed(this.skillsCatalog);
+        if (after.disposition === this.skillsCatalog.disposition && after.commands === this.skillsCatalog.commands) {
+          return;
         }
-      }
-      this.setBusy(false);
-      this.cfg = loadConfig();
-      const mode = this.cfg.mode === "code" ? "code" : "chat";
-      if (mode === "chat") {
-        this.workspace = ensureChatRoot(this.cfg.chatRoot);
-      } else if (!this.workspace) {
+        this.skillsCatalog = after;
         this.broadcastState();
-        return this.getState();
-      }
+      }, this.skillsCatalogObtainTimeoutMs);
+      this.skillsObtainTimer.unref?.();
+    }
+    if (!same) this.broadcastState();
+  }
 
-      const { token, source } = await resolveApiKeyAsync(this.cfg);
-      const { command, args } = this.agentEntry();
-      log("info", "starting agent", {
-        source,
-        workspace: this.workspace,
-        mode,
-      });
+  private clearSkillsCatalogToAbsent(): void {
+    this.replaceSkillsCatalog(clearToAbsent(this.skillsCatalog), "off");
+  }
 
-      const client = new StdioAcpClient({
-        workspaceRoot: this.workspace!,
-        command,
-        args,
-        executionProfile: this.executionEnvironment.profile,
-        env: Object.freeze({
-          ...Object.fromEntries(Object.entries(this.executionEnvironment.effectiveEnvironment).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
-          XAI_API_KEY: token ?? "",
-          XAI_MODEL: this.cfg.model,
-          GROKFORGE_MODE: mode,
-          GROKFORGE_SHELL_ALLOWLIST:
-            this.cfg.shellAllowlist === false ? "0" : "1",
-          GROKFORGE_DATA_DIR: dataDir(),
-        }),
-      });
-      this.client = client;
-      /** Cache tool names for result logging. */
-      const toolNames = new Map<string, string>();
-      const gen = client; // capture for exit handler
-      // ACP notifications are delivered by StdioAcpClient without awaiting listeners. Keep a
-      // per-generation FIFO so activity/decision events are durably appended before a following
-      // done/error can finalize the run. A replaced client is rejected at the queue boundary.
-      let eventChain: Promise<void> = Promise.resolve();
-      client.onEvent((ev) => {
-        eventChain = eventChain.then(async () => {
-        // Ignore events from a disposed/replaced client
+  private withholdSkillsCatalogOnDisconnect(): void {
+    if (this.codeAgent?.identity !== "vendor") {
+      this.clearSkillsCatalogToAbsent();
+      return;
+    }
+    this.replaceSkillsCatalog(markTransportDisconnect(this.skillsCatalog), "obtain");
+  }
+
+  private applyAvailableCommandsEvent(ev: Extract<AcpUiEvent, { type: "available_commands" }>): void {
+    if (this.codeAgent?.identity !== "vendor") return;
+    if (ev.valid && Array.isArray(ev.commands)) {
+      this.replaceSkillsCatalog(applyValidCommands(this.skillsCatalog, ev.commands), "off");
+      return;
+    }
+    log("warn", "malformed available_commands ignored", { sessionId: this.sessionId });
+    const next = ignoreMalformed(this.skillsCatalog);
+    this.replaceSkillsCatalog(next, "off");
+  }
+
+  private async waitForSkillsCatalogAdvertisement(maxMs = 150): Promise<void> {
+    if (this.codeAgent?.identity !== "vendor") return;
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      const d = this.skillsCatalog.disposition;
+      if (d === "ready" || d === "obtain_failed") return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  private async disposeAgentClient(): Promise<void> {
+    this.pendingFallback = null;
+    this.pendingPromptOrigin = null;
+    this.spawnLive = false;
+    this.clearSkillsCatalogToAbsent();
+    if (!this.client) {
+      this.sessionId = null;
+      this.setBusy(false);
+      return;
+    }
+    const prev = this.client;
+    this.client = null;
+    this.sessionId = null;
+    try {
+      await prev.dispose();
+    } catch {
+      /* ignore */
+    }
+    this.setBusy(false);
+  }
+
+  private grokAcpEnv(mode: "chat" | "code", token: string | null): Record<string, string> {
+    return {
+      ...Object.fromEntries(Object.entries(this.executionEnvironment.effectiveEnvironment).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
+      XAI_API_KEY: token ?? "",
+      XAI_MODEL: this.cfg.model,
+      GROKFORGE_MODE: mode,
+      GROKFORGE_SHELL_ALLOWLIST: this.cfg.shellAllowlist === false ? "0" : "1",
+      GROKFORGE_DATA_DIR: dataDir(),
+    };
+  }
+
+  private vendorBaseEnv(): Record<string, string> {
+    const base: Record<string, string> = {
+      ...Object.fromEntries(Object.entries(this.executionEnvironment.effectiveEnvironment).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
+      XAI_MODEL: this.cfg.model,
+      GROKFORGE_MODE: "code",
+      GROKFORGE_SHELL_ALLOWLIST: this.cfg.shellAllowlist === false ? "0" : "1",
+      GROKFORGE_DATA_DIR: dataDir(),
+    };
+    if (process.env.GROKFORGE_VENDOR_FIXTURE) {
+      base.GROKFORGE_VENDOR_FIXTURE = process.env.GROKFORGE_VENDOR_FIXTURE;
+    }
+    return vendorSpawnEnv(base);
+  }
+
+  private attachCurrentClientHandlers(client: StdioAcpClient): void {
+    this.client = client;
+    this.spawnLive = false;
+    const toolNames = new Map<string, string>();
+    const gen = client;
+    let eventChain: Promise<void> = Promise.resolve();
+    client.onEvent((ev) => {
+      eventChain = eventChain.then(async () => {
         if (this.client !== gen) return;
+        if (ev.type === "available_commands") {
+          this.applyAvailableCommandsEvent(ev);
+          return;
+        }
+        if (ev.type === "child_agent") {
+          await this.applyLiveChildAgentEvent(ev);
+          return;
+        }
         if (ev.type === "project_instructions" && this.activeRunId) {
           const run = this.runCoordinator.get(this.activeRunId);
           if (run) {
@@ -1166,44 +1606,91 @@ export class AgentSession {
             name: ev.name,
             sessionId: this.sessionId,
           });
-          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ const activity=activityRecordFromToolRun(ev, run.policy); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined); if(envelope){ return;} } }
+          if (this.activeRunId) {
+            const run = this.runCoordinator.get(this.activeRunId);
+            if (run) {
+              const activity = activityRecordFromToolRun(ev, run.policy);
+              const envelope = await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "activity_update", activity }, "activity_update").catch(() => undefined);
+              if (envelope) {
+                await this.appendPostToolRunState(this.activeRunId, ev.lifecycle);
+                this.applyLiveBrowserWork(activity, envelope.eventSeq);
+                return;
+              }
+            }
+          }
         }
         if (ev.type === "tool_run" && ev.lifecycle === "terminal" && ev.execution === "executed") {
           const name = toolNames.get(ev.toolCallId) || "tool";
           const meta = summarizeToolOutput(ev.output);
           if (ev.status === "failed") {
-            log("warn", "tool failed", {
-              id: ev.toolCallId,
-              name,
-              sessionId: this.sessionId,
-              ...meta,
-            });
+            log("warn", "tool failed", { id: ev.toolCallId, name, sessionId: this.sessionId, ...meta });
           } else {
-            log("debug", "tool ok", {
-              id: ev.toolCallId,
-              name,
-              sessionId: this.sessionId,
-              ...meta,
-            });
+            log("debug", "tool ok", { id: ev.toolCallId, name, sessionId: this.sessionId, ...meta });
           }
         }
         if (ev.type === "permission_request") {
-          log("info", "permission requested", {
-            id: ev.id,
-            kind: ev.kind,
-            detail: ev.detail.slice(0, 200),
-          });
-          if (this.activeRunId) { const run=this.runCoordinator.get(this.activeRunId); if(run){ this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId:ev.id,kind:"permission",permissionKind:ev.kind,status:"pending",expiresAt:0}); const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId:ev.id,kind:"permission",status:"pending",title:ev.kind==="shell"?"Run shell":"Write file",detail:ev.detail,expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); if(envelope){ return;} } }
+          log("info", "permission requested", { id: ev.id, kind: ev.kind, detail: ev.detail.slice(0, 200) });
+          if (this.activeRunId) {
+            const run = this.runCoordinator.get(this.activeRunId);
+            if (run) {
+              const replyDialect = this.codeAgent?.identity === "vendor" ? "acp_result" as const : "grok_permission_respond" as const;
+              this.pendingDecisions.set(ev.id, {
+                sessionId: run.sessionId,
+                runId: run.runId,
+                generation: run.connectionGeneration,
+                invocationId: ev.id,
+                kind: "permission",
+                permissionKind: ev.kind,
+                status: "pending",
+                expiresAt: 0,
+                replyDialect,
+              });
+              const envelope = await this.runCoordinator.appendOwnedEvent(this.activeRunId, {
+                kind: "decision_request",
+                request: {
+                  requestId: ev.id,
+                  invocationId: ev.id,
+                  kind: "permission",
+                  status: "pending",
+                  title: ev.kind === "shell" ? "Run shell" : "Write file",
+                  detail: ev.detail,
+                  expiresAt: null,
+                  policy: run.policy,
+                },
+              }, "decision_request").catch(() => undefined);
+              if (envelope) return;
+            }
+          }
         }
         if (ev.type === "file_edit") {
-          if (ev.status !== "proposed") { return; }
+          if (ev.status !== "proposed") return;
           if (this.activeRunId) {
-            const run=this.runCoordinator.get(this.activeRunId);
-            if(run){
-              const editId=ev.editId??ev.id;
-              const invocationId=ev.invocationId??ev.toolCallId??editId;
-              this.pendingDecisions.set(ev.id,{sessionId:run.sessionId,runId:run.runId,generation:run.connectionGeneration,invocationId,kind:"diff",status:"pending",expiresAt:0});
-              const envelope=await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"decision_request",request:{requestId:ev.id,invocationId,kind:"diff",status:"pending",title:"Edit file",detail:ev.path,expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined);
+            const run = this.runCoordinator.get(this.activeRunId);
+            if (run) {
+              const editId = ev.editId ?? ev.id;
+              const invocationId = ev.invocationId ?? ev.toolCallId ?? editId;
+              this.pendingDecisions.set(ev.id, {
+                sessionId: run.sessionId,
+                runId: run.runId,
+                generation: run.connectionGeneration,
+                invocationId,
+                kind: "diff",
+                status: "pending",
+                expiresAt: 0,
+              });
+              const envelope = await this.runCoordinator.appendOwnedEvent(this.activeRunId, {
+                kind: "decision_request",
+                request: {
+                  requestId: ev.id,
+                  invocationId,
+                  kind: "diff",
+                  status: "pending",
+                  title: "Edit file",
+                  detail: ev.path,
+                  expiresAt: null,
+                  policy: run.policy,
+                },
+              }, "decision_request").catch(() => undefined);
               const kind = ev.kind ?? (ev.diff ? "content" : null);
               const canJournal =
                 Boolean(editId) &&
@@ -1211,7 +1698,7 @@ export class AgentSession {
                   (kind === "delete" && ev.path) ||
                   (kind === "rename" && ev.fromPath && ev.toPath));
               if (canJournal) {
-                const activity=activityRecordFromProposedEdit({
+                const activity = activityRecordFromProposedEdit({
                   editId,
                   invocationId,
                   path: kind === "rename" ? String(ev.fromPath) : ev.path!,
@@ -1220,26 +1707,18 @@ export class AgentSession {
                   fromPath: ev.fromPath ?? null,
                   toPath: ev.toPath ?? null,
                   name: kind === "delete" ? "delete_file" : kind === "rename" ? "rename_file" : "write_file",
-                  policy:run.policy,
+                  policy: run.policy,
                 });
-                await this.runCoordinator.appendOwnedEvent(this.activeRunId,{kind:"activity_update",activity},"activity_update").catch(()=>undefined);
+                await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "activity_update", activity }, "activity_update").catch(() => undefined);
               }
-              if(envelope){ return; }
+              if (envelope) return;
             }
           }
         }
         if (ev.type === "agent_log") {
-          log(ev.level === "warn" ? "warn" : "debug", "agent stderr", {
-            message: ev.message.slice(0, 500),
-          });
+          log(ev.level === "warn" ? "warn" : "debug", "agent stderr", { message: ev.message.slice(0, 500) });
           if (ev.level !== "warn") return;
         }
-        // AC8 model-id fallback chain (SPEC §5): a rejected model gets retried with the next
-        // candidate instead of dead-ending the turn. Only api_error 400/404 is eligible — auth,
-        // rate-limit and upstream errors would not be fixed by a different model id, and retrying
-        // them would just mask the real failure. Swallows this failed attempt's error AND its
-        // paired `done reason:"error"` (grok-acp always emits both) so the UI never sees the
-        // intermediate dead end.
         if (ev.type === "error") {
           const pf = this.pendingFallback;
           const canFallback =
@@ -1290,7 +1769,7 @@ export class AgentSession {
               this.setBusy(false);
               this.broadcastState();
             }
-            return; // do not forward — a retry is already in flight
+            return;
           }
           log("error", "agent error", {
             code: ev.code,
@@ -1301,39 +1780,94 @@ export class AgentSession {
           });
         }
         if (ev.type === "done" && this.pendingFallback?.suppressNextDone) {
-          // Tail of the failed attempt just superseded by a fallback retry — swallow it too.
           this.pendingFallback.suppressNextDone = false;
           return;
         }
         if (this.activeRunId && ev.type === "text_delta" && ev.text) {
-          await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "answer_delta", segmentId: `answer-${this.activeRunId}`, delta: ev.text }, "answer_delta").catch(() => undefined);
+          const envelope = await this.runCoordinator
+            .appendOwnedEvent(
+              this.activeRunId,
+              { kind: "message_delta", segmentId: `message-${this.activeRunId}`, delta: ev.text },
+              "message_delta",
+            )
+            .catch(() => undefined);
+          if (envelope) return;
         }
         if (this.activeRunId && ev.type === "thinking_delta" && ev.text) {
-          await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "reasoning_delta", segmentId: `reasoning-${this.activeRunId}`, delta: ev.text }, "reasoning_delta").catch(() => undefined);
+          const envelope = await this.runCoordinator
+            .appendOwnedEvent(
+              this.activeRunId,
+              { kind: "reasoning_delta", segmentId: `reasoning-${this.activeRunId}`, delta: ev.text },
+              "reasoning_delta",
+            )
+            .catch(() => undefined);
+          if (envelope) return;
         }
         if (this.activeRunId && ev.type === "run_phase" && ev.phase !== "done") {
           const liveness = ev.phase === "tools" ? "tool" : "provider";
-          const recovering = ev.phase === "waiting_model" || /recover/i.test(String(ev.detail ?? ""));
+          const recovering = /recover/i.test(String(ev.detail ?? ""));
           const envelope = await this.runCoordinator.appendOwnedEvent(this.activeRunId, { kind: "run_state", state: recovering ? "recovering" : "running", liveness }, "run_state").catch(() => undefined);
           if (envelope) return;
+        }
+        const preLiveExit =
+          !this.spawnLive &&
+          this.cfg.mode === "code" &&
+          ((ev.type === "error" && ev.code === "agent_exited") || (ev.type === "done" && ev.reason === "agent_exited"));
+        if (preLiveExit) {
+          if (this.client === gen) {
+            this.client = null;
+            this.sessionId = null;
+          }
+          return;
         }
         if (ev.type === "done" || ev.type === "error") {
           if (this.activeRunId) {
             const active = this.runCoordinator.get(this.activeRunId);
             await this.cancelPendingToolDecisions(this.activeRunId);
-            const terminal = active?.state === "cancelling" ? "cancelled" : (ev.type === "done" && ev.reason !== "error" ? "answered" : "failed");
-            const failureCode = ev.type === "error" ? ({missing_final_answer:"missing_final_answer",provider_liveness_timeout:"provider_liveness_exhausted",provider_liveness_exhausted:"provider_liveness_exhausted",auth_missing:"authentication_required",configuration_required:"configuration_required",execution_owner_lost:"execution_owner_lost"} as Record<string,any>)[ev.code] ?? "provider_unavailable" : null;
+            const exited =
+              (ev.type === "error" && ev.code === "agent_exited") ||
+              (ev.type === "done" && ev.reason === "agent_exited");
+            const terminal = active?.state === "cancelling"
+              ? "cancelled"
+              : (ev.type === "error" || ev.reason === "error" || exited ? "failed" : "answered");
+            const failureCode = exited
+              ? "agent_exited"
+              : ev.type === "error"
+                ? ({
+                    missing_final_answer: "missing_final_answer",
+                    provider_liveness_timeout: "provider_liveness_exhausted",
+                    provider_liveness_exhausted: "provider_liveness_exhausted",
+                    auth_missing: "authentication_required",
+                    configuration_required: "configuration_required",
+                    execution_owner_lost: "execution_owner_lost",
+                    agent_exited: "agent_exited",
+                  } as Record<string, "missing_final_answer" | "provider_liveness_exhausted" | "authentication_required" | "configuration_required" | "execution_owner_lost" | "agent_exited">)[ev.code] ?? "provider_unavailable"
+                : null;
             if (active?.executionPhase === "plan") {
               await this.settlePlanPhase(active, terminal, this.runCoordinator.getAccumulatedAnswer(this.activeRunId) || null);
             }
-            await this.runCoordinator.finalize(this.activeRunId, terminal, null,
-              ev.type === "error" ? { code: failureCode, message: ev.code === "missing_final_answer" ? "No final answer was produced." : "Provider execution failed.", retryable: true, recoveryAction: "retry_prompt" } : null);
+            await this.runCoordinator.finalize(
+              this.activeRunId,
+              terminal,
+              null,
+              terminal === "failed"
+                ? {
+                    code: failureCode ?? "provider_unavailable",
+                    message: exited
+                      ? "The agent process exited."
+                      : ev.code === "missing_final_answer"
+                        ? "No final answer was produced."
+                        : "Provider execution failed.",
+                    retryable: true,
+                    recoveryAction: "retry_prompt",
+                  }
+                : null,
+            );
             this.activeRunId = null;
           }
           if (ev.type === "done" && ev.reason === "stop" && this.pendingFallback) {
             const pf = this.pendingFallback;
             if (pf.attemptIdx > 0) {
-              // A fallback actually happened for this turn — publish the truth (AC8).
               this.emit({
                 type: "effort_applied",
                 selected: pf.selected,
@@ -1349,11 +1883,9 @@ export class AgentSession {
               this.client = null;
               this.sessionId = null;
             }
+            this.withholdSkillsCatalogOnDisconnect();
           }
-          // priorConversations (SPEC §2.8 / D1): a run reaching `done` — other than one that
-          // itself carries reason "error" — is a completed conversation, attributed to the
-          // Origin that started it. An `error` event or a `done reason:"error"` does not count.
-          if (ev.type === "done" && ev.reason !== "error" && this.pendingPromptOrigin) {
+          if (ev.type === "done" && ev.reason !== "error" && ev.reason !== "agent_exited" && this.pendingPromptOrigin) {
             recordCompletedConversation(this.pendingPromptOrigin);
           }
           this.pendingPromptOrigin = null;
@@ -1361,65 +1893,243 @@ export class AgentSession {
           this.broadcastState();
         }
         if (ev.type === "done") {
-          log("debug", "agent done", {
-            reason: ev.reason,
-            sessionId: this.sessionId,
-          });
+          log("debug", "agent done", { reason: ev.reason, sessionId: this.sessionId });
         }
         this.emit(ev);
-        }).catch((error) => {
-          log("error", "agent event handling failed", {
-            message: error instanceof Error ? error.message : String(error),
-            sessionId: this.sessionId,
-          });
+      }).catch((error) => {
+        log("error", "agent event handling failed", {
+          message: error instanceof Error ? error.message : String(error),
+          sessionId: this.sessionId,
         });
       });
+    });
+  }
 
-      try {
-        await client.initialize();
-        if (this.client !== gen) {
-          // Superseded by a newer restart
-          try {
-            await client.dispose();
-          } catch {
-            /* ignore */
-          }
-          return this.getState();
-        }
-        const sid = await client.newSession();
-        if (this.client !== gen) {
-          try {
-            await client.dispose();
-          } catch {
-            /* ignore */
-          }
-          return this.getState();
-        }
-        this.sessionId = sid;
-        this.connectionGeneration += 1;
-        log("info", "agent session ready", {
-          sessionId: this.sessionId,
-          workspace: this.workspace,
-          source,
-          mode,
-        });
-      } catch (e) {
-        if (this.client === gen) {
-          this.client = null;
-          this.sessionId = null;
-        }
-        log("error", "agent start failed", {
-          message: e instanceof Error ? e.message : String(e),
-        });
+  private async handshakeLive(client: StdioAcpClient, emitStartFailed: boolean): Promise<boolean> {
+    const gen = client;
+    try {
+      await client.initialize();
+      if (this.client !== gen) {
+        try { await client.dispose(); } catch { /* ignore */ }
+        return false;
+      }
+      const sid = await client.newSession();
+      if (this.client !== gen) {
+        try { await client.dispose(); } catch { /* ignore */ }
+        return false;
+      }
+      this.sessionId = sid;
+      this.connectionGeneration += 1;
+      this.spawnLive = true;
+      log("info", "agent session ready", {
+        sessionId: this.sessionId,
+        workspace: this.workspace,
+        mode: this.cfg.mode,
+      });
+      return true;
+    } catch (e) {
+      this.spawnLive = false;
+      if (this.client === gen) {
+        this.client = null;
+        this.sessionId = null;
+      }
+      try { await client.dispose(); } catch { /* ignore */ }
+      log("error", "agent start failed", {
+        message: e instanceof Error ? e.message : String(e),
+      });
+      if (emitStartFailed) {
         this.emit({
           type: "error",
           code: "agent_start_failed",
-          message:
-            e instanceof Error
-              ? e.message
-              : "Failed to start agent session",
+          message: e instanceof Error ? e.message : "Failed to start agent session",
         });
       }
+      return false;
+    }
+  }
+
+  private async stampLiveProvenance(ownedRunId: string | null, provenance: CodeRunAgentProvenance): Promise<void> {
+    if (!ownedRunId) return;
+    await this.runCoordinator.stampCodeAgentProvenance(ownedRunId, provenance);
+    const run = this.runCoordinator.get(ownedRunId);
+    if (run) run.codeAgentProvenance = provenance;
+  }
+
+  private async acquireCodeAgent(ownedRunId: string | null): Promise<void> {
+    if (!this.workspace) throw new Error("Open a workspace first");
+    if (
+      this.client &&
+      this.sessionId &&
+      this.spawnLive &&
+      this.codeAgent?.identity === "vendor"
+    ) {
+      await this.stampLiveProvenance(ownedRunId, { identity: "vendor", fallbackReason: null });
+      this.broadcastState();
+      return;
+    }
+    await this.disposeAgentClient();
+    const cli = this.probeVendorCli();
+    let fallbackReason: "cli_missing" | "spawn_failed" | null = cli ? null : "cli_missing";
+    if (cli) {
+      const spec = resolveVendorCodeSpawn({
+        command: cli,
+        cwd: this.workspace,
+        baseEnv: this.vendorBaseEnv(),
+      });
+      log("info", "starting agent", {
+        source: "vendor",
+        workspace: this.workspace,
+        mode: "code",
+        command: spec.command,
+        args: spec.args,
+      });
+      const client = new StdioAcpClient({
+        workspaceRoot: spec.cwd ?? this.workspace,
+        command: spec.command,
+        args: spec.args,
+        executionProfile: this.executionEnvironment.profile,
+        env: Object.freeze(spec.env ?? {}),
+        initializePermissionMode: "default",
+      });
+      this.attachCurrentClientHandlers(client);
+      this.replaceSkillsCatalog(enterAwaiting(this.skillsCatalog), "obtain");
+      const ok = await this.handshakeLive(client, false);
+      if (ok) {
+        this.codeAgent = stampCodeAgentFact({ kind: "vendor" });
+        if (this.skillsCatalog.disposition !== "ready") {
+          this.replaceSkillsCatalog(enterAwaiting(this.skillsCatalog), "obtain");
+        }
+        await this.stampLiveProvenance(ownedRunId, { identity: "vendor", fallbackReason: null });
+        this.syncChildAgentsEligibility();
+        this.syncBrowserWorkEligibility();
+        if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
+        if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
+        this.broadcastState();
+        return;
+      }
+      fallbackReason = "spawn_failed";
+    }
+    const grokOk = await this.startGrokAcpChild(false);
+    if (grokOk) {
+      const kind = fallbackReason === "spawn_failed" ? "spawn_failed" as const : "cli_missing" as const;
+      this.codeAgent = stampCodeAgentFact({ kind });
+      this.clearSkillsCatalogToAbsent();
+      this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+      this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      await this.stampLiveProvenance(ownedRunId, { identity: "fallback", fallbackReason: kind });
+      this.broadcastState();
+      return;
+    }
+    this.codeAgent = stampCodeAgentFact({ kind: "hard_fail" });
+    this.clearSkillsCatalogToAbsent();
+    this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+    this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+    this.broadcastState();
+    throw Object.assign(new Error("Couldn't start an agent for Code."), { code: "hard_fail" });
+  }
+
+  private async startGrokAcpChild(emitStartFailed: boolean): Promise<boolean> {
+    if (!this.workspace) return false;
+    const { token, source } = await resolveApiKeyAsync(this.cfg);
+    const { command, args } = this.agentEntry();
+    const mode = this.cfg.mode === "code" ? "code" : "chat";
+    log("info", "starting agent", { source, workspace: this.workspace, mode });
+    const client = new StdioAcpClient({
+      workspaceRoot: this.workspace,
+      command,
+      args,
+      executionProfile: this.executionEnvironment.profile,
+      env: Object.freeze(this.grokAcpEnv(mode, token)),
+    });
+    this.attachCurrentClientHandlers(client);
+    return this.handshakeLive(client, emitStartFailed);
+  }
+
+  private agentEntry(): { command: string; args: string[] } {
+    const root = process.env.GROKFORGE_ROOT || repoRoot;
+    const agentId = this.cfg.agentId || loadPolicy().agentId || "grok-acp";
+    const spec = resolveAgentSpawn(agentId, root);
+    return { command: spec.command, args: spec.args };
+  }
+
+  listAgents() {
+    return listAgents();
+  }
+
+  getAgentInfo() {
+    const id = this.cfg.agentId || loadPolicy().agentId || "grok-acp";
+    return getAgent(id);
+  }
+
+  setAgentId(agentId: string): PublicState {
+    const agent = getAgent(agentId);
+    if (agent.status !== "ready") {
+      throw new Error(
+        `${agent.name} is not available yet (${agent.status}). Grok remains the ready ACP backend.`,
+      );
+    }
+    this.cfg = loadConfig();
+    this.cfg.agentId = agent.id;
+    saveConfig(this.cfg);
+    audit("agent_select", { agentId: agent.id });
+    void this.restartAgent();
+    this.broadcastState();
+    return this.getState();
+  }
+
+  async ensureAgent(): Promise<void> {
+    if (this.client && this.sessionId) return;
+    if (this.cfg.mode === "code") {
+      await this.acquireCodeAgent(this.activeRunId);
+      return;
+    }
+    await this.restartAgent();
+  }
+
+  async restartAgent(): Promise<PublicState> {
+    // Chain concurrent restarts so setMode + prompt don't race dispose vs newSession
+    const run = async (): Promise<PublicState> => {
+      // A restart always clears any in-flight fallback retry — it belongs to the client about to
+      // be disposed, not the next one. Same for a stale prompt-origin attribution (D1): the
+      // in-flight run's completion events are about to be dropped by the disposed client, so no
+      // `done` will ever arrive to record it — clear it rather than leak it onto the next prompt.
+      this.pendingFallback = null;
+      this.pendingPromptOrigin = null;
+      this.clearSkillsCatalogToAbsent();
+      if (this.client) {
+        const prev = this.client;
+        this.client = null;
+        this.sessionId = null;
+        try {
+          await prev.dispose();
+        } catch {
+          /* ignore */
+        }
+      }
+      this.setBusy(false);
+      this.cfg = loadConfig();
+      const mode = this.cfg.mode === "code" ? "code" : "chat";
+      if (mode === "code") {
+        if (!this.workspace) {
+          this.broadcastState();
+          return this.getState();
+        }
+        this.eagerResolveCodeAgent();
+        this.broadcastState();
+        return this.getState();
+      }
+      if (mode === "chat") {
+        this.codeAgent = null;
+        this.clearSkillsCatalogToAbsent();
+        this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
+        this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+        this.workspace = ensureChatRoot(this.cfg.chatRoot);
+      } else if (!this.workspace) {
+        this.broadcastState();
+        return this.getState();
+      }
+
+      await this.startGrokAcpChild(true);
       this.broadcastState();
       return this.getState();
     };
@@ -1446,6 +2156,7 @@ export class AgentSession {
       clientSessionId?: string;
       /** Chat home this send belongs to — pack materialization is keyed by this id. */
       conversationId?: string;
+      skillHandoff?: { name: string } | null;
     },
   ): Promise<RunSnapshot> {
     await this.runHydration;
@@ -1462,15 +2173,31 @@ export class AgentSession {
     } else if (!this.workspace) {
       throw new Error("Open a workspace first");
     }
-    // D1 ordering (F-2): set the attribution AFTER ensureAgent()/restartAgent(), never before.
-    // A cold client's restartAgent() unconditionally nulls pendingPromptOrigin (it belongs to
-    // whatever run was in flight against the client being disposed) — set here, this line
-    // survives that reset instead of racing behind it, so the *first* prompt after every
-    // engine/agent start is still attributed to its Origin.
-    await this.ensureAgent();
+    // D1 ordering (F-2): set the attribution AFTER ensureAgent()/restartAgent()/acquire, never before.
+    if (mode === "chat") {
+      await this.ensureAgent();
+    } else {
+      await this.acquireCodeAgent(null);
+    }
     if (!this.stableClientSessionId) this.stableClientSessionId = this.sessionId;
     this.pendingPromptOrigin = opts?.originKey ?? null;
-    if (!this.client || !this.sessionId) throw new Error("Agent not connected");
+    if (!this.client || !this.sessionId) {
+      if (mode === "code" && this.codeAgent?.identity === "hard_fail") {
+        throw Object.assign(new Error("Couldn't start an agent for Code."), { code: "hard_fail" });
+      }
+      throw new Error("Agent not connected");
+    }
+
+    if (this.codeAgent?.identity === "vendor") {
+      await this.waitForSkillsCatalogAdvertisement();
+    }
+    const handoffDecision = decideSkillHandoff(opts?.skillHandoff, this.skillsCatalog, text);
+    if (handoffDecision.action === "refuse") {
+      throw Object.assign(new Error(handoffDecision.error), {
+        code: handoffDecision.code,
+        status: handoffDecision.status,
+      });
+    }
 
     const rawSelected = isEffort(effortOverride)
       ? effortOverride
@@ -1506,6 +2233,46 @@ export class AgentSession {
       executionPhase,
     });
     this.activeRunId = admitted.runId;
+    this.lastOwnedRunId = admitted.runId;
+    if (this.vendorChildAgentsEligible()) {
+      this.replaceChildAgents(enterHydrating(this.childAgents));
+      try {
+        const folded = await this.runCoordinator.replay(admitted.sessionId, admitted.runId, 0);
+        this.markChildAgentsReadyFromEvents(folded.events);
+      } catch (error) {
+        if (this.isJournalObtainFailure(error)) {
+          this.replaceChildAgents(markChildAgentsObtainFailed(this.childAgents));
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      this.syncChildAgentsEligibility();
+    }
+    if (this.vendorBrowserWorkEligible()) {
+      this.replaceBrowserWork(enterBrowserHydrating(this.browserWork));
+      try {
+        const foldedBrowser = await this.runCoordinator.replay(admitted.sessionId, admitted.runId, 0);
+        this.markBrowserWorkReadyFromEvents(foldedBrowser.events);
+      } catch (error) {
+        if (this.isJournalObtainFailure(error)) {
+          this.replaceBrowserWork(markBrowserObtainFailed(this.browserWork));
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      this.syncBrowserWorkEligibility();
+    }
+    if (mode === "code") {
+      const identity = this.codeAgent?.identity;
+      if (identity === "vendor" || identity === "fallback") {
+        await this.stampLiveProvenance(admitted.runId, {
+          identity,
+          fallbackReason: this.codeAgent?.fallbackReason ?? null,
+        });
+      }
+    }
     if (executionPhase === "plan") {
       await this.runCoordinator.appendOwnedEvent(admitted.runId, {
         kind: "plan_record",
@@ -1567,8 +2334,24 @@ export class AgentSession {
         sessionWrite: this.sessionWriteGrant,
         sessionShell: this.sessionShellGrant,
       });
+      if (mode === "code") {
+        if (handoffDecision.action === "accept") {
+          await this.runCoordinator.stampSkillHandoffProvenance(admitted.runId, {
+            kind: "consumed",
+            name: handoffDecision.name,
+          });
+        } else {
+          await this.runCoordinator.stampSkillHandoffProvenance(admitted.runId, {
+            kind: "none",
+            name: null,
+          });
+        }
+      }
     } catch (e) {
       this.pendingFallback = null;
+      if (mode === "code" && this.activeRunId) {
+        await this.runCoordinator.stampSkillHandoffProvenance(this.activeRunId, { kind: "none", name: null }).catch(() => undefined);
+      }
       if (this.activeRunId) { await this.runCoordinator.finalize(this.activeRunId, "failed", null, { code: "provider_unavailable", message: "Prompt failed.", retryable: true, recoveryAction: "retry_prompt" }); this.activeRunId = null; }
       this.setBusy(false);
       this.broadcastState();
@@ -1583,12 +2366,23 @@ export class AgentSession {
     }
     return admitted;
   }
-  async shutdown(): Promise<void> { const c=this.client; this.client=null; this.sessionId=null; if(c) await c.dispose().catch(()=>undefined); }
+  async shutdown(): Promise<void> {
+    this.clearSkillsObtainTimer();
+    const c=this.client;
+    this.client=null;
+    this.sessionId=null;
+    this.spawnLive = false;
+    if(c) await c.dispose().catch(()=>undefined);
+  }
   /** Release the ACP process once a run is terminal; journal/replay state remains owned here. */
   private async reclaimTerminalContext(gen: StdioAcpClient): Promise<void> {
     if (this.client !== gen || this.activeRunId || this.busy) return;
+    if (this.codeAgent?.identity === "vendor" && this.spawnLive) {
+      return;
+    }
     this.client = null;
     this.sessionId = null;
+    this.spawnLive = false;
     await gen.dispose().catch(() => undefined);
   }
 
@@ -1710,7 +2504,26 @@ export class AgentSession {
   getActiveRunId(): string | null { return this.activeRunId; }
   async replayRun(runId: string, clientSessionId: string, after = 0) {
     await this.runHydration;
-    return this.runCoordinator.replay(clientSessionId, runId, after);
+    try {
+      const result = await this.runCoordinator.replay(clientSessionId, runId, after);
+      if (this.vendorChildAgentsEligible()) {
+        this.markChildAgentsReadyFromEvents(result.events);
+      }
+      if (this.vendorBrowserWorkEligible()) {
+        this.markBrowserWorkReadyFromEvents(result.events);
+      }
+      return result;
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        if (this.vendorChildAgentsEligible()) {
+          this.replaceChildAgents(markChildAgentsObtainFailed(this.childAgents));
+        }
+        if (this.vendorBrowserWorkEligible()) {
+          this.replaceBrowserWork(markBrowserObtainFailed(this.browserWork));
+        }
+      }
+      throw error;
+    }
   }
   async cancelRun(runId: string, clientSessionId: string): Promise<RunSnapshot> {
     const run = this.getRun(runId, clientSessionId);
@@ -1878,6 +2691,31 @@ export class AgentSession {
         policy: run.policy,
       },
     }, "decision_request").catch(() => undefined);
+  }
+
+  private async appendPostToolRunState(runId: string, lifecycle: "pending" | "terminal"): Promise<void> {
+    const run = this.runCoordinator.get(runId);
+    if (!run || run.state === "terminal" || run.state === "cancelling") return;
+    const journal = async (state: Exclude<RunState, "terminal">, liveness: "provider" | "tool" | "decision") => {
+      await this.runCoordinator.appendOwnedEvent(runId, { kind: "run_state", state, liveness }, "run_state").catch(() => undefined);
+    };
+    if (lifecycle === "pending") {
+      await journal("running", "tool");
+      return;
+    }
+    let pendingDecision = false;
+    for (const d of this.pendingDecisions.values()) {
+      if (d.runId === run.runId && d.status === "pending") { pendingDecision = true; break; }
+    }
+    if (pendingDecision) {
+      const current = this.runCoordinator.get(runId);
+      if (current && current.state !== "running" && current.state !== "waiting_for_decision") {
+        await journal("running", "decision");
+      }
+      await journal("waiting_for_decision", "decision");
+      return;
+    }
+    await journal("running", "provider");
   }
 
   private async cancelPendingToolDecisions(runId: string): Promise<void> {

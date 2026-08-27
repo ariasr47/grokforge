@@ -10,8 +10,9 @@ import {
 import { parseRichDocument, parseRichDocumentProgressive } from "./richUi";
 import { parseMarkdownBlocks } from "./markdownParse";
 import { RichBlocks } from "./RichBlocks";
-import { shouldHighlight, tokenizeLine } from "./codeHighlight";
+import { classifyFence, tokenizeLine } from "./codeHighlight";
 import { highlightToHtml } from "./codeHighlightAsync";
+import { loadPrefs } from "./prefs";
 import { Button } from "./ui/Button";
 import { writeClipboard } from "./copyClipboard";
 
@@ -74,7 +75,7 @@ function inlineToNodes(text: string, keyPrefix: string): ReactNode[] {
   return nodes.length ? nodes : [text];
 }
 
-const CodeBlock = memo(function CodeBlock({
+export const CodeBlock = memo(function CodeBlock({
   code,
   lang,
 }: {
@@ -83,13 +84,32 @@ const CodeBlock = memo(function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const [richHtml, setRichHtml] = useState<string | null>(null);
+  const [appearanceKey, setAppearanceKey] = useState(() => loadPrefs().theme);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const genRef = useRef(0);
+  const gate = useMemo(() => classifyFence(code, lang), [code, lang]);
+  const label = gate.token || "code";
+
   useEffect(
     () => () => {
       if (copyTimer.current) clearTimeout(copyTimer.current);
     },
     [],
   );
+
+  // Recolor without restart: applyPrefsToDom writes html[data-theme]; memoized
+  // CodeBlock would otherwise keep a stale loadPrefs() snapshot (AC3/AC5).
+  useEffect(() => {
+    const sync = () => {
+      const next = loadPrefs().theme;
+      setAppearanceKey((prev) => (prev === next ? prev : next));
+    };
+    const root = document.documentElement;
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+
   const onCopy = useCallback(() => {
     void writeClipboard(code).then(() => {
       setCopied(true);
@@ -98,54 +118,71 @@ const CodeBlock = memo(function CodeBlock({
     });
   }, [code]);
 
-  const lines = useMemo(() => code.replace(/\r\n/g, "\n").split("\n"), [code]);
-  const highlight = shouldHighlight(lang) && lines.length <= 400;
-
   useEffect(() => {
-    let cancelled = false;
-    setRichHtml(null);
-    if (!highlight) return;
-    void highlightToHtml(code, lang).then((html) => {
-      if (!cancelled && html) setRichHtml(html);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [code, lang, highlight]);
+    const gen = ++genRef.current;
+    if (!gate.gatePassed) {
+      // AC12 / exclusions: immediate plain — drop any last-rich hold.
+      setRichHtml(null);
+      return;
+    }
+    // Gate-passed: hold prior richHtml while pending (warm-flip / streaming).
+    void highlightToHtml(code, lang, appearanceKey).then(
+      (html) => {
+        if (gen !== genRef.current) return;
+        // Success → swap; null/throw path → tokenizer degrade (clear rich).
+        setRichHtml(html);
+      },
+      () => {
+        if (gen !== genRef.current) return;
+        setRichHtml(null);
+      },
+    );
+    // Cleanup does not clear richHtml (streaming hold + pending warm hold).
+  }, [code, lang, appearanceKey, gate.gatePassed, gate.class, gate.resolvedLang]);
+
+  const lines = useMemo(
+    () => code.replace(/\r\n/g, "\n").split("\n"),
+    [code],
+  );
+  // Gate exclusions (incl. oversize crossing) drop last-rich immediately (AC12).
+  const bodyHtml = gate.gatePassed ? richHtml : null;
 
   return (
     <div className="md-code-wrap">
       <div className="md-code-bar">
-        <span className="md-code-lang">{lang || "code"}</span>
-        <span className="md-code-meta">{lines.length} lines</span>
+        <span className="md-code-lang">{label}</span>
+        <span className="md-code-meta">{gate.lineCount} lines</span>
         <Button variant="ghost" className="md-copy-btn" onClick={onCopy}>
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      {richHtml ? (
-        <div className="md-code md-code-hl" dangerouslySetInnerHTML={{ __html: richHtml }} />
+      {bodyHtml ? (
+        <div
+          className="md-code md-code-hl"
+          dangerouslySetInnerHTML={{ __html: bodyHtml }}
+        />
       ) : (
-      <pre className="md-code md-code-hl">
-        <code>
-          {lines.map((line, li) => (
-            <span key={li} className="md-code-line">
-              <span className="md-code-ln" aria-hidden>
-                {li + 1}
+        <pre className="md-code md-code-hl">
+          <code>
+            {lines.map((line, li) => (
+              <span key={li} className="md-code-line">
+                <span className="md-code-ln" aria-hidden>
+                  {li + 1}
+                </span>
+                <span className="md-code-tx">
+                  {gate.gatePassed
+                    ? tokenizeLine(line).map((tok, ti) => (
+                        <span key={ti} className={`tok-${tok.c}`}>
+                          {tok.t}
+                        </span>
+                      ))
+                    : line || " "}
+                </span>
+                {"\n"}
               </span>
-              <span className="md-code-tx">
-                {highlight
-                  ? tokenizeLine(line).map((tok, ti) => (
-                      <span key={ti} className={`tok-${tok.c}`}>
-                        {tok.t}
-                      </span>
-                    ))
-                  : line || " "}
-              </span>
-              {"\n"}
-            </span>
-          ))}
-        </code>
-      </pre>
+            ))}
+          </code>
+        </pre>
       )}
     </div>
   );

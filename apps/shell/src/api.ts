@@ -195,6 +195,92 @@ export type ProjectInstructionsPresenceView = {
   vouched: boolean;
 };
 
+/**
+ * Host-vouched Code-agent identity on GET /api/state / WS state.
+ * Always present on a current host (`null` in Chat). Optional so older hosts
+ * can omit it — composer treats missing as checking, never PATH-guesses vendor.
+ */
+export type CodeAgentFact = {
+  resolveStatus: "resolving" | "ready" | "hard_fail";
+  identity: "vendor" | "fallback" | "hard_fail" | null;
+  fallbackReason: "cli_missing" | "spawn_failed" | null;
+};
+
+/** Host-vouched slash/skills catalog on GET /api/state / WS state. */
+export type SkillsCatalogCommand = {
+  name: string;
+  description: string | null;
+};
+
+/** Closed child-work status — never unconfirmed / stuck. */
+export type ChildAgentStatus = "running" | "done" | "failed";
+
+export type ChildAgentMember = {
+  childId: string;
+  identityLabel: string;
+  status: ChildAgentStatus;
+  firstEventSeq: number;
+};
+
+/**
+ * Host-visible membership eligibility/hydration for Child agents chrome.
+ * Always present on a current host. Optional so older hosts can omit it.
+ * Missing → treat as unvouched absent chrome; never invent members.
+ */
+export type ChildAgentsMembershipFact = {
+  disposition:
+    | "absent_non_code_or_non_vendor"
+    | "hydrating"
+    | "ready"
+    | "obtain_failed";
+  members: ChildAgentMember[] | null;
+};
+
+/** Closed Browser chip statuses — never unconfirmed / stuck. */
+export type BrowserWorkChipStatus = "running" | "done" | "failed";
+
+export type BrowserWorkMember = {
+  toolCallId: string;
+  /** Class voucher — must be literal "fetch" for Browser rows. */
+  acpToolKind: "fetch";
+  url: string | null;
+  title: string | null;
+  status: BrowserWorkChipStatus | null;
+  snapshotJournaled: boolean;
+  restore: "restored" | "unrestorable";
+  firstEventSeq: number;
+};
+
+/**
+ * Host-visible membership eligibility/hydration for Browser chrome.
+ * Always present on a current host. Optional so older hosts can omit it.
+ * Missing → treat as unvouched absent chrome; never invent members.
+ * Disposition token includes `for_` (differs from childAgents).
+ */
+export type BrowserWorkMembershipFact = {
+  disposition:
+    | "absent_for_non_code_or_non_vendor"
+    | "hydrating"
+    | "ready"
+    | "obtain_failed";
+  members: BrowserWorkMember[] | null;
+};
+
+export type SkillsCatalogFact = {
+  disposition:
+    | "absent_non_vendor"
+    | "awaiting_first_valid"
+    | "ready"
+    | "obtain_failed";
+  commands: SkillsCatalogCommand[] | null;
+};
+
+/** Run-scoped handoff stamp. Never invent `consumed` client-side. */
+export type SkillHandoffProvenance = {
+  kind: "consumed" | "none";
+  name: string | null;
+};
+
 /** Pre-send / hydrate Chat pack view. Bound as PublicState.chatPack — always present on a current host. */
 export type ChatPackLastAttempt = "ok" | "pin_failed" | "note_failed" | "hydrate_failed";
 
@@ -301,6 +387,29 @@ export interface PublicState {
    * Missing field → composer treats as checking — never invents members.
    */
   chatPack?: ChatPackView;
+  /**
+   * Always present on a current host (`null` in Chat). Optional so older hosts
+   * can omit it. Missing → Code composer checking; never invent vendor from
+   * `agentName` / PATH.
+   */
+  codeAgent?: CodeAgentFact | null;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing → no Skills palette; never invent catalog rows.
+   */
+  skillsCatalog?: SkillsCatalogFact;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing → treat as unvouched absent chrome; never invent members.
+   * Eligibility keys off `codeAgent`, not `connected` alone.
+   */
+  childAgents?: ChildAgentsMembershipFact;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing → treat as unvouched absent; never invent browses.
+   * Shell Browser reads browserWork.members only.
+   */
+  browserWork?: BrowserWorkMembershipFact;
 }
 
 export type ShellCapabilityView =
@@ -463,6 +572,7 @@ export type ToolRunEvent = {
   name: string | null;
   input: unknown | null;
   summary: string | null;
+  title?: string | null;
   command: string | null;
   output: string | null;
   error: string | null;
@@ -552,7 +662,14 @@ export const api = {
     }>("/api/health"),
   state: () => json<PublicState>("/api/state"),
   runState: (runId: string, sessionId: string, after = 0) => json<{ run: import("./runReducer").RunSnapshot; events: import("./runReducer").RunEventEnvelope[] }>(`/api/runs/${encodeURIComponent(runId)}?sessionId=${encodeURIComponent(sessionId)}&after=${after}`),
-  promptRun: (body: { sessionId: string; conversationId: string; text: string; effort?: EffortLevel; history?: Array<{ role: "user" | "assistant" | "system"; content: string }> }) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/prompt", { method: "POST", body: JSON.stringify(body) }),
+  promptRun: (body: {
+    sessionId: string;
+    conversationId: string;
+    text: string;
+    effort?: EffortLevel;
+    history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+    skillHandoff?: { name: string } | null;
+  }) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/prompt", { method: "POST", body: JSON.stringify(body) }),
   chatPack: (body: ChatPackMutation) =>
     json<PublicState>("/api/chat-pack", { method: "POST", body: JSON.stringify(body) }),
   cancelRun: (sessionId: string, runId: string) => json<{ accepted: boolean; run: import("./runReducer").RunSnapshot }>("/api/cancel", { method: "POST", body: JSON.stringify({ sessionId, runId }) }),

@@ -133,6 +133,9 @@
   font-weight: 500;
   text-transform: lowercase;
 }
+.tool-row-name-plain {
+  text-transform: none;
+}
 .tool-row-summary {
   color: var(--muted);
   overflow: hidden;

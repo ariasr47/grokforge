@@ -3,6 +3,8 @@
 export interface ToolMeta {
   ok?: boolean;
   name?: string;
+  /** Optional child/event title when present. */
+  title?: string | null;
   /** One-line human summary (path, command, …). */
   summary?: string;
   /** Whether result has arrived. */

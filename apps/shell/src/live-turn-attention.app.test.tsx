@@ -367,36 +367,33 @@ describe("live-turn-attention App wiring", () => {
     fireEvent.change(composer, { target: { value: "watch the burst" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
-    const toolRun = (i: number) => ({
-      type: "tool_run",
-      schemaVersion: 2,
+    const burstActivity = (i: number): ActivityRecord => ({
       activityId: `burst-${i}`,
-      toolCallId: `burst-${i}`,
+      invocationId: `burst-${i}`,
+      name: "read_file",
       lifecycle: "terminal",
       execution: "executed",
       status: "succeeded",
-      name: "read_file",
       input: { path: `f${i}.txt` },
       output: `out-${i}`,
       error: null,
-      reasonCode: null,
-      reason: null,
-      command: null,
-      summary: `f${i}.txt`,
-      detailAvailable: true,
+      diff: null,
+      path: `f${i}.txt`,
+      policy: {},
       automaticEligibility: "read",
       autoApplied: false,
+      command: null,
       editId: null,
-      diff: null,
       recovery: null,
-      shellDisplayName: null,
+      summary: `f${i}.txt`,
+      title: null,
     });
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot({ state: "running" }) }, 1) as unknown as Record<string, unknown>);
-    ws.emit(toolRun(1));
+    ws.emit(envelope({ kind: "activity_update", activity: burstActivity(1) }, 2) as unknown as Record<string, unknown>);
     const head = await screen.findByRole("button", { name: /tool activity/i });
     fireEvent.click(head);
     assert.equal(head.getAttribute("aria-expanded"), "false");
-    ws.emit(toolRun(2));
+    ws.emit(envelope({ kind: "activity_update", activity: burstActivity(2) }, 3) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 4) as unknown as Record<string, unknown>);
     await screen.findByRole("region", { name: "Allow running a command?" });
     assert.equal(head.getAttribute("aria-expanded"), "false");

@@ -45,6 +45,17 @@ export type AcpUiEvent =
       inclusion: "included" | "not_included" | "failed";
       path: string | null;
       bodyByteLength: number | null;
+    }
+  | {
+      type: "available_commands";
+      commands: Array<{ name: string; description: string | null }> | null;
+      valid: boolean;
+    }
+  | {
+      type: "child_agent";
+      childId: string;
+      identityLabel: string;
+      status: "running" | "done" | "failed";
     };
 
 export type AuthMode = "signed_out" | "api_key" | "sub_pool";
@@ -67,6 +78,8 @@ export interface AgentSpawnConfig {
   args: string[];
   env: Readonly<Record<string, string>>;
   executionProfile: HostExecutionProfile;
+  /** Vendor Code initialize — exact string "default". Omit for grok-acp. */
+  initializePermissionMode?: "default";
 }
 
 export type ToolReasonCode = "shell_resolution_failed" | "unsupported_platform" | "shell_dialect_incompatible" | "leading_command_unresolved" | "protected_recursive_delete" | "outside_workspace" | "authorization_refused" | "plan_phase_refused" | "missing_target" | "non_regular_file" | "non_regular_text" | "dest_exists";
@@ -84,6 +97,14 @@ export type ToolRunEvent = {
   fromPath?: string | null;
   toPath?: string | null;
   recovery?: null | { kind: "guarded_revert"; available: boolean; status: "available" | "pending" | "reverted" | "conflict" | "failed" };
+  /** Preserved public ACP ToolKind. Elevation requires literal "fetch". */
+  acpToolKind?: string | null;
+  /** Vouched URL from named vendor keys — never invent. */
+  url?: string | null;
+  /** Vouched title from the vendor `title` key — never invent. */
+  title?: string | null;
+  /** Caption-only snapshot signal (v1). No media bytes. */
+  snapshotJournaled?: boolean;
 };
 export function isValidToolRunEvent(value: unknown): value is ToolRunEvent {
   if (!value || typeof value !== "object") return false;

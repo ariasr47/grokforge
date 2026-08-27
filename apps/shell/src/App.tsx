@@ -35,7 +35,6 @@ import { PlanArmControl } from "./PlanArmControl";
 import {
   PLAN_ARM_BLOCKED_UNVOUCHED,
   PLAN_LIVE_FOOTER,
-  PLAN_LIVE_STATUS,
   planArmFailureCopy,
   projectPlanArm,
 } from "./planArm";
@@ -43,6 +42,23 @@ import { projectProjectInstructionsComposer } from "./projectInstructionsCompose
 import { ProjectInstructionsStatus } from "./ProjectInstructionsStatus";
 import { projectChatPackComposer } from "./chatPackComposer";
 import { ChatPackStatus } from "./ChatPackStatus";
+import { CODE_AGENT_HARD_FAIL, projectCodeAgentComposer } from "./codeAgentComposer";
+import { CodeAgentStatus } from "./CodeAgentStatus";
+import { projectCodeRunProvenance } from "./codeRunProvenance";
+import { CodeRunProvenanceChip } from "./CodeRunProvenanceChip";
+import {
+  composeArmedPromptText,
+  filterSkillCommands,
+  mayOpenSkillsPalette,
+  projectSkillsPalette,
+  shouldClearArmedInvocation,
+  slashTokenFilter,
+  stripLeadingSlashToken,
+  SKILLS_UNAVAILABLE,
+} from "./skillsCatalogComposer";
+import { SkillsPalette } from "./SkillsPalette";
+import { SkillArmedChip } from "./SkillArmedChip";
+import { SkillHandoffProvenanceChip } from "./SkillHandoffProvenanceChip";
 import { ChatPackInventory } from "./ChatPackInventory";
 import { ChatHomeName } from "./ChatHomeName";
 import { isLivePlanning } from "./runPlanSection";
@@ -148,7 +164,8 @@ import {
   transcriptToMarkdown,
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
-import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type ActivityRecord, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import { deriveLivePhase, deriveLivePhaseFromRun, phaseCopy } from "./derivedLivePhase";
 import {
   hasDockOwnedPending,
   mergePendingDiffs,
@@ -308,6 +325,9 @@ export function App() {
   const setSessionShell = useSessionFlagsStore((s) => s.setSessionShell);
   const [fileIndex, setFileIndex] = useState<string[]>([]);
   const [atSuggestions, setAtSuggestions] = useState<string[]>([]);
+  const [armedSkillName, setArmedSkillName] = useState<string | null>(null);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillsActiveIndex, setSkillsActiveIndex] = useState(0);
   const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
   const [histIdx, setHistIdx] = useState(-1);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -790,11 +810,12 @@ export function App() {
   const applyRailEvidenceRef = useRef(applyRailEvidence);
   applyRailEvidenceRef.current = applyRailEvidence;
 
-  const paintEnvelopeActivity = useCallback((activity: import("./runReducer").ActivityRecord) => {
+  const paintEnvelopeActivity = useCallback((activity: ActivityRecord, runId?: string | null) => {
     const identity = `tool:${activity.activityId}:${activity.invocationId}`;
     const stamp = stampActivity(identity);
     if (!stamp) return;
     const body = activity.output != null ? formatToolOutput(activity.output) : "";
+    const projectedRunId = runId ?? normalizedRunIdRef.current ?? undefined;
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.role === "tool" && m.activityIdentity === identity);
       const entry: ChatMessage = {
@@ -804,11 +825,13 @@ export function App() {
         activityIdentity: stamp.activityIdentity,
         activityRunKey: stamp.activityRunKey,
         activityOrder: stamp.activityOrder,
+        projectedRunId,
         toolMeta: {
           activityId: activity.activityId,
           toolCallId: activity.invocationId,
           name: activity.name,
-          summary: activity.command ?? activity.path ?? undefined,
+          title: activity.title ?? null,
+          summary: activity.summary ?? activity.command ?? activity.path ?? undefined,
           ok: activity.execution === "executed" ? activity.status === "succeeded" : undefined,
           done: activity.lifecycle === "terminal",
           lifecycle: activity.lifecycle,
@@ -874,7 +897,7 @@ export function App() {
         setPermissions((prev) => mergePendingPermissions(prev, nextRun));
         applyRailEvidenceRef.current(nextRun);
         if (runEvent.payload.kind === "activity_update") {
-          paintEnvelopeActivityRef.current(runEvent.payload.activity);
+          paintEnvelopeActivityRef.current(runEvent.payload.activity, runEvent.runId);
         }
       }
       if (runEvent.payload.kind === "run_terminal") {
@@ -899,7 +922,15 @@ export function App() {
     if (ev.type === "state") {
       applyState(ev.state);
       setModelDraft(ev.state.model);
-      if (!ev.state.connected) markDisconnectedActivity();
+      const merged = mergeState(stateRef.current, ev.state);
+      const codeAgent = merged.codeAgent ?? null;
+      const codePreAcquireOk =
+        merged.mode === "code" &&
+        codeAgent != null &&
+        codeAgent.resolveStatus !== "hard_fail";
+      // Pre-acquire Code `connected: false` is expected (no child yet) — not
+      // transport/ownership loss. Do not freeze activity as disconnected.
+      if (!merged.connected && !codePreAcquireOk) markDisconnectedActivity();
       if (typeof ev.state.shellAllowlist === "boolean") {
         setShellAllowlist(ev.state.shellAllowlist);
       }
@@ -930,6 +961,8 @@ export function App() {
     // Transcript-bound events: ignore after session/mode switch
     const epochOk = streamEpochRef.current === eventEpochRef.current;
     if (ev.type === "run_phase") {
+      // Owned-run journal is live thought/tools/answer/phase authority.
+      if (normalizedRunIdRef.current) return;
       // Always update chrome for active busy runs even if epoch drifted
       if (epochOk || busyRef.current) {
         setRunPhase(ev.phase === "done" ? null : ev.phase);
@@ -941,6 +974,7 @@ export function App() {
       return;
     }
     if (ev.type === "thinking_delta") {
+      if (normalizedRunIdRef.current) return;
       if (!epochOk) return;
       setRunPhase((p) => p || "reasoning");
       setMessages((prev) => {
@@ -1007,6 +1041,7 @@ export function App() {
       return;
     }
     if (ev.type === "text_delta") {
+      if (normalizedRunIdRef.current) return;
       if (!epochOk) {
         // Recovery: if we are still busy, re-bind epoch so answer is not lost
         if (busyRef.current) {
@@ -1023,6 +1058,7 @@ export function App() {
       return;
     }
     if (ev.type === "tool_run") {
+      if (normalizedRunIdRef.current) return;
       if (!epochOk) return;
       streamBufRef.current?.flush();
       const toolEvent = ev;
@@ -1518,7 +1554,7 @@ export function App() {
       commitRunProjection(next);
       if (nextRun) {
         for (const activity of Object.values(nextRun.activities)) {
-          paintEnvelopeActivityRef.current(activity);
+          paintEnvelopeActivityRef.current(activity, nextRun.runId);
         }
         setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
         setPermissions((prev) => mergePendingPermissions(prev, nextRun));
@@ -1566,7 +1602,7 @@ export function App() {
         const nextRun = next.runsById[run.runId];
         if (nextRun) {
           for (const activity of Object.values(nextRun.activities)) {
-            paintEnvelopeActivityRef.current(activity);
+            paintEnvelopeActivityRef.current(activity, nextRun.runId);
           }
           setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
           setPermissions((prev) => mergePendingPermissions(prev, nextRun));
@@ -1701,11 +1737,23 @@ export function App() {
   const projectedRunIds = useMemo(() => new Set(
     runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId),
   ), [runProjection, sessionId]);
+  const journalActivityIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of projectedRunIds) {
+      const run = runProjection.runsById[id];
+      if (!run) continue;
+      for (const activity of Object.values(run.activities)) ids.add(activity.activityId);
+    }
+    return ids;
+  }, [projectedRunIds, runProjection]);
   const visibleMessages = useMemo(
-    () => messages.filter((message) =>
-      !message.projectedRunId || !projectedRunIds.has(message.projectedRunId),
-    ),
-    [messages, projectedRunIds],
+    () => messages.filter((message) => {
+      if (message.projectedRunId && projectedRunIds.has(message.projectedRunId)) return false;
+      const activityId = message.toolMeta?.activityId;
+      if (message.role === "tool" && activityId && journalActivityIds.has(activityId)) return false;
+      return true;
+    }),
+    [messages, projectedRunIds, journalActivityIds],
   );
   const normalizedRunVisible = projectedRunIds.size > 0;
   // Run ownership is local to the active client session. The host's legacy
@@ -1715,7 +1763,40 @@ export function App() {
   busyRef.current = busy;
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
-  const livePlanning = Boolean(activeRun && isLivePlanning(activeRun));
+  const livePhase = useMemo(() => {
+    if (activeRun) return deriveLivePhaseFromRun(activeRun);
+    if (runStartedAt) {
+      return deriveLivePhase({
+        terminal: false,
+        ownedBusy: true,
+        liveness: "provider",
+        planOwned: false,
+        pendingTool: null,
+        lastContentKind: null,
+        decisionPending: false,
+      });
+    }
+    return deriveLivePhase({
+      terminal: true,
+      ownedBusy: false,
+      liveness: null,
+      planOwned: false,
+      pendingTool: null,
+      lastContentKind: null,
+      decisionPending: false,
+    });
+  }, [activeRun, runStartedAt]);
+  const liveCopy = useMemo(() => {
+    const copy = phaseCopy(livePhase);
+    if (activeRun?.state === "recovering" && livePhase.kind !== "tool" && livePhase.kind !== "decision") {
+      return { status: "Recovering run…", footer: "Recovering run…" };
+    }
+    if (activeRun?.state === "cancelling" && livePhase.kind !== "tool" && livePhase.kind !== "decision") {
+      return { status: "Ending run…", footer: "Ending run…" };
+    }
+    return copy;
+  }, [livePhase, activeRun?.state]);
+  const livePlanning = livePhase.kind === "plan";
   const pendingPlanDecision = useMemo(() => {
     for (const id of runProjection.runOrder) {
       const run = runProjection.runsById[id];
@@ -1746,6 +1827,58 @@ export function App() {
     connected,
     projectInstructions: state?.projectInstructions,
   });
+  const codeAgent = state?.codeAgent ?? null;
+  const vendorCode = productMode === "code" && codeAgent?.identity === "vendor";
+  const codeHardFail =
+    productMode === "code" &&
+    (codeAgent?.identity === "hard_fail" || codeAgent?.resolveStatus === "hard_fail");
+  const codePreAcquireOk =
+    productMode === "code" &&
+    codeAgent != null &&
+    codeAgent.resolveStatus !== "hard_fail";
+  const codeAgentComposer = projectCodeAgentComposer({
+    mode: productMode,
+    codeAgent,
+    transportOk: hostOk && wsOk,
+  });
+  const skillsPalette = useMemo(
+    () =>
+      projectSkillsPalette({
+        mode: productMode,
+        codeAgent,
+        skillsCatalog: state?.skillsCatalog,
+      }),
+    [productMode, codeAgent, state?.skillsCatalog],
+  );
+  const skillsFilter = slashTokenFilter(
+    draft,
+    composerRef.current?.selectionStart ?? draft.length,
+  );
+  const skillsRows =
+    skillsPalette.state === "ready"
+      ? filterSkillCommands(skillsPalette.commands, skillsFilter)
+      : [];
+  const skillsIndex =
+    skillsRows.length === 0
+      ? 0
+      : Math.min(skillsActiveIndex, skillsRows.length - 1);
+  const effectiveArmedName = shouldClearArmedInvocation(skillsPalette)
+    ? null
+    : armedSkillName;
+  useEffect(() => {
+    const caret = composerRef.current?.selectionStart ?? draft.length;
+    setSkillsOpen(mayOpenSkillsPalette(skillsPalette, draft, caret));
+  }, [skillsPalette, draft]);
+  useEffect(() => {
+    if (shouldClearArmedInvocation(skillsPalette)) setArmedSkillName(null);
+  }, [skillsPalette]);
+  useEffect(() => {
+    setArmedSkillName(null);
+    setSkillsOpen(false);
+  }, [sessionId]);
+  useEffect(() => {
+    setSkillsActiveIndex(0);
+  }, [draft, skillsPalette]);
   const effortLevel: EffortLevel =
     state?.effort === "fast" ||
     state?.effort === "expert" ||
@@ -1997,10 +2130,11 @@ export function App() {
     visibleMessages.length > 0;
 
   const sendDisabledReason = useMemo(() => {
-    if (!connected) return "Engine offline — try again to send";
+    if (!connected && !codePreAcquireOk) return "Engine offline — try again to send";
+    if (codeHardFail) return CODE_AGENT_HARD_FAIL;
     if (productMode === "code" && !state?.workspace)
       return "Open a project folder first";
-    if (!state?.hasApiKey) return "Sign in or add an API key in Settings";
+    if (!state?.hasApiKey && !vendorCode) return "Sign in or add an API key in Settings";
     if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
       return PLAN_ARM_BLOCKED_UNVOUCHED;
     }
@@ -2015,9 +2149,9 @@ export function App() {
     }
     if (sessionHasNonTerminalRun) return "A run is in progress";
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
-    if (!draft.trim()) return "Type a message to send";
+    if (!draft.trim() && !effectiveArmedName) return "Type a message to send";
     return null;
-  }, [connected, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft, oauth, permissions.length, diffQueue.length, pendingPlanDecision]);
+  }, [connected, codePreAcquireOk, codeHardFail, vendorCode, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft, effectiveArmedName, oauth, permissions.length, diffQueue.length, pendingPlanDecision]);
   const overview = useMemo(
     () =>
       computeOverview(
@@ -2806,12 +2940,14 @@ export function App() {
       raw: string,
       opts?: { skipUserBubble?: boolean; stripTrailingAssistant?: boolean },
     ) => {
-      const text = raw.trim();
+      const armed = shouldClearArmedInvocation(skillsPalette) ? null : armedSkillName;
+      const text = (armed ? composeArmedPromptText(armed, raw) : raw).trim();
+      const skillHandoff = armed ? { name: armed } : null;
       const ownedRunActive = runProjection.runOrder.some((id) => {
         const run = runProjection.runsById[id];
         return run?.sessionId === sessionId && run.state !== "terminal";
       });
-      if (!text || ownedRunActive || !connected || !sessionId) return;
+      if (!text || ownedRunActive || (!connected && !codePreAcquireOk) || !sessionId) return;
       if (
         oauth ||
         permissions.length > 0 ||
@@ -2824,7 +2960,8 @@ export function App() {
       // no unlabeled provider error appears; the composer's disabled-reason
       // chip is the only signal, so a bypass via Enter (which does not read
       // the disabled attribute) must be refused here too.
-      if (!state?.hasApiKey) return;
+      if (codeHardFail) return;
+      if (!state?.hasApiKey && !vendorCode) return;
       if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return;
       const mode = state?.mode === "code" ? "code" : "chat";
       if (mode === "code" && !state?.workspace) {
@@ -2918,8 +3055,16 @@ export function App() {
         // Contract path: admission returns the authoritative RunSnapshot (202).
         // A successful response without it is invalid and is never retried via
         // the legacy endpoint, which could dispatch the prompt twice.
-        const admitted = await api.promptRun({ sessionId, conversationId: sessionId, text: outbound, effort: effortLevel, history });
+        const admitted = await api.promptRun({
+          sessionId,
+          conversationId: sessionId,
+          text: outbound,
+          effort: effortLevel,
+          history,
+          skillHandoff,
+        });
         if (!admitted.run) throw new Error("Host returned no run snapshot; prompt was not admitted");
+        setArmedSkillName(null);
         {
           const run = admitted.run;
           bindNormalizedRun(run.runId, run.sessionId);
@@ -2944,7 +3089,7 @@ export function App() {
               // never paint Tool activity rows — Chat pack materialize
               // makes that race common.
               for (const activity of Object.values(nextRun.activities)) {
-                paintEnvelopeActivityRef.current(activity);
+                paintEnvelopeActivityRef.current(activity, nextRun.runId);
               }
               setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
               setPermissions((prev) => mergePendingPermissions(prev, nextRun));
@@ -2968,6 +3113,12 @@ export function App() {
         setRunPhase(null);
         setRunStartedAt(null);
         setAwaitingNextTurn(true);
+        if (err instanceof ApiError && err.code === "skill_handoff_unavailable") {
+          setArmedSkillName(null);
+          toast.push(SKILLS_UNAVAILABLE, "error");
+          reportError(SKILLS_UNAVAILABLE, { source: "prompt" });
+          return;
+        }
         if (err instanceof ApiError && err.code === "plan_engagement_unvouched") {
           reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
           return;
@@ -2986,11 +3137,18 @@ export function App() {
       state?.mode,
       state?.planEngagement,
       state?.permissionPolicy,
+      state?.hasApiKey,
+      vendorCode,
+      codeHardFail,
+      codePreAcquireOk,
       effortLevel,
       reportError,
       beginStreamRun,
       bindNormalizedRun,
       runProjection,
+      armedSkillName,
+      skillsPalette,
+      toast,
       oauth,
       permissions.length,
       diffQueue.length,
@@ -3120,6 +3278,14 @@ export function App() {
     }
   };
 
+  const armSkill = (name: string) => {
+    const caret = composerRef.current?.selectionStart ?? draft.length;
+    setDraft(stripLeadingSlashToken(draft, caret));
+    setArmedSkillName(name);
+    setSkillsOpen(false);
+    composerRef.current?.focus();
+  };
+
   const insertAtFile = (file: string) => {
     setDraft((d) => d.replace(/@([^\s@]*)$/, `@${file} `));
     setAtSuggestions([]);
@@ -3127,6 +3293,32 @@ export function App() {
   };
 
   const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (skillsOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSkillsOpen(false);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (skillsRows.length) {
+          setSkillsActiveIndex((i) => (i + 1) % skillsRows.length);
+        }
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (skillsRows.length) {
+          setSkillsActiveIndex((i) => (i - 1 + skillsRows.length) % skillsRows.length);
+        }
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && skillsRows[skillsIndex]) {
+        e.preventDefault();
+        armSkill(skillsRows[skillsIndex]!.name);
+        return;
+      }
+    }
     if (atSuggestions.length && (e.key === "ArrowDown" || e.key === "Tab")) {
       e.preventDefault();
       insertAtFile(atSuggestions[0]!);
@@ -3191,6 +3383,11 @@ export function App() {
           setPeek(null);
           return;
         }
+        if (skillsOpen) {
+          e.preventDefault();
+          setSkillsOpen(false);
+          return;
+        }
         if (paletteOpen) {
           e.preventDefault();
           setPaletteOpen(false);
@@ -3241,6 +3438,7 @@ export function App() {
     newSession,
     peek,
     paletteOpen,
+    skillsOpen,
     diffQueue,
     activeDiffId,
     oauth,
@@ -4191,7 +4389,8 @@ export function App() {
               <RunStatusBar
                 busy={busy || Boolean(runStartedAt)}
                 phase={runPhase}
-                phaseDetail={livePlanning ? PLAN_LIVE_STATUS : runPhaseDetail}
+                phaseLabel={liveCopy.status}
+                phaseDetail={null}
                 runStartedAt={runStartedAt}
                 effortLabel={
                   effortLevel !== "auto" ? `Effort: ${effortLevel}` : null
@@ -4267,7 +4466,7 @@ export function App() {
                 ) : messages.length === 0 && !normalizedRunVisible && hostOk ? (
                   <EmptyStates
                     kind={
-                      !state?.hasApiKey
+                      !state?.hasApiKey && !vendorCode
                         ? "signed-out"
                         : productMode === "code" && !state?.workspace
                           ? "no-workspace"
@@ -4293,7 +4492,19 @@ export function App() {
                   <>
                     {runProjection.runOrder.map((id) => {
                       const run = runProjection.runsById[id];
-                      return run && run.sessionId === sessionId ? <RunSurface key={id} run={run} catchUp={catchUpForRun(catchUpByRunId, run.runId)} offline={!hostOk} productMode={productMode} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={(label, meta) => {
+                      if (!run || run.sessionId !== sessionId) return null;
+                      const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
+                      return (
+                      <div key={id} className="run-stack">
+                      <CodeRunProvenanceChip
+                        projection={projectCodeRunProvenance({
+                          mode: productMode,
+                          run,
+                          catchUp: runCatchUp,
+                        })}
+                      />
+                      <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
+                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={(label, meta) => {
                         const line = meta
                           ? `I choose: ${label}\n\n${meta}`
                           : `I choose: ${label}`;
@@ -4302,7 +4513,9 @@ export function App() {
                         );
                         toast.push(`Added “${label}” to composer`, "info");
                         setTimeout(() => composerRef.current?.focus(), 0);
-                      }} /> : null;
+                      }} />
+                      </div>
+                      );
                     })}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
@@ -4377,6 +4590,24 @@ export function App() {
               />
 
               <ComposerPane
+                skillsMenu={
+                  <SkillsPalette
+                    open={skillsOpen}
+                    projection={skillsPalette}
+                    filter={skillsFilter}
+                    activeIndex={skillsIndex}
+                    onSelect={armSkill}
+                    onDismiss={() => setSkillsOpen(false)}
+                  />
+                }
+                armedSkill={
+                  effectiveArmedName ? (
+                    <SkillArmedChip
+                      name={effectiveArmedName}
+                      onClear={() => setArmedSkillName(null)}
+                    />
+                  ) : null
+                }
                 dragOver={dragOver}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -4464,6 +4695,7 @@ export function App() {
                   {projectInstructionsComposer.state !== "absent_chat" ? (
                     <ProjectInstructionsStatus projection={projectInstructionsComposer} />
                   ) : null}
+                  <CodeAgentStatus projection={codeAgentComposer} />
                   <span className="composer-meta">
                     {productMode === "chat"
                       ? "Chat"
@@ -4491,19 +4723,12 @@ export function App() {
                     {sendDisabledReason}
                   </div>
                 ) : null}
-                {(busy || runStartedAt || livePlanning) && (
+                {(busy || runStartedAt || livePlanning) && (liveCopy.status || liveCopy.footer) && (
                   <div className="composer-thinking" role="status">
                     <span className="run-dot" />
                     {livePlanning
-                      ? `${PLAN_LIVE_STATUS} · ${PLAN_LIVE_FOOTER}`
-                      : runPhaseDetail ||
-                        (runPhase === "reasoning"
-                          ? "Thinking aloud…"
-                          : runPhase === "tools"
-                            ? "Using tools…"
-                            : runPhase === "writing"
-                              ? "Writing answer…"
-                              : "Grok is working — see status bar above. Cancel if stuck.")}
+                      ? `${liveCopy.status} · ${liveCopy.footer}`
+                      : liveCopy.footer || liveCopy.status}
                   </div>
                 )}
                   </>

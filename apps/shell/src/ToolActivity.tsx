@@ -1,7 +1,8 @@
-import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "./messageBlocks";
 import { toolRunStats } from "./messageBlocks";
 import { displayToolName, formatPdfReadFileFailureLabel } from "./toolFormat";
+import { activityHumanLabel } from "./activityLabel";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { Button } from "./ui/Button";
 
@@ -26,9 +27,17 @@ const ToolRow = memo(function ToolRow({
   onOpenPath,
 }: RowProps) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
   const panelId = useId();
   const name = displayToolName(tool.toolMeta?.name);
-  const summary = tool.toolMeta?.summary || "";
+  const human = activityHumanLabel({
+    title: tool.toolMeta?.title,
+    summary: tool.toolMeta?.summary,
+    name: null,
+  });
+  const summary = human && human !== name ? human : "";
   const ok = tool.toolMeta?.ok;
   const execution = tool.toolMeta?.execution;
   const eventStatus = tool.toolMeta?.status;
@@ -97,6 +106,7 @@ const ToolRow = memo(function ToolRow({
     <div
       className={`tool-row ${status}${!done ? " tool-row-live" : ""}`}
       data-activity-identity={tool.activityIdentity}
+      data-activity-id={tool.toolMeta?.activityId}
     >
       <button
         type="button"
@@ -111,7 +121,7 @@ const ToolRow = memo(function ToolRow({
           <span className="tool-row-summary" title={summary}>
             {summary}
           </span>
-        ) : command ? (
+        ) : command && command !== name ? (
           <span className="tool-row-summary" title={command}>
             {command}
           </span>

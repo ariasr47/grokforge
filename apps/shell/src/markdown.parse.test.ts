@@ -101,9 +101,10 @@ describe("codeHighlight", () => {
     assert.ok(toks.some((t) => t.c === "str"));
     assert.ok(toks.some((t) => t.c === "cmt"));
   });
-  it("skips plain text langs", () => {
-    assert.equal(shouldHighlight("text"), false);
-    assert.equal(shouldHighlight("ts"), true);
+  it("skips plain text langs; alias still gate-passes", () => {
+    assert.equal(shouldHighlight("text", "x"), false);
+    assert.equal(shouldHighlight("ts", "x"), true);
+    assert.equal(shouldHighlight("zig", "x"), false);
   });
 });
 

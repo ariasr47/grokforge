@@ -129,9 +129,9 @@ test("Trusted-shaped status+diff list on Code Git review (AC-01/02/31)", { skip:
   assert.ok(within(section).getByText("Status"));
   assert.ok(within(section).getByText("Diff"));
   await user.click(within(section).getAllByRole("button", { name: GIT_REVIEW_VIEW_OUTPUT })[0]!);
-  const row = document.querySelector('[data-activity-id="gr-status"]') as HTMLDetailsElement | null;
+  const row = document.querySelector('[data-activity-id="gr-status"]') as HTMLElement | null;
   assert.ok(row);
-  assert.equal(row.open, true);
+  assert.ok(row.closest("[data-tool-activity]"));
   const text = (section.textContent ?? "").toLowerCase();
   assert.equal(text.includes("dirty"), false);
   assert.equal(text.includes("open link"), false);

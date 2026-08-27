@@ -37,6 +37,8 @@ interface JsonRpcNotification {
  * ACP stdio host client.
  * Spawns one agent subprocess per client instance (one per active thread in v1).
  */
+type AcpPermissionOption = { optionId: string; kind?: string; name?: string };
+
 export class StdioAcpClient implements AcpClient {
   private child: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
@@ -49,6 +51,22 @@ export class StdioAcpClient implements AcpClient {
   private closing = false;
   private activeOwnership: AcpOwnership | null = null;
   private rl: Interface | null = null;
+  private pendingAcpRequestIds = new Map<
+    string,
+    { rawId: JsonRpcId; options: AcpPermissionOption[] }
+  >();
+  private vendorToolCalls = new Map<
+    string,
+    {
+      name: string;
+      input: unknown;
+      command: string | null;
+      acpToolKind: string | null;
+      url: string | null;
+      title: string | null;
+      snapshotJournaled: boolean;
+    }
+  >();
 
   constructor(private readonly config: AgentSpawnConfig) {}
 
@@ -111,10 +129,14 @@ export class StdioAcpClient implements AcpClient {
     this.rl = createInterface({ input: this.child.stdout });
     this.rl.on("line", (line) => this.handleLine(line));
 
-    await this.request("initialize", {
+    const initializeParams: Record<string, unknown> = {
       protocolVersion: 1,
       clientInfo: { name: "grok-code-shell", version: "0.2.0" },
-    });
+    };
+    if (this.config.initializePermissionMode === "default") {
+      initializeParams.permissionMode = "default";
+    }
+    await this.request("initialize", initializeParams);
   }
 
   async newSession(): Promise<string> {
@@ -202,6 +224,19 @@ export class StdioAcpClient implements AcpClient {
     decision: PermissionDecision,
     ownership?: AcpOwnership,
   ): Promise<void> {
+    if (this.pendingAcpRequestIds.has(id)) {
+      const optionId =
+        decision === "deny" ? null :
+        decision === "allow_session" ? (this.pickOption(id, ["allow_always", "allow_once"]) ?? "allow_once") :
+        (this.pickOption(id, ["allow_once"]) ?? "allow_once");
+      const result =
+        decision === "deny"
+          ? { outcome: { outcome: "cancelled" as const } }
+          : { outcome: { outcome: "selected" as const, optionId } };
+      this.writeResult(id, result);
+      this.pendingAcpRequestIds.delete(id);
+      return;
+    }
     await this.request("permission/respond", { id, decision, ...(ownership ?? this.activeOwnership ?? {}) });
   }
 
@@ -267,6 +302,12 @@ export class StdioAcpClient implements AcpClient {
       return;
     }
 
+    if ("method" in msg && msg.method && "id" in msg && (msg as { id?: JsonRpcId | null }).id != null) {
+      const req = msg as JsonRpcRequest;
+      this.mapChildRequest(req.method, req.id, req.params);
+      return;
+    }
+
     if ("id" in msg && msg.id !== undefined && !("method" in msg && msg.method)) {
       const pending = this.pending.get(msg.id);
       if (!pending) return;
@@ -295,10 +336,61 @@ export class StdioAcpClient implements AcpClient {
     }
   }
 
+  private pickOption(id: string, preferred: string[]): string | null {
+    const pending = this.pendingAcpRequestIds.get(id);
+    if (!pending) return null;
+    for (const want of preferred) {
+      const hit = pending.options.find((o) => o.optionId === want || o.kind === want);
+      if (hit) return hit.optionId;
+    }
+    return pending.options[0]?.optionId ?? null;
+  }
+
+  private writeResult(id: string, result: unknown): void {
+    if (!this.child?.stdin.writable) return;
+    const pending = this.pendingAcpRequestIds.get(id);
+    const rawId = pending?.rawId ?? (/^\d+$/.test(id) ? Number(id) : id);
+    this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: rawId, result }) + "\n");
+  }
+
+  private mapChildRequest(method: string, id: JsonRpcId, params: unknown): void {
+    const p = (params ?? {}) as Record<string, unknown>;
+    if (method === "session/request_permission") {
+      const optionsRaw = Array.isArray(p.options) ? p.options : [];
+      const options: AcpPermissionOption[] = optionsRaw
+        .filter((o): o is Record<string, unknown> => !!o && typeof o === "object")
+        .map((o) => ({
+          optionId: String(o.optionId ?? o.kind ?? ""),
+          kind: typeof o.kind === "string" ? o.kind : undefined,
+          name: typeof o.name === "string" ? o.name : undefined,
+        }))
+        .filter((o) => o.optionId);
+      this.pendingAcpRequestIds.set(String(id), { rawId: id, options });
+      const toolCall = (p.toolCall && typeof p.toolCall === "object" ? p.toolCall : {}) as Record<string, unknown>;
+      const kindRaw = String(toolCall.kind ?? p.kind ?? "");
+      const kind: "write" | "shell" = kindRaw === "execute" || kindRaw === "shell" ? "shell" : "write";
+      const detail = String(toolCall.title ?? p.detail ?? toolCall.path ?? kind);
+      this.emit({
+        type: "permission_request",
+        id: String(id),
+        kind,
+        detail,
+      });
+      return;
+    }
+    this.emit({
+      type: "agent_log",
+      level: "warn",
+      message: `Unmapped child ACP request: ${method}`,
+    });
+  }
+
   private mapNotification(method: string, params: unknown): void {
     const p = (params ?? {}) as Record<string, unknown>;
     if (this.activeOwnership && (p.runId !== undefined || p.sessionId !== undefined || p.connectionGeneration !== undefined)) {
-      if (p.sessionId !== this.activeOwnership.sessionId || p.runId !== this.activeOwnership.runId || p.connectionGeneration !== this.activeOwnership.connectionGeneration) return;
+      if (p.sessionId !== undefined && p.sessionId !== this.activeOwnership.sessionId) return;
+      if (p.runId !== undefined && p.runId !== this.activeOwnership.runId) return;
+      if (p.connectionGeneration !== undefined && p.connectionGeneration !== this.activeOwnership.connectionGeneration) return;
     }
     switch (method) {
       case "text_delta":
@@ -419,10 +511,362 @@ export class StdioAcpClient implements AcpClient {
       case "agent_log":
         this.emit({ type:"agent_log", level:(p.level === "warn" || p.level === "info" ? p.level : "debug"), message:String(p.message ?? "") });
         break;
+      case "session/update": {
+        this.mapSessionUpdate(p);
+        break;
+      }
       default:
         break;
     }
   }
+
+  private mapSessionUpdate(p: Record<string, unknown>): void {
+    const update = (
+      p.update && typeof p.update === "object" ? p.update : p
+    ) as Record<string, unknown>;
+    const kind = String(update.sessionUpdate ?? "");
+    if (kind === "agent_thought_chunk") {
+      const text = acpContentText(update.content);
+      if (text) this.emit({ type: "thinking_delta", text });
+      return;
+    }
+    if (kind === "agent_message_chunk") {
+      const text = acpContentText(update.content);
+      if (text) this.emit({ type: "text_delta", text });
+      return;
+    }
+    if (kind === "agent") {
+      const childId = String(update.childId ?? "");
+      const identityLabel = String(update.identityLabel ?? "").trim();
+      const status = String(update.status ?? "");
+      if (
+        !childId ||
+        !identityLabel ||
+        (status !== "running" && status !== "done" && status !== "failed")
+      ) {
+        this.emit({
+          type: "agent_log",
+          level: "warn",
+          message: "Malformed vendor child_agent frame ignored.",
+        });
+        return;
+      }
+      this.emit({
+        type: "child_agent",
+        childId,
+        identityLabel,
+        status,
+      });
+      return;
+    }
+    if (kind === "tool_call") {
+      const toolCallId = String(update.toolCallId ?? update.id ?? "");
+      if (!toolCallId) {
+        this.emit({ type: "agent_log", level: "warn", message: "session/update tool_call missing toolCallId" });
+        return;
+      }
+      const acpToolKind =
+        typeof update.kind === "string" ? update.kind : null;
+      const title =
+        typeof update.title === "string" ? update.title : null;
+      const name = String(update.title ?? update.kind ?? "tool");
+      const input = update.rawInput ?? update.input ?? null;
+      const command = typeof update.command === "string" ? update.command : null;
+      const url = extractVendorUrl(update);
+      const mapped = mapVendorToolStatus(update.status);
+      const snapshotJournaled =
+        acpToolKind === "fetch" &&
+        (contentHasImage(update.content) || contentHasImage(update.rawOutput));
+      this.vendorToolCalls.set(toolCallId, {
+        name,
+        input,
+        command,
+        acpToolKind,
+        url,
+        title,
+        snapshotJournaled,
+      });
+      if (shouldStopAndNameToolKindSeam(acpToolKind, title) && acpToolKind !== "fetch") {
+        this.emit({
+          type: "agent_log",
+          level: "warn",
+          message: `ToolKind class seam: ${acpToolKind ?? "(missing)"}`,
+        });
+      }
+      const event = {
+        type: "tool_run" as const,
+        schemaVersion: 2 as const,
+        activityId: toolCallId,
+        toolCallId,
+        lifecycle: mapped.lifecycle,
+        execution: mapped.execution,
+        status: mapped.status,
+        name,
+        input,
+        summary: title,
+        command,
+        output: mapped.output,
+        error: mapped.error,
+        reasonCode: mapped.reasonCode,
+        reason: mapped.reason,
+        shellDisplayName: null,
+        detailAvailable: true,
+        acpToolKind,
+        url,
+        title,
+        snapshotJournaled,
+      };
+      if (!isValidToolRunEvent(event)) {
+        this.emit({ type: "agent_log", level: "warn", message: "Malformed vendor tool_call ignored." });
+        return;
+      }
+      this.emit(event);
+      return;
+    }
+    if (kind === "available_commands_update") {
+      const raw = update.availableCommands ?? update.available_commands;
+      if (!Array.isArray(raw)) {
+        this.emit({ type: "available_commands", commands: null, valid: false });
+        return;
+      }
+      const commands: Array<{ name: string; description: string | null }> = [];
+      for (const item of raw) {
+        if (!item || typeof item !== "object") {
+          this.emit({ type: "available_commands", commands: null, valid: false });
+          return;
+        }
+        const name = (item as { name?: unknown }).name;
+        if (typeof name !== "string" || !name.startsWith("/") || name.length < 2 || /\s/.test(name)) {
+          this.emit({ type: "available_commands", commands: null, valid: false });
+          return;
+        }
+        const description = (item as { description?: unknown }).description;
+        commands.push({
+          name,
+          description: typeof description === "string" ? description : null,
+        });
+      }
+      this.emit({ type: "available_commands", commands, valid: true });
+      return;
+    }
+    if (kind === "tool_call_update") {
+      const toolCallId = String(update.toolCallId ?? update.id ?? "");
+      if (!toolCallId) {
+        this.emit({ type: "agent_log", level: "warn", message: "session/update tool_call_update missing toolCallId" });
+        return;
+      }
+      const prior = this.vendorToolCalls.get(toolCallId);
+      const status = String(update.status ?? "completed");
+      if (status === "pending" || status === "in_progress") return;
+      const acpToolKind =
+        typeof update.kind === "string" ? update.kind : prior?.acpToolKind ?? null;
+      const title =
+        typeof update.title === "string" ? update.title : prior?.title ?? null;
+      const url = extractVendorUrl(update) ?? prior?.url ?? null;
+      const snapshotJournaled =
+        prior?.snapshotJournaled === true ||
+        (acpToolKind === "fetch" &&
+          (contentHasImage(update.content) || contentHasImage(update.rawOutput)));
+      const name = prior?.name ?? (title ?? (typeof update.kind === "string" ? update.kind : "tool"));
+      const input = prior?.input ?? update.rawInput ?? update.input ?? null;
+      const command = prior?.command ?? (typeof update.command === "string" ? update.command : null);
+      this.vendorToolCalls.set(toolCallId, {
+        name,
+        input,
+        command,
+        acpToolKind,
+        url,
+        title,
+        snapshotJournaled,
+      });
+      const outputText = acpContentText(update.content) || acpContentText(update.rawOutput);
+      const failed = status === "failed" || status === "error";
+      const rejected = status === "cancelled" || status === "rejected";
+      const event = failed
+        ? {
+            type: "tool_run" as const,
+            schemaVersion: 2 as const,
+            activityId: toolCallId,
+            toolCallId,
+            lifecycle: "terminal" as const,
+            execution: "executed" as const,
+            status: "failed" as const,
+            name,
+            input,
+            summary: title,
+            command,
+            output: outputText || null,
+            error: outputText || status,
+            reasonCode: null,
+            reason: null,
+            shellDisplayName: null,
+            detailAvailable: true,
+            acpToolKind,
+            url,
+            title,
+            snapshotJournaled,
+          }
+        : rejected
+          ? {
+              type: "tool_run" as const,
+              schemaVersion: 2 as const,
+              activityId: toolCallId,
+              toolCallId,
+              lifecycle: "terminal" as const,
+              execution: "not_executed" as const,
+              status: "rejected" as const,
+              name,
+              input,
+              summary: title,
+              command,
+              output: "",
+              error: null,
+              reasonCode: "authorization_refused" as const,
+              reason: status,
+              shellDisplayName: null,
+              detailAvailable: true,
+              acpToolKind,
+              url,
+              title,
+              snapshotJournaled,
+            }
+          : {
+              type: "tool_run" as const,
+              schemaVersion: 2 as const,
+              activityId: toolCallId,
+              toolCallId,
+              lifecycle: "terminal" as const,
+              execution: "executed" as const,
+              status: "succeeded" as const,
+              name,
+              input,
+              summary: title,
+              command,
+              output: outputText || null,
+              error: null,
+              reasonCode: null,
+              reason: null,
+              shellDisplayName: null,
+              detailAvailable: true,
+              acpToolKind,
+              url,
+              title,
+              snapshotJournaled,
+            };
+      if (!isValidToolRunEvent(event)) {
+        this.emit({ type: "agent_log", level: "warn", message: `Malformed vendor tool_call_update ignored (${status}).` });
+        return;
+      }
+      this.emit(event);
+      return;
+    }
+    this.emit({
+      type: "agent_log",
+      level: "warn",
+      message: `Unmapped vendor sessionUpdate kind: ${kind || "(missing)"}`,
+    });
+  }
+}
+
+function extractVendorUrl(update: Record<string, unknown>): string | null {
+  const raw = update.rawInput;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const url = (raw as { url?: unknown }).url;
+    if (typeof url === "string" && url) return url;
+  }
+  const locations = update.locations;
+  if (Array.isArray(locations) && locations[0] && typeof locations[0] === "object") {
+    const path = (locations[0] as { path?: unknown }).path;
+    if (typeof path === "string" && path) return path;
+  }
+  return null;
+}
+
+function contentHasImage(content: unknown): boolean {
+  if (content == null) return false;
+  if (Array.isArray(content)) return content.some(contentHasImage);
+  if (typeof content === "object") {
+    const o = content as Record<string, unknown>;
+    if (o.type === "image") return true;
+    if ("content" in o) return contentHasImage(o.content);
+  }
+  return false;
+}
+
+function mapVendorToolStatus(raw: unknown): {
+  lifecycle: "pending" | "terminal";
+  execution: null | "executed" | "not_executed";
+  status: "running" | "succeeded" | "failed" | "rejected";
+  reasonCode: "authorization_refused" | null;
+  reason: string | null;
+  error: string | null;
+  output: string | null;
+} {
+  const status = raw == null || raw === "" ? "pending" : String(raw);
+  if (status === "completed") {
+    return {
+      lifecycle: "terminal",
+      execution: "executed",
+      status: "succeeded",
+      reasonCode: null,
+      reason: null,
+      error: null,
+      output: null,
+    };
+  }
+  if (status === "failed" || status === "error") {
+    return {
+      lifecycle: "terminal",
+      execution: "executed",
+      status: "failed",
+      reasonCode: null,
+      reason: null,
+      error: status,
+      output: null,
+    };
+  }
+  if (status === "cancelled" || status === "rejected") {
+    return {
+      lifecycle: "terminal",
+      execution: "not_executed",
+      status: "rejected",
+      reasonCode: "authorization_refused",
+      reason: status,
+      error: null,
+      output: "",
+    };
+  }
+  // pending | in_progress | omitted → running (vouched)
+  return {
+    lifecycle: "pending",
+    execution: null,
+    status: "running",
+    reasonCode: null,
+    reason: null,
+    error: null,
+    output: null,
+  };
+}
+
+function shouldStopAndNameToolKindSeam(
+  kind: string | null,
+  _title: string | null,
+): boolean {
+  if (kind === "other" || kind === "execute") return true;
+  if (kind == null || kind === "") return true; // missing / title-only
+  return false;
+}
+
+function acpContentText(content: unknown): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map(acpContentText).join("");
+  if (typeof content === "object") {
+    const o = content as Record<string, unknown>;
+    if (typeof o.text === "string") return o.text;
+    if ("content" in o) return acpContentText(o.content);
+  }
+  return "";
 }
 
 /** Stub client for UI development (no subprocess). */

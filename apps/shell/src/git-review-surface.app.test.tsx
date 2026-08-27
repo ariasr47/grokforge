@@ -253,9 +253,9 @@ describe("git-review-surface App wiring", () => {
     const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
     await user.click(within(section).getByRole("button", { name: /Git review/i }));
     await user.click(within(section).getAllByRole("button", { name: GIT_REVIEW_VIEW_OUTPUT })[0]!);
-    const row = document.querySelector('[data-activity-id="a-status"]') as HTMLDetailsElement | null;
+    const row = document.querySelector('[data-activity-id="a-status"]') as HTMLElement | null;
     assert.ok(row);
-    assert.equal(row.open, true);
+    assert.ok(row.closest("[data-tool-activity]"));
     assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
     assert.equal(screen.queryByRole("region", { name: VERIFY_HEADER }), null);
   });

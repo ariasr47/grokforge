@@ -437,7 +437,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                                 : undefined
                             }
                           />
-                          {props.showSubagents !== false &&
+                          {mode !== "code" &&
+                            props.showSubagents !== false &&
                             subs.length > 0 && (
                               <div
                                 className="subagents"

@@ -27,6 +27,8 @@ export function ComposerPane({
   onCancel,
   onSend,
   footer,
+  skillsMenu,
+  armedSkill,
 }: {
   dragOver: boolean;
   onDragOver: (e: DragEvent) => void;
@@ -51,6 +53,8 @@ export function ComposerPane({
   onCancel: () => void;
   onSend: () => void;
   footer: ReactNode;
+  skillsMenu?: ReactNode;
+  armedSkill?: ReactNode;
 }) {
   return (
     <section
@@ -76,6 +80,8 @@ export function ComposerPane({
           ))}
         </ul>
       ) : null}
+      {skillsMenu}
+      {armedSkill ? <div className="skill-armed-row">{armedSkill}</div> : null}
       <div className="composer">
         <textarea
           id="composer-input"

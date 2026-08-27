@@ -528,3 +528,307 @@ test("last project_instructions event wins; persist/restore keeps failed", () =>
   assert.equal(restored.runsById.r1.projectInstructions?.inclusion, "failed");
   assert.notEqual(restored.runsById.r1.projectInstructions?.inclusion, "not_included");
 });
+
+test("message_delta is a coalesced live kind and stays distinct from reasoning and answer", () => {
+  assert.equal(isRunStreamDelta("message_delta"), true);
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "reasoning_delta", segmentId: "r", delta: "think" }, 2));
+  a = reduceRunEvent(a, event({ kind: "message_delta", segmentId: "m", delta: "mid" }, 3));
+  a = reduceRunEvent(a, event({
+    kind: "run_terminal", terminalKind: "answered", finalAnswer: "mid",
+    answerVouched: true, failure: null, terminalAt: "",
+  }, 4));
+  assert.equal(a.runsById.r1.reasoning.r, "think");
+  assert.equal(a.runsById.r1.message.m, "mid");
+  assert.equal(a.runsById.r1.finalAnswer, "mid");
+  // mid-turn store still present after voucher (not rewritten / not cleared)
+  assert.equal(a.runsById.r1.message.m, "mid");
+  // answer_delta store unused by this path
+  assert.deepEqual(a.runsById.r1.answer, {});
+});
+
+test("type/kind mismatch message envelope is ignored by reducer", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  const bad = event({ kind: "message_delta", segmentId: "m", delta: "x" }, 2);
+  (bad as { type: string }).type = "answer_delta";
+  a = reduceRunEvent(a, bad);
+  assert.equal(a.runsById.r1.message?.m, undefined);
+});
+
+test("reducer does not copy message_delta into finalAnswer", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "message_delta", segmentId: "m", delta: "usable mid-turn" }, 2));
+  assert.equal(a.runsById.r1.finalAnswer, null);
+  assert.equal(a.runsById.r1.answerVouched, false);
+  assert.equal(a.runsById.r1.message.m, "usable mid-turn");
+});
+
+test("child_agent_update merges by childId; firstEventSeq preserved; status advances", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "running",
+  }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "done",
+  }, 3));
+  const member = a.runsById.r1.childAgents?.c1;
+  assert.equal(member?.childId, "c1");
+  assert.equal(member?.identityLabel, "Researcher");
+  assert.equal(member?.status, "done");
+  assert.equal(member?.firstEventSeq, 2);
+  assert.equal(Object.keys(a.runsById.r1.childAgents ?? {}).length, 1);
+});
+
+test("child_agent_update first-frame done or failed is not overwritten to running", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c2",
+    identityLabel: "Fast",
+    status: "done",
+  }, 2));
+  assert.equal(a.runsById.r1.childAgents?.c2?.status, "done");
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c3",
+    identityLabel: "Boom",
+    status: "failed",
+  }, 3));
+  assert.equal(a.runsById.r1.childAgents?.c3?.status, "failed");
+});
+
+test("post-terminal child_agent_update done applies after run_terminal", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "running",
+  }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "run_terminal",
+    terminalKind: "cancelled",
+    finalAnswer: null,
+    answerVouched: false,
+    failure: null,
+    terminalAt: "",
+  }, 3));
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "done",
+  }, 4));
+  assert.equal(a.runsById.r1.state, "terminal");
+  assert.equal(a.runsById.r1.childAgents?.c1?.status, "done");
+  assert.equal(a.runsById.r1.childAgents?.c1?.firstEventSeq, 2);
+});
+
+test("post-terminal answer_delta is still dropped; only child_agent_update reopens the gate", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "run_terminal",
+    terminalKind: "cancelled",
+    finalAnswer: null,
+    answerVouched: false,
+    failure: null,
+    terminalAt: "",
+  }, 2));
+  assert.strictEqual(reduceRunEvent(a, event({ kind: "answer_delta", segmentId: "x", delta: "late" }, 3)), a);
+  assert.strictEqual(reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "a1", invocationId: "i1", name: "read_file", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null,
+    },
+  }, 4)), a);
+});
+
+test("foreign generation child_agent_update is dropped", () => {
+  const a = reduceRunEvent(initialRunProjection(), started());
+  const e = event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "running",
+  }, 2);
+  e.connectionGeneration = 2;
+  assert.strictEqual(reduceRunEvent(a, e), a);
+  assert.equal(a.runsById.r1.childAgents?.c1, undefined);
+});
+
+test("activity_update does not mint childAgents entries", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "a1", invocationId: "i1", name: "read_file", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: "notes.md", policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, summary: "Read notes.md", title: "Reading notes.md",
+    },
+  }, 2));
+  assert.equal(Object.keys(a.runsById.r1.childAgents ?? {}).length, 0);
+  assert.equal(a.runsById.r1.activities.a1.name, "read_file");
+});
+
+test("incomplete child_agent_update is withheld", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "",
+    identityLabel: "Ghost",
+    status: "running",
+  }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "",
+    status: "running",
+  }, 3));
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "X",
+    status: "pending" as "running",
+  }, 4));
+  assert.equal(Object.keys(a.runsById.r1.childAgents ?? {}).length, 0);
+});
+
+test("childAgents persist and restore", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "child_agent_update",
+    childId: "c1",
+    identityLabel: "Researcher",
+    status: "failed",
+  }, 2));
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.equal(restored.runsById.r1.childAgents?.c1?.status, "failed");
+  assert.equal(restored.runsById.r1.childAgents?.c1?.identityLabel, "Researcher");
+  assert.equal(restored.runsById.r1.childAgents?.c1?.firstEventSeq, 2);
+});
+
+test("activity_update stores present summary and title without inventing them", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "a1", invocationId: "i1", name: "read_file", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: "notes.md", policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, summary: "Read notes.md", title: "Reading notes.md",
+    },
+  }, 2));
+  assert.equal(a.runsById.r1.activities.a1.summary, "Read notes.md");
+  assert.equal(a.runsById.r1.activities.a1.title, "Reading notes.md");
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "a2", invocationId: "i2", name: "read_file", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null,
+    },
+  }, 3));
+  assert.equal(a.runsById.r1.activities.a2.summary, null);
+  assert.equal(a.runsById.r1.activities.a2.title, null);
+});
+
+test("activity_update retains acpToolKind fetch, url, snapshotJournaled without minting a Browser roster", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "f1", invocationId: "f1", name: "web_fetch", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, title: "Docs",
+      acpToolKind: "fetch", url: "https://docs.x.ai", snapshotJournaled: true,
+    },
+  }, 2));
+  const act = a.runsById.r1.activities.f1;
+  assert.equal(act.acpToolKind, "fetch");
+  assert.equal(act.url, "https://docs.x.ai");
+  assert.equal(act.snapshotJournaled, true);
+  assert.equal(act.title, "Docs");
+  assert.equal(Object.keys(a.runsById.r1.activities).length, 1);
+  assert.equal((a.runsById.r1 as { browserWork?: unknown }).browserWork, undefined);
+  assert.equal((a.runsById.r1 as { browserMembers?: unknown }).browserMembers, undefined);
+});
+
+test("activity_update without fetch class does not invent url or snapshot; no Browser roster", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "a1", invocationId: "i1", name: "read_file", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: "notes.md", policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, summary: "Read notes.md", title: "Reading notes.md",
+    },
+  }, 2));
+  const act = a.runsById.r1.activities.a1;
+  assert.equal(act.acpToolKind, null);
+  assert.equal(act.url, null);
+  assert.equal(act.snapshotJournaled, false);
+  assert.equal(act.name, "read_file");
+  assert.equal((a.runsById.r1 as { browserWork?: unknown }).browserWork, undefined);
+  assert.equal((a.runsById.r1 as { browserMembers?: unknown }).browserMembers, undefined);
+});
+
+test("activity_update merge keeps a single activity identity (not a second tool row)", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "f1", invocationId: "f1", name: "web_fetch", lifecycle: "pending",
+      execution: null, status: "running", input: {}, output: null, error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, title: "Docs",
+      acpToolKind: "fetch", url: "https://docs.x.ai", snapshotJournaled: false,
+    },
+  }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "f1", invocationId: "f1", name: "web_fetch", lifecycle: "terminal",
+      execution: "executed", status: "succeeded", input: {}, output: "ok", error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, title: "Docs",
+      acpToolKind: "fetch", url: "https://docs.x.ai", snapshotJournaled: true,
+    },
+  }, 3));
+  assert.equal(Object.keys(a.runsById.r1.activities).length, 1);
+  assert.equal(a.runsById.r1.activities.f1.status, "succeeded");
+  assert.equal(a.runsById.r1.activities.f1.acpToolKind, "fetch");
+  assert.equal(a.runsById.r1.activities.f1.snapshotJournaled, true);
+});
+
+test("fetch-class activity fields persist and restore", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: {
+      activityId: "f1", invocationId: "f1", name: "web_fetch", lifecycle: "terminal",
+      execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: null,
+      path: null, policy: {}, automaticEligibility: "read", autoApplied: false,
+      command: null, editId: null, recovery: null, title: "Docs",
+      acpToolKind: "fetch", url: "https://docs.x.ai", snapshotJournaled: true,
+    },
+  }, 2));
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.equal(restored.runsById.r1.activities.f1.acpToolKind, "fetch");
+  assert.equal(restored.runsById.r1.activities.f1.url, "https://docs.x.ai");
+  assert.equal(restored.runsById.r1.activities.f1.snapshotJournaled, true);
+  assert.equal((restored.runsById.r1 as { browserMembers?: unknown }).browserMembers, undefined);
+});
+

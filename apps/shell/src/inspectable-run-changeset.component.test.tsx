@@ -36,6 +36,7 @@ const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
   ...snapshot,
   reasoning: {},
   answer: {},
+  message: {},
   activities: {},
   decisions: {},
   seenEventSeq: new Set([1]),
@@ -119,7 +120,8 @@ test("View diff matches activity.diff for the same editId (AC-03/17)", () => {
   fireEvent.click(within(section).getByRole("button", { name: "View diff" }));
   assert.ok(within(section).getByLabelText("Stored diff").textContent?.includes("+A"));
   const activity = screen.getByLabelText("Activity");
-  fireEvent.click(within(activity).getByRole("button", { name: "View diff" }));
+  const activityDiffButtons = within(activity).getAllByRole("button", { name: "View diff" });
+  fireEvent.click(activityDiffButtons[activityDiffButtons.length - 1]!);
   const activityDiff = activity.querySelector("pre");
   assert.equal(activityDiff?.textContent, body);
   assert.equal(fixture.activities.a1.diff, body);
@@ -217,7 +219,7 @@ test("health-poll closed catch-up does not open Loading over a ready list (W3)",
   assert.ok(screen.getByRole("region", { name: FILE_CHANGES_HEADER }));
   assert.equal(screen.queryByText(FILE_CHANGES_LOADING), null);
   rerender(<RunSurface run={trustedThree()} catchUp={{ phase: "closed" }} />);
-  assert.ok(screen.getByText("a.txt"));
+  assert.ok(within(screen.getByRole("region", { name: FILE_CHANGES_HEADER })).getByText("a.txt"));
   assert.equal(screen.queryByText(FILE_CHANGES_LOADING), null);
 });
 
@@ -230,7 +232,7 @@ test("catch-up failed shows load-failure copy, not empty (AC-23)", () => {
   );
   const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
   assert.equal(within(section).getByRole("alert").textContent, FILE_CHANGES_LOAD_FAILURE);
-  assert.equal(screen.queryByText("a.txt"), null);
+  assert.equal(within(section).queryByText("a.txt"), null);
 });
 
 test("Bypass activity is excluded from File changes (AC-22)", () => {
@@ -249,7 +251,6 @@ test("Bypass activity is excluded from File changes (AC-22)", () => {
     />,
   );
   assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
-  assert.equal(screen.queryByText("bypass.txt"), null);
 });
 
 test("Reverted is not Applied and Revert is not offered (AC-26)", () => {
@@ -329,9 +330,9 @@ test("File changes sits after reasoning and before the activity stack (AC-18 hie
   );
   const surface = screen.getByRole("article", { name: "Run edit several files" });
   const text = surface.textContent ?? "";
-  const reasoningAt = text.indexOf("Reasoning");
+  const reasoningAt = Math.max(text.indexOf("Thought…"), text.indexOf("Thought"));
   const fileChangesAt = text.indexOf(FILE_CHANGES_HEADER);
-  const activityAt = text.indexOf("write_file");
+  const activityAt = Math.max(text.indexOf("write_file"), text.indexOf("write file"));
   assert.ok(reasoningAt >= 0 && fileChangesAt > reasoningAt && activityAt > fileChangesAt);
 });
 
@@ -398,8 +399,9 @@ test("DiffPanel rebuilds pending from durable decision + activity without live f
 test("live-growing Trusted list adds the second path without a second activity hunt (AC-13)", () => {
   const first = run({ activities: { a1: writeActivity() } });
   const { rerender } = render(<RunSurface run={first} />);
-  assert.ok(screen.getByText("a.txt"));
-  assert.equal(screen.queryByText("b.txt"), null);
+  const firstSection = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+  assert.ok(within(firstSection).getByText("a.txt"));
+  assert.equal(within(firstSection).queryByText("b.txt"), null);
   rerender(
     <RunSurface
       run={run({

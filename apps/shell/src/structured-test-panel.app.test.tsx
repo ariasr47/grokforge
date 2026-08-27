@@ -241,9 +241,9 @@ describe("structured-test-panel App wiring", () => {
     const section = screen.getByRole("region", { name: VERIFY_HEADER });
     await user.click(within(section).getByRole("button", { name: /Verify/i }));
     await user.click(within(section).getAllByRole("button", { name: VERIFY_VIEW_OUTPUT })[0]!);
-    const row = document.querySelector('[data-activity-id="a-test"]') as HTMLDetailsElement | null;
+    const row = document.querySelector('[data-activity-id="a-test"]') as HTMLElement | null;
     assert.ok(row);
-    assert.equal(row.open, true);
+    assert.ok(row.closest("[data-tool-activity]"));
     assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
   });
 

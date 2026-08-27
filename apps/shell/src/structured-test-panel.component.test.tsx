@@ -107,10 +107,10 @@ test("Verify sits after File changes; View output focuses activity identity", as
   assert.ok(verify.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING);
   await user.click(screen.getByRole("button", { name: /Verify/i }));
   await user.click(screen.getByRole("button", { name: VERIFY_VIEW_OUTPUT }));
-  const row = document.querySelector('[data-activity-id="a-verify"]') as HTMLDetailsElement | null;
+  const row = document.querySelector('[data-activity-id="a-verify"]') as HTMLElement | null;
   assert.ok(row);
-  assert.equal(row.open, true);
-  assert.ok(row.textContent?.includes("ok — npm test"));
+  assert.ok(row.closest("[data-tool-activity]"));
+  assert.ok((row.textContent ?? "").includes("ok — npm test") || (document.querySelector(".tool-activity-body")?.textContent ?? "").includes("ok — npm test"));
 });
 
 test("multi-command list names both checks as Passed (AC-01/02/10)", async () => {

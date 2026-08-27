@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AgentSession, retainActivityAfterDiff, retainActivityAfterRecovery } from "./session.js";
+import { decideSkillHandoff } from "./skillHandoff.js";
 import { TRUSTED_COMMAND_CLASS_CATALOG } from "./trusted-command-classes.js";
 import type { PermissionDecision } from "@grokforge/acp-client";
 import {
@@ -200,6 +201,7 @@ const server = http.createServer(async (req, res) => {
       await owner!.awaitReady();
       await owner!.refreshWorkspacePolicy();
       await owner!.refreshProjectInstructionsPresence();
+      owner!.warmSkillsCatalog();
       sendState(res, origin, owner!.getState());
       return;
     }
@@ -742,6 +744,7 @@ const server = http.createServer(async (req, res) => {
           role: "user" | "assistant" | "system";
           content: string;
         }>;
+        skillHandoff?: { name: string } | null;
       };
       if (!body.text?.trim()) {
         sendContractError(res,400,"invalid_request","text required");
@@ -750,17 +753,35 @@ const server = http.createServer(async (req, res) => {
       const legacyPrompt = !body.sessionId;
       const ownedSession = sessionFor(body.sessionId) || session;
       if (body.sessionId && !ownedSession) { sendContractError(res,400,"invalid_request","invalid sessionId"); return; }
+      const trimmedText = body.text.trim();
+      const catalog = ownedSession.getSkillsCatalog();
+      const decision = decideSkillHandoff(body.skillHandoff, catalog, trimmedText);
+      const state = ownedSession.getState();
+      const identity = state.codeAgent?.identity;
+      const vendorMayObtain =
+        state.mode === "code" && identity !== "fallback" && identity !== "hard_fail";
+      if (decision.action === "refuse") {
+        if (!vendorMayObtain || catalog.disposition === "ready") {
+          sendContractError(res, 409, decision.code, decision.error);
+          return;
+        }
+      }
       try {
-        const run = await ownedSession.prompt(body.text.trim(), body.effort, {
+        const run = await ownedSession.prompt(trimmedText, body.effort, {
           history: Array.isArray(body.history) ? body.history.slice(-40) : undefined,
           originKey: typeof origin === "string" ? origin : null,
           clientSessionId: body.sessionId,
           conversationId: typeof body.conversationId === "string" ? body.conversationId : undefined,
+          skillHandoff: body.skillHandoff ?? null,
         });
         sendJson(res, legacyPrompt ? 200 : 202, legacyPrompt ? { ok: true } : { accepted: true, run });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         const code = (e as { code?: string })?.code;
+        if (code === "skill_handoff_unavailable") {
+          sendContractError(res, 409, "skill_handoff_unavailable", "Skill no longer available.");
+          return;
+        }
         if (code === "plan_engagement_unvouched" || code === "plan_decision_pending") {
           sendContractError(res, 409, code, message);
           return;
@@ -1057,6 +1078,7 @@ wss.on("connection", (ws, req) => {
         switch (msg.type) {
           case "get_state":
             await session.refreshProjectInstructionsPresence();
+            session.warmSkillsCatalog();
             wsSend(ws, { schemaVersion: 1, type: "state", state: stampState(session.getState(), wsOrigin) });
             break;
           case "open_workspace":

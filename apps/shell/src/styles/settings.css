@@ -900,6 +900,33 @@ html[data-density="compact"] .run-footer {
 .tok-pun { color: #89ddff; }
 .tok-plain { color: inherit; }
 
+/* Light-axis degrade/plain: existing Voidglass light text tokens only (syntax-themes). */
+html[data-theme="light"] .md-code {
+  color: var(--text);
+}
+html[data-theme="light"] .md-code-ln {
+  color: var(--muted);
+}
+html[data-theme="light"] .tok-kw {
+  color: var(--accent2);
+}
+html[data-theme="light"] .tok-str {
+  color: var(--accent3);
+}
+html[data-theme="light"] .tok-num {
+  color: var(--danger);
+}
+html[data-theme="light"] .tok-cmt {
+  color: var(--muted);
+  font-style: italic;
+}
+html[data-theme="light"] .tok-pun {
+  color: var(--accent);
+}
+html[data-theme="light"] .tok-plain {
+  color: inherit;
+}
+
 /* Tool live polish */
 .tool-row-live {
   border-color: rgba(125, 255, 232, 0.25);

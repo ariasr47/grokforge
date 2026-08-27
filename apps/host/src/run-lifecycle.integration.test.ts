@@ -227,7 +227,7 @@ test("terminal activity is published before run_terminal with no late activity",
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"rar-order-"));
   const j=new RunJournal(root); const published:any[]=[]; const c=new RunCoordinator(j,e=>published.push(e));
   const run=await c.admit({sessionId:"ordered",prompt:"x",connectionGeneration:1,policy,model});
-  await c.appendOwnedEvent(run.runId,{kind:"activity_update",activity:{activityId:"a",invocationId:"i",name:"tool",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"ok",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null}},"activity_update");
+  await c.appendOwnedEvent(run.runId,{kind:"activity_update",activity:{activityId:"a",invocationId:"i",name:"tool",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"ok",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null,summary:null,title:null}},"activity_update");
   await c.finalize(run.runId,"failed",null,{code:"provider_unavailable",message:"done",retryable:true,recoveryAction:"retry_prompt"});
   const terminalIndex=published.findIndex(e=>e.type==="run_terminal");
   assert.ok(terminalIndex>0);
@@ -242,7 +242,7 @@ test("terminal runs reject every late payload without publication or mutation", 
     const run=await c.admit({sessionId:"late",prompt:"x",connectionGeneration:1,policy,model});
     await c.appendOwnedEvent(run.runId,{kind:"answer_delta",segmentId:"a",delta:"answer"},"answer_delta");
     await c.finalize(run.runId,"answered"); const before=published.length;
-    const activity:any={activityId:"a",invocationId:"i",name:"write",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"late",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null};
+    const activity:any={activityId:"a",invocationId:"i",name:"write",lifecycle:"terminal",execution:"executed",status:"succeeded",input:null,output:"late",error:null,diff:null,path:null,kind:null,fromPath:null,toPath:null,policy,automaticEligibility:"not_eligible",autoApplied:false,command:null,editId:null,recovery:null,summary:null,title:null};
     const payloads:any[]=[
       {kind:"run_state",state:"running",liveness:"provider"},
       {kind:"reasoning_delta",segmentId:"r",delta:"late"},
@@ -288,7 +288,7 @@ test("production host restart interrupts orphan once and preserves received cont
   try {
     const admitted=await fetch(`${first.baseUrl}/api/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sid,text:"survive restart",effort:"auto",history:[]})});
     assert.equal(admitted.status,202); const runId=(await admitted.json() as any).run.runId;
-    let seen=false; for(let i=0;i<30&&!seen;i++){await new Promise(r=>setTimeout(r,30)); const replay=await (await fetch(`${first.baseUrl}/api/runs/${runId}?sessionId=${sid}&after=0`)).json() as any; seen=replay.events?.some((e:any)=>e.type==="answer_delta");}
+    let seen=false; for(let i=0;i<30&&!seen;i++){await new Promise(r=>setTimeout(r,30)); const replay=await (await fetch(`${first.baseUrl}/api/runs/${runId}?sessionId=${sid}&after=0`)).json() as any; seen=replay.events?.some((e:any)=>e.type==="message_delta");}
     assert.equal(seen,true); const home=first.homeDir; await first.stopProcess();
     // Allow any in-flight child-exit/finalization callbacks to drain before
     // the replacement process opens the same durable journal.
@@ -299,7 +299,7 @@ test("production host restart interrupts orphan once and preserves received cont
     const second=await startHost({port,homeDir:home,env:{GROKFORGE_AGENT_ENTRY:path.resolve(here,"./test-support/fake-acp-agent.mjs"),GROKFORGE_FIXTURE:"orphan-content",XAI_API_KEY:"fixture"}});
     try {
       let replay:any; for(let i=0;i<30;i++){ try { replay=await (await fetch(`${second.baseUrl}/api/runs/${runId}?sessionId=${sid}&after=0`)).json(); } catch(error) { throw new Error(`replacement host request failed: ${String(error)} diagnostics=${JSON.stringify(second.diagnostics())}`); } if(replay.run?.state==="terminal") break; await new Promise(r=>setTimeout(r,30)); }
-      assert.ok(replay?.run, `replacement replay missing run: ${JSON.stringify(replay)} diagnostics=${JSON.stringify(second.diagnostics())}`); assert.equal(replay.run.state,"terminal", `replacement remained nonterminal: ${JSON.stringify(replay)} diagnostics=${JSON.stringify(second.diagnostics())}`); assert.equal(replay.run.failure.code,"interrupted"); assert.equal(replay.events.filter((e:any)=>e.type==="run_terminal").length,1); assert.ok(replay.events.some((e:any)=>e.type==="answer_delta"&&e.payload.delta.includes("received before restart")));
+      assert.ok(replay?.run, `replacement replay missing run: ${JSON.stringify(replay)} diagnostics=${JSON.stringify(second.diagnostics())}`); assert.equal(replay.run.state,"terminal", `replacement remained nonterminal: ${JSON.stringify(replay)} diagnostics=${JSON.stringify(second.diagnostics())}`); assert.equal(replay.run.failure.code,"interrupted"); assert.equal(replay.events.filter((e:any)=>e.type==="run_terminal").length,1); assert.ok(replay.events.some((e:any)=>e.type==="message_delta"&&e.payload.delta.includes("received before restart")));
       const next=await fetch(`${second.baseUrl}/api/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sid,text:"after restart",effort:"auto",history:[]})}); assert.equal(next.status,202);
     } finally { await second.stop(); }
   } catch(error){ await first.stop(); throw error; }
@@ -313,7 +313,7 @@ test("production cancel stays owned until ACP terminal and then reopens admissio
     const cancel=await fetch(`${host.baseUrl}/api/cancel`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sid,runId})}); assert.ok(cancel.status===202||cancel.status===200);
     const during=await fetch(`${host.baseUrl}/api/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sid,text:"must wait",effort:"auto",history:[]})}); assert.equal(during.status,409);
     let replay:any; for(let i=0;i<40;i++){replay=await (await fetch(`${host.baseUrl}/api/runs/${runId}?sessionId=${sid}&after=0`)).json();if(replay.run?.state==="terminal")break;await new Promise(r=>setTimeout(r,25));}
-    assert.equal(replay.run.terminalKind,"cancelled"); assert.ok(replay.events.some((e:any)=>e.type==="answer_delta"&&e.payload.delta.includes("answer before cancel"))); assert.ok(replay.events.some((e:any)=>e.type==="reasoning_delta"));
+    assert.equal(replay.run.terminalKind,"cancelled"); assert.ok(replay.events.some((e:any)=>e.type==="message_delta"&&e.payload.delta.includes("answer before cancel"))); assert.ok(replay.events.some((e:any)=>e.type==="reasoning_delta"));
     const next=await fetch(`${host.baseUrl}/api/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sid,text:"after cancel",effort:"auto",history:[]})}); assert.equal(next.status,202);
   } finally { await host.stop(); }
 });
@@ -367,7 +367,7 @@ test("AC26 RED oracle: real Grok ACP recovers a stalled provider stream after a 
     assert.equal(replay.run?.terminalKind, "answered");
     assert.equal(replay.run?.finalAnswer, "partial recovered answer");
     assert.ok(replay.events.some((e:any)=>e.type === "run_state" && e.payload.state === "recovering"));
-    assert.equal(replay.events.filter((e:any)=>e.type === "answer_delta").map((e:any)=>e.payload.delta).join(""), "partial recovered answer");
+    assert.equal(replay.events.filter((e:any)=>e.type === "message_delta").map((e:any)=>e.payload.delta).join(""), "partial recovered answer");
     assert.equal(provider.requests.length, 3);
     assert.equal(provider.requests[1].messages.filter((m:any)=>m.role === "tool").length, 1);
     assert.equal(provider.requests[2].messages.filter((m:any)=>m.role === "tool").length, 1);

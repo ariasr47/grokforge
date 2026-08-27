@@ -13,6 +13,8 @@ interface Props {
   busy: boolean;
   phase?: RunPhase;
   phaseDetail?: string | null;
+  /** Authoritative live phase string from one DerivedLivePhase / phaseCopy. */
+  phaseLabel?: string | null;
   /** When the current run started (ms); drives elapsed clock */
   runStartedAt?: number | null;
   permissionPending: boolean;
@@ -22,15 +24,15 @@ interface Props {
   onJumpPermission?: () => void;
   onJumpDiff?: () => void;
   onCancel?: () => void;
-  /** Live Planning chrome — only when the live run's executionPhase === "plan". */
+  /** Live Planning chrome — only when DerivedLivePhase kind is plan. */
   planning?: boolean;
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  waiting_model: "Awaiting presence…",
-  reasoning: "Thinking field…",
-  tools: "Tools in orbit…",
-  writing: "Shaping answer…",
+const HONEST_PHASE_LABEL: Record<string, string> = {
+  waiting_model: "Waiting for model…",
+  reasoning: "Thinking…",
+  tools: "Using tools…",
+  writing: "Writing…",
   done: "Done",
 };
 
@@ -46,6 +48,7 @@ export function RunStatusBar({
   busy,
   phase,
   phaseDetail,
+  phaseLabel,
   runStartedAt,
   permissionPending,
   diffCount,
@@ -67,13 +70,16 @@ export function RunStatusBar({
 
   const elapsed =
     busy && runStartedAt ? formatElapsed(Math.max(0, now - runStartedAt)) : null;
+  const derived = phaseLabel !== undefined;
   const phaseText = planning
     ? "Planning"
-    : phase && phase !== "done"
-      ? PHASE_LABEL[phase] || phase
-      : busy
-        ? "Agent running…"
-        : null;
+    : derived
+      ? (phaseLabel || null)
+      : phase && phase !== "done"
+        ? HONEST_PHASE_LABEL[phase] || phase
+        : busy
+          ? "Waiting for model…"
+          : null;
 
   return (
     <div className="run-status" role="status" aria-live="polite">
@@ -82,7 +88,7 @@ export function RunStatusBar({
           <span className="run-pulse">
             <span className="run-dot" />
             <span className="run-phase-text">
-              {phaseDetail || phaseText}
+              {derived || planning ? phaseText : (phaseDetail || phaseText)}
               {elapsed ? (
                 <span className="run-elapsed" title="Elapsed">
                   {" "}
