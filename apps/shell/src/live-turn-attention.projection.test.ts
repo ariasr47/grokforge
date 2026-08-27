@@ -14,7 +14,7 @@ function runWith(decisions: RunProjectionRun["decisions"], activities: RunProjec
     sessionId: "s", runId: "r", connectionGeneration: 1, state: "waiting_for_decision",
     acceptedPrompt: "p", admittedAt: "", updatedAt: "", lastEventSeq: 1,
     policy: {}, model: {}, terminalKind: null, finalAnswer: null, answerVouched: false, failure: null,
-    reasoning: {}, answer: {}, activities, decisions, seenEventSeq: new Set([1]), terminalEventSeq: null,
+    reasoning: {}, answer: {}, message: {}, activities, decisions, seenEventSeq: new Set([1]), terminalEventSeq: null,
   };
 }
 

@@ -34,6 +34,7 @@ function run(overrides: Partial<RunProjectionRun> = {}): RunProjectionRun {
   return {
     ...snapshot,
     reasoning: {},
+    message: {},
     answer: {},
     activities: {},
     decisions: {},

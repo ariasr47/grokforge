@@ -28,6 +28,7 @@ const run = {
   failure: null,
   reasoning: {},
   answer: {},
+  message: {},
   activities: {},
   decisions: {},
   seenEventSeq: new Set([1]),

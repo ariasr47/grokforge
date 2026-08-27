@@ -2961,7 +2961,8 @@ export function App() {
       // chip is the only signal, so a bypass via Enter (which does not read
       // the disabled attribute) must be refused here too.
       if (codeHardFail) return;
-      if (!state?.hasApiKey && !vendorCode) return;
+      if (!state) return;
+      if (!state.hasApiKey && !vendorCode) return;
       if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return;
       const mode = state?.mode === "code" ? "code" : "chat";
       if (mode === "code" && !state?.workspace) {

@@ -136,6 +136,7 @@ function runFixture(
     answerVouched: true,
     failure: null,
     reasoning: {},
+    message: {},
     answer: {},
     activities: {},
     decisions: {},

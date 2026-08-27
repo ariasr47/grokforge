@@ -20,7 +20,7 @@ const snapshot: RunSnapshot = {
   finalAnswer: null, answerVouched: false, failure: null,
 };
 const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
-  ...snapshot, reasoning: {}, answer: {}, activities: {}, decisions: {}, seenEventSeq: new Set([1]),
+  ...snapshot, reasoning: {}, answer: {}, message: {}, activities: {}, decisions: {}, seenEventSeq: new Set([1]),
   terminalEventSeq: null, ...overrides,
 });
 

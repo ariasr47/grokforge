@@ -39,6 +39,7 @@ const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
   ...snapshot,
   reasoning: {},
   answer: {},
+  message: {},
   activities: {},
   decisions: {},
   seenEventSeq: new Set([1]),

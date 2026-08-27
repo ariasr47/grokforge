@@ -30,6 +30,7 @@ const snapshot: RunSnapshot = {
 const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
   ...snapshot,
   reasoning: {},
+  message: {},
   answer: {},
   activities: {},
   decisions: {},
