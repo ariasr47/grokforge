@@ -66,6 +66,32 @@ import {
   type BrowserWorkMembershipFact,
   type FetchActivityInput,
 } from "./browserWork.js";
+import {
+  ABSENT_FOR_NON_CODE_OR_NON_VENDOR as ABSENT_MCP_SERVERS,
+  applyMcpMember,
+  clearToAbsent as clearMcpServersToAbsent,
+  enterHydrating as enterMcpHydrating,
+  foldMembersFromUpdates as foldMcpMembersFromUpdates,
+  markObtainFailed as markMcpObtainFailed,
+  markReady as markMcpReady,
+  memberFromUpdate,
+  parseCompleteMcpFrame,
+  type McpServersMembershipFact,
+  type McpUpdateInput,
+} from "./mcpServers.js";
+import {
+  ABSENT_FOR_NON_CODE_OR_NON_VENDOR as ABSENT_HOOKS,
+  applyHookMember,
+  clearToAbsent as clearHooksToAbsent,
+  enterHydrating as enterHooksHydrating,
+  foldMembersFromUpdates as foldHooksMembersFromUpdates,
+  markObtainFailed as markHooksObtainFailed,
+  markReady as markHooksReady,
+  memberFromUpdate as memberFromHookUpdate,
+  parseCompleteHookFrame,
+  type HooksMembershipFact,
+  type HookUpdateInput,
+} from "./hooks.js";
 import { decideSkillHandoff } from "./skillHandoff.js";
 import { audit } from "./audit.js";
 import { clampEffort, loadPolicy } from "./policy.js";
@@ -74,7 +100,7 @@ import { resolveHostExecutionEnvironment, type ShellCapabilityView } from "./exe
 import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { randomUUID } from "node:crypto";
-import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, RunState, TerminalKind } from "./run-types.js";
+import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, FailureView, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, RunState, TerminalKind } from "./run-types.js";
 import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
@@ -361,6 +387,8 @@ export interface PublicState {
   skillsCatalog: SkillsCatalogFact;
   childAgents: ChildAgentsMembershipFact;
   browserWork: BrowserWorkMembershipFact;
+  mcpServers: McpServersMembershipFact;
+  hooks: HooksMembershipFact;
 }
 
 export type PlanEngagementView = { engaged: boolean; vouched: boolean };
@@ -408,6 +436,8 @@ export class AgentSession {
   private sessionWriteGrant = false;
   private sessionShellGrant = false;
   private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
+  /** In-memory queued vendor turn-end while an ask was already open at RPC return. */
+  private queuedTurnEnd = new Map<string, { terminalKind: TerminalKind; failure: FailureView }>();
   private planEngaged = false;
   private planEngagementVouched = true;
   private lastReadyPlanRunId: string | null = null;
@@ -442,6 +472,8 @@ export class AgentSession {
   private skillsWarm: Promise<void> | null = null;
   private childAgents: ChildAgentsMembershipFact = ABSENT_NON_CODE_OR_NON_VENDOR;
   private browserWork: BrowserWorkMembershipFact = ABSENT_FOR_NON_CODE_OR_NON_VENDOR;
+  private mcpServers: McpServersMembershipFact = ABSENT_MCP_SERVERS;
+  private hooks: HooksMembershipFact = ABSENT_HOOKS;
   private lastOwnedRunId: string | null = null;
 
   constructor(stableSessionId?: string, opts?: { skillsCatalogObtainTimeoutMs?: number }) {
@@ -463,7 +495,7 @@ export class AgentSession {
     if (process.env.GROKFORGE_PROJECT_INSTRUCTIONS_UNVOUCHED === "1") this.projectInstructionsVouched = false;
     this.ready = this.hydrateWorkspacePolicy(this.workspace).then(() => this.refreshProjectInstructionsPresence()).then(() => {
       if (this.cfg.mode === "code" && this.workspace) this.eagerResolveCodeAgent();
-    }).then(() => this.restoreChildAgentsFromJournal()).then(() => this.restoreBrowserWorkFromJournal());
+    }).then(() => this.restoreChildAgentsFromJournal()).then(() => this.restoreBrowserWorkFromJournal()).then(() => this.restoreMcpServersFromJournal()).then(() => this.restoreHooksFromJournal());
   }
 
   private async hydrateWorkspacePolicy(workspace: string | null): Promise<void> {
@@ -556,6 +588,8 @@ export class AgentSession {
       skillsCatalog: this.skillsCatalog,
       childAgents: this.childAgents,
       browserWork: this.browserWork,
+      mcpServers: this.mcpServers,
+      hooks: this.hooks,
     };
   }
 
@@ -831,6 +865,311 @@ export class AgentSession {
     const member = memberFromFetchActivity(input);
     if (!member) return;
     this.replaceBrowserWork(markBrowserReady(this.browserWork, applyFetchMember(priorMembers, member)));
+  }
+
+  private vendorMcpEligible(): boolean {
+    return this.cfg.mode === "code" && this.codeAgent?.identity === "vendor";
+  }
+
+  private replaceMcpServers(next: McpServersMembershipFact): void {
+    const same =
+      next.disposition === this.mcpServers.disposition &&
+      next.members === this.mcpServers.members;
+    this.mcpServers = next;
+    if (!same) this.broadcastState();
+  }
+
+  private syncMcpServersEligibility(): void {
+    if (!this.vendorMcpEligible()) {
+      this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+    }
+  }
+
+  private mcpUpdatesFromEvents(events: RunEventEnvelope[]): McpUpdateInput[] {
+    const out: McpUpdateInput[] = [];
+    for (const e of events) {
+      if (e.type !== "mcp_server_update" || e.payload.kind !== "mcp_server_update") continue;
+      const parsed = parseCompleteMcpFrame({
+        serverId: e.payload.serverId,
+        name: e.payload.name,
+        status: e.payload.status,
+      });
+      if (!parsed) {
+        if (typeof e.payload.serverId === "string" && e.payload.serverId) {
+          out.push({
+            serverId: e.payload.serverId,
+            name: null,
+            status: null,
+            eventSeq: e.eventSeq,
+            unrestorable: true,
+          });
+        } else {
+          log("warn", "malformed mcp_server_update ignored", { sessionId: this.sessionId });
+        }
+        continue;
+      }
+      out.push({ ...parsed, eventSeq: e.eventSeq });
+    }
+    return out;
+  }
+
+  private markMcpServersReadyFromEvents(events: RunEventEnvelope[]): void {
+    if (!this.vendorMcpEligible()) {
+      this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+      return;
+    }
+    const members = foldMcpMembersFromUpdates(this.mcpUpdatesFromEvents(events));
+    this.replaceMcpServers(markMcpReady(this.mcpServers, members));
+  }
+
+  private async restoreMcpServersFromJournal(runId?: string | null, sessionId?: string | null): Promise<void> {
+    if (!this.vendorMcpEligible()) {
+      this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+      return;
+    }
+    this.replaceMcpServers(enterMcpHydrating(this.mcpServers));
+    try {
+      await this.runHydration;
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceMcpServers(markMcpObtainFailed(this.mcpServers));
+        return;
+      }
+      throw error;
+    }
+    try {
+      let sid = sessionId ?? this.stableClientSessionId;
+      let rid = runId ?? this.activeRunId ?? this.lastOwnedRunId;
+      if (!rid || !sid) {
+        const snapshots = await this.runCoordinator.listSnapshots();
+        const owned = this.stableClientSessionId
+          ? snapshots.filter((s) => s.sessionId === this.stableClientSessionId)
+          : snapshots;
+        const latest = owned.slice().sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+        if (!latest) {
+          this.replaceMcpServers(markMcpReady(this.mcpServers, []));
+          return;
+        }
+        sid = latest.sessionId;
+        rid = latest.runId;
+      }
+      const { events } = await this.runCoordinator.replay(sid, rid, 0);
+      this.markMcpServersReadyFromEvents(events);
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceMcpServers(markMcpObtainFailed(this.mcpServers));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async applyLiveMcpServerEvent(ev: Extract<AcpUiEvent, { type: "mcp_server" }>): Promise<void> {
+    if (this.codeAgent?.identity !== "vendor") return;
+    const runId = this.activeRunId ?? this.lastOwnedRunId;
+    if (!runId) return;
+    const run = this.runCoordinator.get(runId);
+    if (!run) return;
+    if (run.connectionGeneration !== this.connectionGeneration) return;
+    const payload = {
+      kind: "mcp_server_update" as const,
+      serverId: ev.serverId,
+      name: ev.name,
+      status: ev.status,
+    };
+    let envelope: RunEventEnvelope | undefined;
+    try {
+      if (run.state === "terminal") {
+        envelope = await this.runCoordinator.appendAfterTerminalEvent(runId, payload, "mcp_server_update");
+      } else {
+        envelope = await this.runCoordinator.appendOwnedEvent(
+          runId,
+          payload,
+          "mcp_server_update",
+          this.connectionGeneration,
+        );
+      }
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === "stale_generation") return;
+      log("warn", "mcp_server_update journal apply failed", {
+        message: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionId,
+      });
+      return;
+    }
+    if (!envelope) return;
+    const member = memberFromUpdate({
+      serverId: ev.serverId,
+      name: ev.name,
+      status: ev.status,
+      eventSeq: envelope.eventSeq,
+    });
+    if (!member) return;
+    const prior =
+      this.mcpServers.disposition === "ready" || this.mcpServers.disposition === "hydrating"
+        ? (this.mcpServers.members ?? [])
+        : [];
+    this.replaceMcpServers(markMcpReady(this.mcpServers, applyMcpMember(prior, member)));
+  }
+
+  private vendorHooksEligible(): boolean {
+    return this.cfg.mode === "code" && this.codeAgent?.identity === "vendor";
+  }
+
+  private replaceHooks(next: HooksMembershipFact): void {
+    const same =
+      next.disposition === this.hooks.disposition &&
+      next.members === this.hooks.members;
+    this.hooks = next;
+    if (!same) this.broadcastState();
+  }
+
+  private syncHooksEligibility(): void {
+    if (!this.vendorHooksEligible()) {
+      this.replaceHooks(clearHooksToAbsent(this.hooks));
+    }
+  }
+
+  private hookUpdatesFromEvents(events: RunEventEnvelope[]): HookUpdateInput[] {
+    const out: HookUpdateInput[] = [];
+    for (const e of events) {
+      if (e.type !== "hook_update" || e.payload.kind !== "hook_update") continue;
+      const parsed = parseCompleteHookFrame({
+        hookId: e.payload.hookId,
+        name: e.payload.name,
+        status: e.payload.status,
+      });
+      if (!parsed) {
+        if (typeof e.payload.hookId === "string" && e.payload.hookId) {
+          out.push({
+            hookId: e.payload.hookId,
+            name: null,
+            status: null,
+            eventSeq: e.eventSeq,
+            unrestorable: true,
+          });
+        } else {
+          log("warn", "malformed hook_update ignored", { sessionId: this.sessionId });
+        }
+        continue;
+      }
+      out.push({ ...parsed, eventSeq: e.eventSeq });
+    }
+    return out;
+  }
+
+  private markHooksReadyFromEvents(events: RunEventEnvelope[]): void {
+    if (!this.vendorHooksEligible()) {
+      this.replaceHooks(clearHooksToAbsent(this.hooks));
+      return;
+    }
+    const members = foldHooksMembersFromUpdates(this.hookUpdatesFromEvents(events));
+    this.replaceHooks(markHooksReady(this.hooks, members));
+  }
+
+  private async restoreHooksFromJournal(runId?: string | null, sessionId?: string | null): Promise<void> {
+    if (!this.vendorHooksEligible()) {
+      this.replaceHooks(clearHooksToAbsent(this.hooks));
+      return;
+    }
+    this.replaceHooks(enterHooksHydrating(this.hooks));
+    try {
+      await this.runHydration;
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceHooks(markHooksObtainFailed(this.hooks));
+        return;
+      }
+      throw error;
+    }
+    try {
+      let sid = sessionId ?? this.stableClientSessionId;
+      let rid = runId ?? this.activeRunId ?? this.lastOwnedRunId;
+      if (!rid || !sid) {
+        const snapshots = await this.runCoordinator.listSnapshots();
+        const owned = this.stableClientSessionId
+          ? snapshots.filter((s) => s.sessionId === this.stableClientSessionId)
+          : snapshots;
+        const latest = owned.slice().sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+        if (!latest) {
+          this.replaceHooks(markHooksReady(this.hooks, []));
+          return;
+        }
+        sid = latest.sessionId;
+        rid = latest.runId;
+      }
+      const { events } = await this.runCoordinator.replay(sid, rid, 0);
+      this.markHooksReadyFromEvents(events);
+    } catch (error) {
+      if (this.isJournalObtainFailure(error)) {
+        this.replaceHooks(markHooksObtainFailed(this.hooks));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async applyLiveHookEvent(ev: Extract<AcpUiEvent, { type: "hook" }>): Promise<void> {
+    if (this.codeAgent?.identity !== "vendor") return;
+    const runId = this.activeRunId ?? this.lastOwnedRunId;
+    if (!runId) return;
+    const run = this.runCoordinator.get(runId);
+    if (!run) return;
+    if (run.connectionGeneration !== this.connectionGeneration) return;
+    const payload = {
+      kind: "hook_update" as const,
+      hookId: ev.hookId,
+      name: ev.name,
+      status: ev.status,
+    };
+    let envelope: RunEventEnvelope | undefined;
+    try {
+      if (run.state === "terminal") {
+        envelope = await this.runCoordinator.appendAfterTerminalEvent(runId, payload, "hook_update");
+      } else {
+        envelope = await this.runCoordinator.appendOwnedEvent(
+          runId,
+          payload,
+          "hook_update",
+          this.connectionGeneration,
+        );
+      }
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === "stale_generation") return;
+      log("warn", "hook_update journal apply failed", {
+        message: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionId,
+      });
+      return;
+    }
+    if (!envelope) return;
+    const member = memberFromHookUpdate({
+      hookId: ev.hookId,
+      name: ev.name,
+      status: ev.status,
+      eventSeq: envelope.eventSeq,
+    });
+    if (!member) return;
+    const prior =
+      this.hooks.disposition === "ready" || this.hooks.disposition === "hydrating"
+        ? (this.hooks.members ?? [])
+        : [];
+    this.replaceHooks(markHooksReady(this.hooks, applyHookMember(prior, member)));
+  }
+
+  private async requestVendorHooksList(): Promise<void> {
+    if (!this.vendorHooksEligible()) return;
+    if (!this.client || !this.sessionId || !this.spawnLive) return;
+    try {
+      await this.client.listVendorHooks(this.sessionId);
+    } catch (error) {
+      log("warn", "vendor hooks list failed", {
+        message: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionId,
+      });
+    }
   }
 
   /** Idle vendor handshake so GET /api/state / WS can populate catalog without a Send. */
@@ -1341,6 +1680,8 @@ export class AgentSession {
       this.clearSkillsCatalogToAbsent();
       this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
       this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+      this.replaceHooks(clearHooksToAbsent(this.hooks));
       await this.restartAgent();
     } else {
       await this.disposeAgentClient();
@@ -1348,8 +1689,12 @@ export class AgentSession {
       else this.codeAgent = null;
       this.syncChildAgentsEligibility();
       this.syncBrowserWorkEligibility();
+      this.syncMcpServersEligibility();
+      this.syncHooksEligibility();
       if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
       if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
+      if (this.vendorMcpEligible()) await this.restoreMcpServersFromJournal();
+      if (this.vendorHooksEligible()) await this.restoreHooksFromJournal();
     }
     await this.refreshProjectInstructionsPresence();
     this.broadcastState();
@@ -1425,8 +1770,12 @@ export class AgentSession {
     this.eagerResolveCodeAgent();
     this.syncChildAgentsEligibility();
     this.syncBrowserWorkEligibility();
+    this.syncMcpServersEligibility();
+    this.syncHooksEligibility();
     if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
     if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
+    if (this.vendorMcpEligible()) await this.restoreMcpServersFromJournal();
+    if (this.vendorHooksEligible()) await this.restoreHooksFromJournal();
     await this.refreshProjectInstructionsPresence();
     this.broadcastState();
     return this.getState();
@@ -1452,6 +1801,8 @@ export class AgentSession {
       : stampCodeAgentFact({ kind: "cli_missing" });
     this.syncChildAgentsEligibility();
     this.syncBrowserWorkEligibility();
+    this.syncMcpServersEligibility();
+    this.syncHooksEligibility();
     this.broadcastState();
   }
 
@@ -1517,6 +1868,7 @@ export class AgentSession {
   }
 
   private async disposeAgentClient(): Promise<void> {
+    await this.mintExecutionOwnerLostIfInFlight();
     this.pendingFallback = null;
     this.pendingPromptOrigin = null;
     this.spawnLive = false;
@@ -1577,6 +1929,14 @@ export class AgentSession {
         }
         if (ev.type === "child_agent") {
           await this.applyLiveChildAgentEvent(ev);
+          return;
+        }
+        if (ev.type === "mcp_server") {
+          await this.applyLiveMcpServerEvent(ev);
+          return;
+        }
+        if (ev.type === "hook") {
+          await this.applyLiveHookEvent(ev);
           return;
         }
         if (ev.type === "project_instructions" && this.activeRunId) {
@@ -1823,13 +2183,28 @@ export class AgentSession {
         if (ev.type === "done" || ev.type === "error") {
           if (this.activeRunId) {
             const active = this.runCoordinator.get(this.activeRunId);
-            await this.cancelPendingToolDecisions(this.activeRunId);
             const exited =
               (ev.type === "error" && ev.code === "agent_exited") ||
               (ev.type === "done" && ev.reason === "agent_exited");
-            const terminal = active?.state === "cancelling"
+            const cancelled =
+              active?.state === "cancelling" ||
+              (ev.type === "done" && ev.reason === "cancelled");
+            const terminal: TerminalKind = cancelled
               ? "cancelled"
               : (ev.type === "error" || ev.reason === "error" || exited ? "failed" : "answered");
+            // Asks already open at RPC return win: queue completion; do not CAS-finalize yet.
+            // Asks this completion itself will mint (plan settlePlanPhase) are not a hold —
+            // only pre-existing pendingDecisions count here.
+            if (terminal === "answered" && this.hasUnansweredAskForRun(this.activeRunId)) {
+              this.queuedTurnEnd.set(this.activeRunId, { terminalKind: terminal, failure: null });
+              await this.appendPostToolRunState(this.activeRunId, "terminal");
+              this.setBusy(true);
+              this.broadcastState();
+              this.emit(ev);
+              return;
+            }
+            this.queuedTurnEnd.delete(this.activeRunId);
+            await this.cancelPendingToolDecisions(this.activeRunId);
             const failureCode = exited
               ? "agent_exited"
               : ev.type === "error"
@@ -1857,7 +2232,7 @@ export class AgentSession {
                       ? "The agent process exited."
                       : ev.code === "missing_final_answer"
                         ? "No final answer was produced."
-                        : "Provider execution failed.",
+                        : "The run ended before a final answer. Your prompt and received output are preserved.",
                     retryable: true,
                     recoveryAction: "retry_prompt",
                   }
@@ -1990,6 +2365,7 @@ export class AgentSession {
         executionProfile: this.executionEnvironment.profile,
         env: Object.freeze(spec.env ?? {}),
         initializePermissionMode: "default",
+        authenticateMethod: "cached_token",
       });
       this.attachCurrentClientHandlers(client);
       this.replaceSkillsCatalog(enterAwaiting(this.skillsCatalog), "obtain");
@@ -2002,8 +2378,12 @@ export class AgentSession {
         await this.stampLiveProvenance(ownedRunId, { identity: "vendor", fallbackReason: null });
         this.syncChildAgentsEligibility();
         this.syncBrowserWorkEligibility();
+        this.syncMcpServersEligibility();
+        this.syncHooksEligibility();
         if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
         if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
+        if (this.vendorMcpEligible()) await this.restoreMcpServersFromJournal();
+        if (this.vendorHooksEligible()) await this.restoreHooksFromJournal();
         this.broadcastState();
         return;
       }
@@ -2016,6 +2396,8 @@ export class AgentSession {
       this.clearSkillsCatalogToAbsent();
       this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
       this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+      this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+      this.replaceHooks(clearHooksToAbsent(this.hooks));
       await this.stampLiveProvenance(ownedRunId, { identity: "fallback", fallbackReason: kind });
       this.broadcastState();
       return;
@@ -2024,6 +2406,8 @@ export class AgentSession {
     this.clearSkillsCatalogToAbsent();
     this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
     this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+    this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+    this.replaceHooks(clearHooksToAbsent(this.hooks));
     this.broadcastState();
     throw Object.assign(new Error("Couldn't start an agent for Code."), { code: "hard_fail" });
   }
@@ -2123,6 +2507,8 @@ export class AgentSession {
         this.clearSkillsCatalogToAbsent();
         this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
         this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
+        this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
+        this.replaceHooks(clearHooksToAbsent(this.hooks));
         this.workspace = ensureChatRoot(this.cfg.chatRoot);
       } else if (!this.workspace) {
         this.broadcastState();
@@ -2264,6 +2650,37 @@ export class AgentSession {
     } else {
       this.syncBrowserWorkEligibility();
     }
+    if (this.vendorMcpEligible()) {
+      this.replaceMcpServers(enterMcpHydrating(this.mcpServers));
+      try {
+        const foldedMcp = await this.runCoordinator.replay(admitted.sessionId, admitted.runId, 0);
+        this.markMcpServersReadyFromEvents(foldedMcp.events);
+      } catch (error) {
+        if (this.isJournalObtainFailure(error)) {
+          this.replaceMcpServers(markMcpObtainFailed(this.mcpServers));
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      this.syncMcpServersEligibility();
+    }
+    if (this.vendorHooksEligible()) {
+      this.replaceHooks(enterHooksHydrating(this.hooks));
+      try {
+        const foldedHooks = await this.runCoordinator.replay(admitted.sessionId, admitted.runId, 0);
+        this.markHooksReadyFromEvents(foldedHooks.events);
+      } catch (error) {
+        if (this.isJournalObtainFailure(error)) {
+          this.replaceHooks(markHooksObtainFailed(this.hooks));
+        } else {
+          throw error;
+        }
+      }
+      await this.requestVendorHooksList();
+    } else {
+      this.syncHooksEligibility();
+    }
     if (mode === "code") {
       const identity = this.codeAgent?.identity;
       if (identity === "vendor" || identity === "fallback") {
@@ -2368,6 +2785,7 @@ export class AgentSession {
   }
   async shutdown(): Promise<void> {
     this.clearSkillsObtainTimer();
+    await this.mintExecutionOwnerLostIfInFlight();
     const c=this.client;
     this.client=null;
     this.sessionId=null;
@@ -2512,6 +2930,12 @@ export class AgentSession {
       if (this.vendorBrowserWorkEligible()) {
         this.markBrowserWorkReadyFromEvents(result.events);
       }
+      if (this.vendorMcpEligible()) {
+        this.markMcpServersReadyFromEvents(result.events);
+      }
+      if (this.vendorHooksEligible()) {
+        this.markHooksReadyFromEvents(result.events);
+      }
       return result;
     } catch (error) {
       if (this.isJournalObtainFailure(error)) {
@@ -2521,6 +2945,12 @@ export class AgentSession {
         if (this.vendorBrowserWorkEligible()) {
           this.replaceBrowserWork(markBrowserObtainFailed(this.browserWork));
         }
+        if (this.vendorMcpEligible()) {
+          this.replaceMcpServers(markMcpObtainFailed(this.mcpServers));
+        }
+        if (this.vendorHooksEligible()) {
+          this.replaceHooks(markHooksObtainFailed(this.hooks));
+        }
       }
       throw error;
     }
@@ -2529,6 +2959,7 @@ export class AgentSession {
     const run = this.getRun(runId, clientSessionId);
     if (!run) throw Object.assign(new Error("Run not found"), { code: "run_not_found" });
     if (run.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
+    this.queuedTurnEnd.delete(runId);
     await this.runCoordinator.cancel(runId);
     if (this.client) await this.client.cancel({ sessionId: this.sessionId || clientSessionId, runId, connectionGeneration: run.connectionGeneration });
     return this.runCoordinator.get(runId)!;
@@ -2549,6 +2980,7 @@ export class AgentSession {
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
     if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:"Permission",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    if (ownership) await this.drainQueuedTurnEnd(ownership.runId);
     return decision === "deny" ? "declined" : "accepted";
   }
 
@@ -2562,6 +2994,7 @@ export class AgentSession {
     if(pending) pending.status=action==="accept"?"accepted":"declined";
     if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"diff",status:action==="accept"?"accepted":"declined",title:"Edit",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    if (ownership) await this.drainQueuedTurnEnd(ownership.runId);
     return action === "accept" ? "accepted" : "declined";
   }
 
@@ -2615,6 +3048,8 @@ export class AgentSession {
       expiresAt: null,
       policy: run.policy,
     });
+    this.pendingDecisions.delete(requestId);
+    await this.drainQueuedTurnEnd(ownership.runId);
     this.broadcastState();
     return status;
   }
@@ -2716,6 +3151,56 @@ export class AgentSession {
       return;
     }
     await journal("running", "provider");
+  }
+
+  private hasUnansweredAskForRun(runId: string): boolean {
+    for (const d of this.pendingDecisions.values()) {
+      if (d.runId === runId && d.status === "pending" && !this.isDecisionExpired(d)) return true;
+    }
+    return false;
+  }
+
+  private async drainQueuedTurnEnd(runId: string): Promise<void> {
+    if (this.hasUnansweredAskForRun(runId)) return;
+    const queued = this.queuedTurnEnd.get(runId);
+    if (!queued) return;
+    const run = this.runCoordinator.get(runId);
+    if (!run || run.state === "terminal" || run.state === "cancelling") {
+      this.queuedTurnEnd.delete(runId);
+      return;
+    }
+    this.queuedTurnEnd.delete(runId);
+    if (run.executionPhase === "plan") {
+      await this.settlePlanPhase(run, queued.terminalKind, this.runCoordinator.getAccumulatedAnswer(runId) || null);
+    }
+    await this.runCoordinator.finalize(runId, queued.terminalKind, null, queued.failure);
+    if (this.activeRunId === runId) this.activeRunId = null;
+    this.setBusy(false);
+    this.broadcastState();
+  }
+
+  private async mintExecutionOwnerLostIfInFlight(): Promise<void> {
+    const runId = this.activeRunId;
+    if (!runId) return;
+    const run = this.runCoordinator.get(runId);
+    this.queuedTurnEnd.delete(runId);
+    if (!run || run.state === "terminal") {
+      if (this.activeRunId === runId) this.activeRunId = null;
+      this.setBusy(false);
+      return;
+    }
+    await this.cancelPendingToolDecisions(runId);
+    if (run.executionPhase === "plan") {
+      await this.settlePlanPhase(run, "failed", this.runCoordinator.getAccumulatedAnswer(runId) || null);
+    }
+    await this.runCoordinator.finalize(runId, "failed", null, {
+      code: "execution_owner_lost",
+      message: "The run ended before a final answer. Your prompt and received output are preserved.",
+      retryable: true,
+      recoveryAction: "reconnect",
+    });
+    if (this.activeRunId === runId) this.activeRunId = null;
+    this.setBusy(false);
   }
 
   private async cancelPendingToolDecisions(runId: string): Promise<void> {

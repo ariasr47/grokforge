@@ -152,8 +152,25 @@ export function projectChildAgents(input: {
   parentTerminal: boolean;
   ownershipLost?: boolean;
   runNonTerminal: boolean;
+  hostRosterEligible?: boolean;
 }): ChildAgentsProjection {
   if (input.mode !== "code" || input.codeAgent?.identity !== "vendor") return ABSENT;
+  const hostEligible = input.hostRosterEligible !== false;
+  if (!hostEligible) {
+    const journal = sortByFirstEventSeq(completeList(input.journalMembers));
+    if (journal.length === 0) return ABSENT;
+    const voucher = hasCurrentVoucher(input);
+    const copy = currencyCopy(input);
+    const rows = mapRows(journal, voucher);
+    return {
+      state: "ready",
+      members: rows,
+      ...counts(rows),
+      liveGrowing: Boolean(input.runNonTerminal && voucher),
+      offlineCopy: copy.offlineCopy,
+      reconnectCopy: copy.reconnectCopy,
+    };
+  }
   const fact = input.childAgents;
   if (!fact) return ABSENT;
   if (fact.disposition === "absent_non_code_or_non_vendor") return ABSENT;

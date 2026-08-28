@@ -36,6 +36,7 @@ import {
 import { hasPriorConversations } from "./shell-history.js";
 import { APP_VERSION } from "./build-version.js";
 import { EditJournal } from "./edit-journal.js";
+import { readInstallerSha256 } from "./installerDigest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = defaultPort();
@@ -187,6 +188,10 @@ const server = http.createServer(async (req, res) => {
         dataDir: CHANNEL.dataDir,
         log: logPath(),
         pid: process.pid,
+        installerSha256: readInstallerSha256({
+          dataDir: CHANNEL.dataDir,
+          appVersion: APP_VERSION,
+        }),
       });
       return;
     }

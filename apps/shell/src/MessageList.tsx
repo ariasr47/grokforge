@@ -8,6 +8,7 @@ import { ToolActivityGroup } from "./ToolActivity";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
 import { writeClipboard } from "./copyClipboard";
+import { elevateArtifact } from "./artifactEligibility";
 
 interface Props {
   messages: ChatMessage[];
@@ -25,6 +26,8 @@ interface Props {
   onChoose?: (label: string, meta?: string) => void;
   /** Outer transcript scroller — used to virtualize long histories. */
   scrollRef?: RefObject<HTMLElement | null>;
+  artifactOpenMessageId?: string | null;
+  onOpenArtifact?: (messageId: string) => void;
 }
 
 function copyText(text: string): Promise<void> {
@@ -84,6 +87,9 @@ const ThinkingPlaceholder = memo(function ThinkingPlaceholder({
   );
 });
 
+const OPEN_TOOLTIP =
+  "Show this turn’s document beside the transcript. Closing hides the panel without deleting the turn.";
+
 const ChatBubble = memo(function ChatBubble({
   message: m,
   showRetry,
@@ -91,6 +97,8 @@ const ChatBubble = memo(function ChatBubble({
   onRetry,
   onRegenerate,
   onChoose,
+  artifactOpen,
+  onOpenArtifact,
 }: {
   message: ChatMessage;
   showRetry?: boolean;
@@ -98,6 +106,8 @@ const ChatBubble = memo(function ChatBubble({
   onRetry?: () => void;
   onRegenerate?: () => void;
   onChoose?: (label: string, meta?: string) => void;
+  artifactOpen?: boolean;
+  onOpenArtifact?: (messageId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [copyErr, setCopyErr] = useState(false);
@@ -133,6 +143,15 @@ const ChatBubble = memo(function ChatBubble({
   }, [m.content]);
 
   const useMd = m.role === "assistant" || m.role === "system";
+  const elevateKind =
+    m.role === "assistant" && !m.streaming && m.content?.trim()
+      ? elevateArtifact(m.content).kind
+      : "none";
+  const elevatable = elevateKind !== "none";
+  const openTitle =
+    elevateKind === "long-markdown" || m.content.length >= 1500
+      ? "Open in panel"
+      : OPEN_TOOLTIP;
   // Plain stream only for short unstructured text; rich/md renders live
   const showPlainStream =
     m.role === "assistant" &&
@@ -153,6 +172,7 @@ const ChatBubble = memo(function ChatBubble({
     <article
       className={`msg ${kind}${m.streaming ? " streaming" : ""}`}
       data-msg-role={m.role}
+      data-msg-id={m.id}
     >
       <div className="msg-head">
         <div className="role">
@@ -160,6 +180,16 @@ const ChatBubble = memo(function ChatBubble({
           {m.streaming ? " · streaming" : ""}
         </div>
         <div className="msg-actions">
+          {elevatable ? (
+            <Button
+              variant="ghost"
+              className="msg-action"
+              onClick={() => onOpenArtifact?.(m.id)}
+              title={openTitle}
+            >
+              Open
+            </Button>
+          ) : null}
           {showRetry && onRetry && (
             <Button
               variant="ghost"
@@ -210,11 +240,18 @@ const ChatBubble = memo(function ChatBubble({
         </div>
       ) : useMd ? (
         m.content ? (
-          <MarkdownBody
-            text={m.content}
-            streaming={Boolean(m.streaming)}
-            onChoose={onChoose}
-          />
+          <div
+            className={artifactOpen ? "msg-body--artifact-compact" : undefined}
+            hidden={artifactOpen || undefined}
+          >
+            {artifactOpen ? null : (
+              <MarkdownBody
+                text={m.content}
+                streaming={Boolean(m.streaming)}
+                onChoose={onChoose}
+              />
+            )}
+          </div>
         ) : null
       ) : (
         <div className="body">{m.content}</div>
@@ -237,6 +274,8 @@ export const MessageList = memo(function MessageList({
   thinkingDetail,
   onChoose,
   scrollRef,
+  artifactOpenMessageId = null,
+  onOpenArtifact,
 }: Props & { thinkingDetail?: string | null }) {
   const sliced = useMemo(() => {
     if (messages.length <= windowSize) return messages;
@@ -273,6 +312,8 @@ export const MessageList = memo(function MessageList({
             isLastAssistant && Boolean(onRegenerate) && Boolean(lastUserId)
           }
           onChoose={onChoose}
+          artifactOpen={artifactOpenMessageId === m.id}
+          onOpenArtifact={onOpenArtifact}
           onRetry={
             isLastUser && onRetryUser
               ? () => onRetryUser(m.id, m.content)

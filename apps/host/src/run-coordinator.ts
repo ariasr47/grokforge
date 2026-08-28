@@ -121,7 +121,7 @@ export class RunCoordinator {
       return event;
     });
   }
-  async appendAfterTerminalEvent(runId:string,payload:Extract<RunEventEnvelope["payload"],{kind:"plan_record"}|{kind:"decision_request"}|{kind:"child_agent_update"}>,type:Extract<RunEventEnvelope["type"],"plan_record"|"decision_request"|"child_agent_update">):Promise<RunEventEnvelope>{
+  async appendAfterTerminalEvent(runId:string,payload:Extract<RunEventEnvelope["payload"],{kind:"plan_record"}|{kind:"decision_request"}|{kind:"child_agent_update"}|{kind:"mcp_server_update"}|{kind:"hook_update"}>,type:Extract<RunEventEnvelope["type"],"plan_record"|"decision_request"|"child_agent_update"|"mcp_server_update"|"hook_update">):Promise<RunEventEnvelope>{
     return this.withRunMutationLock(runId,async()=>{
       let run=this.active.get(runId);
       if(!run){

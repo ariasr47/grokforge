@@ -10,6 +10,19 @@ import type {
   PromptOptions,
   AcpOwnership,
 } from "./types.js";
+import {
+  NAMED_MCP_JSONRPC_SERVERS_UPDATED,
+  NAMED_MCP_JSONRPC_STATUS,
+  parseVendorMcpStatusParams,
+} from "./mcpAdvertisement.js";
+import {
+  NAMED_HOOKS_CHANGED_KIND,
+  NAMED_HOOKS_EXECUTION_KIND,
+  NAMED_HOOKS_JSONRPC_LIST,
+  NAMED_HOOKS_JSONRPC_METHOD,
+  parseVendorHookExecutionParams,
+  parseVendorHooksListResult,
+} from "./hooksAdvertisement.js";
 
 type JsonRpcId = number | string;
 
@@ -143,8 +156,45 @@ export class StdioAcpClient implements AcpClient {
     const result = (await this.request("session/new", {
       cwd: this.config.workspaceRoot,
       executionProfile: this.config.executionProfile,
+      // Vendor grok agent ≥1.0.5 requires this field (JSON-RPC -32602
+      // "missing field `mcpServers`"). Empty list is honest: Forge does not
+      // inject a host MCP registry. grok-acp ignores unknown keys.
+      mcpServers: [],
     })) as { sessionId: string };
+    if (this.config.authenticateMethod) {
+      await this.request("authenticate", { methodId: this.config.authenticateMethod });
+    }
     return result.sessionId;
+  }
+
+  /** GATE-named roster obtain. Emits `hook` events; never throws on method-not-found. */
+  async listVendorHooks(sessionId: string): Promise<void> {
+    try {
+      const raw = await this.request(NAMED_HOOKS_JSONRPC_LIST, { sessionId });
+      const parsed = parseVendorHooksListResult(raw);
+      if (!parsed) {
+        this.emit({
+          type: "agent_log",
+          level: "warn",
+          message: "Malformed vendor hooks list ignored (incomplete identity or status).",
+        });
+        return;
+      }
+      for (const member of parsed) {
+        this.emit({
+          type: "hook",
+          hookId: member.hookId,
+          name: member.name,
+          status: member.status,
+        });
+      }
+    } catch (error) {
+      this.emit({
+        type: "agent_log",
+        level: "warn",
+        message: `Unmapped vendor hooks list: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   async prompt(
@@ -156,10 +206,14 @@ export class StdioAcpClient implements AcpClient {
       ? { sessionId, runId: opts.runId, connectionGeneration: opts.connectionGeneration }
       : null;
     this.activeOwnership = ownership;
-    await this.request("session/prompt", {
+    const result = await this.request("session/prompt", {
       sessionId,
       ...(ownership ?? {}),
-      prompt: text,
+      // Vendor grok agent requires ACP content blocks (a sequence). grok-acp
+      // still accepts a string. Only the vendor handshake sets permissionMode.
+      prompt: this.config.initializePermissionMode === "default"
+        ? [{ type: "text", text }]
+        : text,
       model: opts?.model,
       reasoning_effort: opts?.reasoning_effort,
       history: opts?.history,
@@ -169,6 +223,28 @@ export class StdioAcpClient implements AcpClient {
       sessionWrite: opts?.sessionWrite === true,
       sessionShell: opts?.sessionShell === true,
     });
+    // Vendor often returns only the RPC result (no done notification). Map it
+    // onto the same done-class ingress grok-acp already emits. CAS rejects a
+    // second winner if a stream-level done also arrives. grok-acp acks with
+    // {ok, accepted} then notifies done later — that ack is not turn-end.
+    this.emitDoneFromPromptResult(result);
+  }
+
+  private emitDoneFromPromptResult(result: unknown): void {
+    const rec = result && typeof result === "object" ? (result as Record<string, unknown>) : null;
+    const hasStopReason = Boolean(rec && Object.prototype.hasOwnProperty.call(rec, "stopReason"));
+    const grokAcpAck = Boolean(rec && rec.accepted === true && !hasStopReason);
+    if (grokAcpAck) return;
+    if (!hasStopReason && this.config.initializePermissionMode !== "default") return;
+    const stopReason = hasStopReason
+      ? String((rec as { stopReason?: unknown }).stopReason ?? "stop")
+      : "stop";
+    const reason =
+      /cancel/i.test(stopReason) ? "cancelled" :
+      /error|refus|abort/i.test(stopReason) ? "error" :
+      stopReason === "end_turn" || stopReason === "stop" || !stopReason ? "stop" :
+      stopReason;
+    this.emit({ type: "done", reason });
   }
 
   async cancel(ownership?: AcpOwnership): Promise<void> {
@@ -313,7 +389,8 @@ export class StdioAcpClient implements AcpClient {
       if (!pending) return;
       this.pending.delete(msg.id);
       if (msg.error) {
-        pending.reject(new Error(msg.error.message));
+        const detail = msg.error.data != null ? `: ${String(msg.error.data)}` : "";
+        pending.reject(new Error(`${msg.error.message}${detail}`));
       } else {
         pending.resolve(msg.result);
       }
@@ -325,7 +402,10 @@ export class StdioAcpClient implements AcpClient {
       const pending = this.pending.get(msg.id);
       if (pending) {
         this.pending.delete(msg.id);
-        if (msg.error) pending.reject(new Error(msg.error.message));
+        if (msg.error) {
+          const detail = msg.error.data != null ? `: ${String(msg.error.data)}` : "";
+          pending.reject(new Error(`${msg.error.message}${detail}`));
+        }
         else pending.resolve(msg.result);
         return;
       }
@@ -393,6 +473,65 @@ export class StdioAcpClient implements AcpClient {
       if (p.connectionGeneration !== undefined && p.connectionGeneration !== this.activeOwnership.connectionGeneration) return;
     }
     switch (method) {
+      case NAMED_HOOKS_JSONRPC_METHOD: {
+        const update = (p.update && typeof p.update === "object" ? p.update : p) as Record<string, unknown>;
+        const kind = String(update.sessionUpdate ?? "");
+        if (kind !== NAMED_HOOKS_EXECUTION_KIND && kind !== NAMED_HOOKS_CHANGED_KIND) {
+          break;
+        }
+        const parsed = parseVendorHookExecutionParams(p);
+        if (parsed == null) {
+          this.emit({
+            type: "agent_log",
+            level: "warn",
+            message: "Malformed vendor hooks frame ignored (incomplete identity or status).",
+          });
+          break;
+        }
+        if (kind === NAMED_HOOKS_EXECUTION_KIND && Array.isArray(update.runs) && update.runs.length > 0 && parsed.length === 0) {
+          this.emit({
+            type: "agent_log",
+            level: "warn",
+            message: "Malformed vendor hooks frame ignored (incomplete identity or status).",
+          });
+          break;
+        }
+        for (const member of parsed) {
+          this.emit({
+            type: "hook",
+            hookId: member.hookId,
+            name: member.name,
+            status: member.status,
+          });
+        }
+        break;
+      }
+      case NAMED_MCP_JSONRPC_STATUS: {
+        const parsed = parseVendorMcpStatusParams(p);
+        if (!parsed) {
+          this.emit({
+            type: "agent_log",
+            level: "warn",
+            message: "Malformed vendor MCP frame ignored (incomplete identity or status).",
+          });
+          break;
+        }
+        this.emit({
+          type: "mcp_server",
+          serverId: parsed.serverId,
+          name: parsed.name,
+          status: parsed.status,
+        });
+        break;
+      }
+      case NAMED_MCP_JSONRPC_SERVERS_UPDATED: {
+        this.emit({
+          type: "agent_log",
+          level: "warn",
+          message: "Incomplete vendor MCP advertisement ignored (no status).",
+        });
+        break;
+      }
       case "text_delta":
       case "agent/text_delta": {
         const text = String(p.text ?? "");
@@ -516,6 +655,13 @@ export class StdioAcpClient implements AcpClient {
         break;
       }
       default:
+        if (method === NAMED_HOOKS_JSONRPC_LIST || method.startsWith("_x.ai/hooks/")) {
+          this.emit({
+            type: "agent_log",
+            level: "warn",
+            message: `Unmapped vendor hooks method: ${method}`,
+          });
+        }
         break;
     }
   }

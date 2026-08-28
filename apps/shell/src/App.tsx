@@ -143,6 +143,13 @@ import {
   MODEL_PRESETS,
 } from "./api";
 import { installHealthPollTestScheduler } from "./healthPollTestClock";
+import {
+  isPackagedWindowsInstallerSession,
+  SETTINGS_UNSIGNED_LINE,
+  SHA_TITLE,
+  shaSettingsLabel,
+  type InstallerShaVoucher,
+} from "./installerHonesty";
 import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
 import { useToast } from "./Toast";
 import {
@@ -165,6 +172,12 @@ import {
 } from "./exportChat";
 import { expandAtMentions } from "./expandMentions";
 import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type ActivityRecord, type RunProjection, type RunEventEnvelope } from "./runReducer";
+import {
+  hostObserveRosterEligible,
+  isOwnedMembership,
+  observeRosterFingerprint,
+  ownedRunKeysFromProjection,
+} from "./activityMembership";
 import { deriveLivePhase, deriveLivePhaseFromRun, phaseCopy } from "./derivedLivePhase";
 import {
   hasDockOwnedPending,
@@ -183,6 +196,17 @@ import {
   type RestoreIntent,
 } from "./catchUpWindows";
 import { RunSurface } from "./RunSurface";
+import { ArtifactPanel } from "./ArtifactPanel";
+import { elevateArtifact } from "./artifactEligibility";
+import {
+  bindingMatchesTurn,
+  clearArtifactBinding,
+  openArtifactBinding,
+  shouldClearOnConversationChange,
+  shouldClearOnSourceGone,
+  type ArtifactContentKind,
+  type ArtifactOpenBinding,
+} from "./artifactOpenBinding";
 import { PermissionPolicyControl } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
@@ -258,6 +282,7 @@ export function App() {
     version?: string;
     channel?: string;
     channelLabel?: string;
+    installerShaVoucher: InstallerShaVoucher;
   } | null>(null);
   const [hostOk, setHostOk] = useState(false);
   const [wsOk, setWsOk] = useState(false);
@@ -331,6 +356,13 @@ export function App() {
   const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
   const [histIdx, setHistIdx] = useState(-1);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
+  const observeRosterKeyRef = useRef("");
+  const [observeHostOwnerSessionId, setObserveHostOwnerSessionId] = useState<string | null>(null);
+  const [artifactOpenBinding, setArtifactOpenBinding] =
+    useState<ArtifactOpenBinding | null>(null);
+  const [artifactAnnounce, setArtifactAnnounce] = useState("");
   const [classesView, setClassesView] = useState<TrustedCommandClassesView | null>(null);
   const [classesStatus, setClassesStatus] = useState<TrustedCommandClassesStatus>("no_workspace");
   const [sessionList, setSessionList] = useState<ChatSession[]>([]);
@@ -378,6 +410,22 @@ export function App() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    if (!state) return;
+    const key = observeRosterFingerprint({
+      childIds: state.childAgents?.members?.map((m) => m.childId),
+      mcpIds: state.mcpServers?.members?.map((m) => m.serverId),
+      hookIds: state.hooks?.members?.map((m) => m.hookId),
+      browserIds: state.browserWork?.members?.map((m) => m.toolCallId),
+    });
+    const changed = key !== observeRosterKeyRef.current;
+    if (changed) observeRosterKeyRef.current = key;
+    if (!sessionId) return;
+    if (observeHostOwnerSessionId == null || changed) {
+      if (observeHostOwnerSessionId !== sessionId) setObserveHostOwnerSessionId(sessionId);
+    }
+  }, [state, sessionId, observeHostOwnerSessionId]);
 
   // Run identity/cursors outlive a WebView reload. Journal replay below fills
   // any missing owned events; this projection is only a durable UI cache.
@@ -783,6 +831,11 @@ export function App() {
   );
 
   const applyRailEvidence = useCallback((nextRun: NonNullable<RunProjection["runsById"][string]>) => {
+    const owned = ownedRunKeysFromProjection(
+      runProjectionRef.current.runOrder.map((id) => runProjectionRef.current.runsById[id]),
+      sessionIdRef.current,
+    );
+    if (!isOwnedMembership(owned, { sessionId: nextRun.sessionId, runId: nextRun.runId })) return;
     const evidence = railEvidenceFromRun(nextRun);
     if (evidence.length === 0) return;
     setMessages((prev) => {
@@ -811,11 +864,20 @@ export function App() {
   applyRailEvidenceRef.current = applyRailEvidence;
 
   const paintEnvelopeActivity = useCallback((activity: ActivityRecord, runId?: string | null) => {
+    const rid = runId ?? normalizedRunIdRef.current ?? null;
+    if (!rid) return;
+    const ownerSessionId = runProjectionRef.current.runsById[rid]?.sessionId;
+    if (!ownerSessionId) return;
+    const owned = ownedRunKeysFromProjection(
+      runProjectionRef.current.runOrder.map((id) => runProjectionRef.current.runsById[id]),
+      sessionIdRef.current,
+    );
+    if (!isOwnedMembership(owned, { sessionId: ownerSessionId, runId: rid })) return;
     const identity = `tool:${activity.activityId}:${activity.invocationId}`;
     const stamp = stampActivity(identity);
     if (!stamp) return;
     const body = activity.output != null ? formatToolOutput(activity.output) : "";
-    const projectedRunId = runId ?? normalizedRunIdRef.current ?? undefined;
+    const projectedRunId = rid;
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.role === "tool" && m.activityIdentity === identity);
       const entry: ChatMessage = {
@@ -889,8 +951,16 @@ export function App() {
         commitRunProjection(next);
       }
       const nextRun = next.runsById[runEvent.runId];
+      const envelopeOwned = isOwnedMembership(
+        ownedRunKeysFromProjection(
+          next.runOrder.map((id) => next.runsById[id]),
+          sessionIdRef.current,
+        ),
+        { sessionId: runEvent.sessionId, runId: runEvent.runId },
+      );
       if (
         nextRun &&
+        envelopeOwned &&
         (runEvent.payload.kind === "decision_request" || runEvent.payload.kind === "activity_update")
       ) {
         setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
@@ -901,6 +971,7 @@ export function App() {
         }
       }
       if (runEvent.payload.kind === "run_terminal") {
+        if (!envelopeOwned) return;
         if (nextRun) {
           setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
           setPermissions((prev) => mergePendingPermissions(prev, nextRun));
@@ -915,6 +986,7 @@ export function App() {
           kind === "answered" ? "Answer ready" : kind === "cancelled" ? "Run cancelled" : "Run ended",
         );
       } else if (runEvent.payload.kind === "run_state") {
+        if (!envelopeOwned) return;
         setRunPhaseDetail(runEvent.payload.state === "recovering" ? "Recovering run…" : runEvent.payload.state === "cancelling" ? "Ending run…" : null);
       }
       return;
@@ -1416,12 +1488,28 @@ export function App() {
    *  published, per `hostPort()`'s N-3 note) since that is ground truth
    *  when reachable. */
   const refreshBuildInfo = useCallback(async () => {
-    setBuildInfo(await localBuildIdentity());
+    const local = await localBuildIdentity();
+    setBuildInfo({
+      version: local.version,
+      channel: local.channel,
+      channelLabel: local.channelLabel,
+      installerShaVoucher: { status: "pending" },
+    });
     try {
       const h = await api.health();
-      setBuildInfo({ version: h.version, channel: h.channel, channelLabel: h.channelLabel });
+      setBuildInfo({
+        version: h.version ?? local.version,
+        channel: h.channel ?? local.channel,
+        channelLabel: h.channelLabel ?? local.channelLabel,
+        installerShaVoucher: { status: "live", value: h.installerSha256 ?? null },
+      });
     } catch {
-      /* engine unreachable — keep the local build identity set above */
+      setBuildInfo({
+        version: local.version,
+        channel: local.channel,
+        channelLabel: local.channelLabel,
+        installerShaVoucher: { status: "unreachable" },
+      });
     }
   }, []);
 
@@ -1450,8 +1538,8 @@ export function App() {
     // N-2 — unconditional: a failed boot still gets a shot at the build
     // identity (see refreshBuildInfo above), which is what feeds the
     // LaunchFailureCard `Details` disclosure below.
-    await refreshBuildInfo();
     if (!ok) {
+      await refreshBuildInfo();
       // F6's bound counts RECOVERY attempts (explicit "Try again" clicks via
       // retryHost), not this initial boot — "three failing restart_host
       // calls" (PLAN F6) is the bound, so recoveryAttemptsRef starts at 0
@@ -1479,7 +1567,11 @@ export function App() {
     } catch {
       /* optional */
     }
+    // Dual-source SHA: become ready with local identity (pending voucher) so
+    // Welcome/Settings can paint Loading instead of flashing unavailable
+    // while the health refine is in flight.
     setBoot("ready");
+    void refreshBuildInfo();
   }, [clearBootTimers, refreshBuildInfo]);
 
   useEffect(() => {
@@ -1645,10 +1737,16 @@ export function App() {
   useEffect(() => {
     if (boot !== "ready") return;
     const healthCadence = 4000;
-    const pollHealth = () => { void api.health().then(() => {
+    const pollHealth = () => { void api.health().then((h) => {
       healthFailStreakRef.current = 0;
       setHealthFailStreak(0);
       setHostOk(true);
+      setBuildInfo((prev) => ({
+        version: h.version ?? prev?.version,
+        channel: h.channel ?? prev?.channel,
+        channelLabel: h.channelLabel ?? prev?.channelLabel,
+        installerShaVoucher: { status: "live", value: h.installerSha256 ?? null },
+      }));
       // A healthy transport does not prove a run outcome. Poll only runs that
       // remain nonterminal in the owned projection, and merge journal truth
       // idempotently. Hours-long live runs remain live; missed terminals are
@@ -1658,7 +1756,17 @@ export function App() {
         return Boolean(run && run.state !== "terminal");
       });
       if (hasOwnedNonterminal) void reconcileOwnedRuns();
-    }).catch(() => { healthFailStreakRef.current += 1; const streak = healthFailStreakRef.current; setHealthFailStreak(streak); if (streak >= 2) setHostOk(false); }); };
+    }).catch(() => {
+      healthFailStreakRef.current += 1;
+      const streak = healthFailStreakRef.current;
+      setHealthFailStreak(streak);
+      setBuildInfo((prev) =>
+        prev
+          ? { ...prev, installerShaVoucher: { status: "unreachable" as const } }
+          : prev,
+      );
+      if (streak >= 2) setHostOk(false);
+    }); };
     const testCleanup = installHealthPollTestScheduler(pollHealth);
     const healthTimer = testCleanup ? undefined : setInterval(pollHealth, healthCadence);
     return () => { if (healthTimer !== undefined) clearInterval(healthTimer); testCleanup?.(); };
@@ -1737,6 +1845,13 @@ export function App() {
   const projectedRunIds = useMemo(() => new Set(
     runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId),
   ), [runProjection, sessionId]);
+  const activeOwnedRunKeys = useMemo(
+    () => ownedRunKeysFromProjection(
+      runProjection.runOrder.map((id) => runProjection.runsById[id]),
+      sessionId,
+    ),
+    [runProjection, sessionId],
+  );
   const journalActivityIds = useMemo(() => {
     const ids = new Set<string>();
     for (const id of projectedRunIds) {
@@ -1749,6 +1864,13 @@ export function App() {
   const visibleMessages = useMemo(
     () => messages.filter((message) => {
       if (message.projectedRunId && projectedRunIds.has(message.projectedRunId)) return false;
+      if (
+        (message.role === "tool" || Boolean(message.toolMeta?.activityId)) &&
+        message.projectedRunId &&
+        !projectedRunIds.has(message.projectedRunId)
+      ) {
+        return false;
+      }
       const activityId = message.toolMeta?.activityId;
       if (message.role === "tool" && activityId && journalActivityIds.has(activityId)) return false;
       return true;
@@ -2123,11 +2245,15 @@ export function App() {
       return Boolean(run && run.sessionId === sessionId && hasDockOwnedPending(run));
     });
   }, [runProjection, sessionId]);
+  // Code RunSurface filters projected-run messages out of visibleMessages, so
+  // after a clean Answered turn the list can be empty while an owned terminal
+  // still needs the idle Your turn cue. Chat without a projected run keeps the
+  // visibleMessages gate so empty transcripts do not invent the delimiter.
   const turnReady =
     !sessionHasNonTerminalRun &&
     !sessionHasDockOwnedPending &&
     awaitingNextTurn &&
-    visibleMessages.length > 0;
+    (visibleMessages.length > 0 || normalizedRunVisible);
 
   const sendDisabledReason = useMemo(() => {
     if (!connected && !codePreAcquireOk) return "Engine offline — try again to send";
@@ -2349,6 +2475,7 @@ export function App() {
   const switchSession = useCallback(
     async (partition: string, id: string) => {
       if (sessionId === id && partition === sessionPartition) return;
+      setArtifactOpenBinding(null);
       if (sessionId) {
         persistMessages(sessionPartition, sessionId, messagesRef.current);
         updateSessionMeta(sessionPartition, sessionId, { status: "idle" });
@@ -2417,6 +2544,7 @@ export function App() {
       if (busyRef.current) {
         void api.cancel().catch(() => undefined);
       }
+      setArtifactOpenBinding(null);
       discardTranscriptStream();
       const isChatKey = ws.startsWith("chat:");
       const branch =
@@ -2863,6 +2991,7 @@ export function App() {
     (workspace: string, id: string) => {
       const next = deleteSession(workspace, id);
       if (sessionId === id) {
+        setArtifactOpenBinding(null);
         discardTranscriptStream();
         if (next) {
           setSessionId(next.id);
@@ -3186,6 +3315,7 @@ export function App() {
 
   const retryLastUser = useCallback(
     (_id: string, content: string) => {
+      setArtifactOpenBinding((b) => (b ? clearArtifactBinding(b) : null));
       // Drop trailing assistant / stop chips; keep the last user bubble
       void sendText(content, {
         stripTrailingAssistant: true,
@@ -3197,6 +3327,7 @@ export function App() {
 
   const regenerateLast = useCallback(
     (userContent: string) => {
+      setArtifactOpenBinding((b) => (b ? clearArtifactBinding(b) : null));
       void sendText(userContent, {
         skipUserBubble: true,
         stripTrailingAssistant: true,
@@ -3204,6 +3335,97 @@ export function App() {
     },
     [sendText],
   );
+
+  const fillComposerFromChoice = useCallback(
+    (label: string, meta?: string) => {
+      const line = meta ? `I choose: ${label}\n\n${meta}` : `I choose: ${label}`;
+      setDraft((d) => (d.trim() ? `${d.trim()}\n\n${line}` : line));
+      toast.push(`Added “${label}” to composer`, "info");
+      setTimeout(() => composerRef.current?.focus(), 0);
+    },
+    [toast],
+  );
+
+  const closeArtifact = useCallback(() => {
+    setArtifactOpenBinding((prev) => {
+      if (prev) setArtifactAnnounce("Artifact closed");
+      return clearArtifactBinding(prev);
+    });
+  }, []);
+
+  const openRunArtifact = useCallback(
+    (runId: string) => {
+      if (!sessionId) return;
+      const run = runProjectionRef.current.runsById[runId];
+      const r = elevateArtifact(run?.finalAnswer ?? "");
+      if (r.kind === "none") return;
+      setArtifactOpenBinding((prev) =>
+        openArtifactBinding(prev, {
+          conversationId: sessionId,
+          turn: { surface: "run", id: runId },
+          contentKind: r.kind === "long-markdown" ? "long-markdown" : "rich-document",
+        }),
+      );
+      setArtifactAnnounce("Artifact opened");
+    },
+    [sessionId],
+  );
+
+  const openMessageArtifact = useCallback(
+    (messageId: string) => {
+      if (!sessionId) return;
+      const msg = messagesRef.current.find((m) => m.id === messageId);
+      const r = elevateArtifact(msg?.content ?? "");
+      if (r.kind === "none") return;
+      setArtifactOpenBinding((prev) =>
+        openArtifactBinding(prev, {
+          conversationId: sessionId,
+          turn: { surface: "message", id: messageId },
+          contentKind: r.kind === "long-markdown" ? "long-markdown" : "rich-document",
+        }),
+      );
+      setArtifactAnnounce("Artifact opened");
+    },
+    [sessionId],
+  );
+
+  const boundArtifact = useMemo(() => {
+    if (!artifactOpenBinding || !sessionId) return null;
+    if (artifactOpenBinding.conversationId !== sessionId) return null;
+    const { turn } = artifactOpenBinding;
+    if (turn.surface === "run") {
+      const run = runProjection.runsById[turn.id];
+      if (!run || run.sessionId !== sessionId) return null;
+      const r = elevateArtifact(run.finalAnswer ?? "");
+      if (r.kind === "none" || !r.body) return null;
+      return { body: r.body, contentKind: r.kind as ArtifactContentKind };
+    }
+    const msg = messages.find((m) => m.id === turn.id);
+    if (!msg) return null;
+    const r = elevateArtifact(msg.content);
+    if (r.kind === "none" || !r.body) return null;
+    return { body: r.body, contentKind: r.kind as ArtifactContentKind };
+  }, [artifactOpenBinding, sessionId, runProjection, messages]);
+
+  useEffect(() => {
+    if (!artifactOpenBinding) return;
+    if (shouldClearOnConversationChange(artifactOpenBinding.conversationId, sessionId)) {
+      setArtifactOpenBinding(null);
+    }
+  }, [sessionId, artifactOpenBinding]);
+
+  useEffect(() => {
+    if (!artifactOpenBinding) return;
+    const present = new Set<string>();
+    for (const id of runProjection.runOrder) {
+      const run = runProjection.runsById[id];
+      if (run?.sessionId === sessionId) present.add(run.runId);
+    }
+    for (const m of messages) present.add(m.id);
+    if (shouldClearOnSourceGone(artifactOpenBinding.turn, present)) {
+      setArtifactOpenBinding(null);
+    }
+  }, [artifactOpenBinding, runProjection, messages, sessionId]);
 
   const lastUserId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -3392,6 +3614,17 @@ export function App() {
         if (paletteOpen) {
           e.preventDefault();
           setPaletteOpen(false);
+          return;
+        }
+        if (artifactOpenBinding) {
+          const dockOwns =
+            permissions.length > 0 ||
+            diffQueue.length > 0 ||
+            pendingPlanDecision != null ||
+            oauth != null;
+          if (dockOwns) return;
+          e.preventDefault();
+          closeArtifact();
         }
       },
       KeyY: (e) => {
@@ -3445,6 +3678,9 @@ export function App() {
     oauth,
     acceptDiff,
     rejectDiff,
+    artifactOpenBinding,
+    closeArtifact,
+    pendingPlanDecision,
   ]);
 
   const saveSettings = async () => {
@@ -3947,6 +4183,23 @@ export function App() {
                   Version: <code>{buildInfo?.version || "—"}</code>
                   {buildInfo?.channelLabel ? ` (${buildInfo.channelLabel})` : ""}
                   <br />
+                  <span>
+                    {shaSettingsLabel(buildInfo?.installerShaVoucher)}
+                    {buildInfo?.installerShaVoucher.status === "live" &&
+                    typeof buildInfo.installerShaVoucher.value === "string" ? (
+                      <>
+                        {" "}
+                        <code className="installer-sha" title={SHA_TITLE}>
+                          {buildInfo.installerShaVoucher.value}
+                        </code>
+                      </>
+                    ) : null}
+                  </span>
+                  <br />
+                  <span className="installer-unsigned-line">
+                    {SETTINGS_UNSIGNED_LINE}
+                  </span>
+                  <br />
                   Logs:{" "}
                   <code>{state?.logHint || "%USERPROFILE%\\.grokforge\\logs"}</code>
                 </div>
@@ -4439,6 +4692,8 @@ export function App() {
                 </div>
               )}
 
+              <div className={`chat-stage${artifactOpenBinding ? " chat-stage--artifact-open" : ""}`}>
+              <div className="sr-only" aria-live="polite">{artifactAnnounce}</div>
               <div className="transcript" tabIndex={-1} ref={transcriptRef}>
                 {showConversationsNotFound ? (
                   <EmptyStates
@@ -4463,6 +4718,10 @@ export function App() {
                     onDismiss={() =>
                       setFirstRun((fr) => patchFirstRun({ ...fr, dismissed: true }))
                     }
+                    installerShaVoucher={
+                      buildInfo?.installerShaVoucher ?? { status: "pending" }
+                    }
+                    packagedWindowsHonesty={isPackagedWindowsInstallerSession()}
                   />
                 ) : messages.length === 0 && !normalizedRunVisible && hostOk ? (
                   <EmptyStates
@@ -4505,16 +4764,7 @@ export function App() {
                         })}
                       />
                       <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
-                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={(label, meta) => {
-                        const line = meta
-                          ? `I choose: ${label}\n\n${meta}`
-                          : `I choose: ${label}`;
-                        setDraft((d) =>
-                          d.trim() ? `${d.trim()}\n\n${line}` : line,
-                        );
-                        toast.push(`Added “${label}” to composer`, "info");
-                        setTimeout(() => composerRef.current?.focus(), 0);
-                      }} />
+                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
                       </div>
                       );
                     })}
@@ -4539,22 +4789,26 @@ export function App() {
                       lastAssistantId={lastAssistantId}
                       onRetryUser={retryLastUser}
                       onRegenerate={regenerateLast}
-                      onChoose={(label, meta) => {
-                        const line = meta
-                          ? `I choose: ${label}\n\n${meta}`
-                          : `I choose: ${label}`;
-                        setDraft((d) =>
-                          d.trim() ? `${d.trim()}\n\n${line}` : line,
-                        );
-                        toast.push(`Added “${label}” to composer`, "info");
-                        setTimeout(() => composerRef.current?.focus(), 0);
-                      }}
+                      onChoose={fillComposerFromChoice}
                       onOpenPath={(p) => void openToolPath(p)}
                       forceOpenFailedTools={forceOpenFailedTools}
+                      artifactOpenMessageId={
+                        artifactOpenBinding?.turn.surface === "message"
+                          ? artifactOpenBinding.turn.id
+                          : null
+                      }
+                      onOpenArtifact={openMessageArtifact}
                     />
                   </>
                 )}
                 <div ref={bottomRef} />
+              </div>
+              <ArtifactPanel
+                body={boundArtifact?.body ?? null}
+                contentKind={boundArtifact?.contentKind ?? null}
+                onClose={closeArtifact}
+                onChoose={fillComposerFromChoice}
+              />
               </div>
 
               <ActionDock

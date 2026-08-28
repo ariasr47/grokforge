@@ -1102,6 +1102,19 @@ textarea:focus:not(:focus-visible) {
   white-space: pre;
 }
 
+.assistant-answer--compact {
+  display: none;
+}
+.assistant-answer-wrap {
+  min-width: 0;
+}
+.assistant-answer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .msg-head {
   display: flex;
   align-items: center;
@@ -1124,6 +1137,9 @@ textarea:focus:not(:focus-visible) {
   font-size: 11px !important;
   padding: 4px 10px !important;
   min-height: 28px;
+}
+.msg-body--artifact-compact {
+  display: none;
 }
 .msg-window-note {
   align-self: center;

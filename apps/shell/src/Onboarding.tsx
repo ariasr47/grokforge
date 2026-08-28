@@ -1,6 +1,12 @@
 import type { FirstRunState } from "./firstRun";
 import type { ProductMode } from "./api";
 import { Button } from "./ui/Button";
+import {
+  paintInstallerSha,
+  SHA_TITLE,
+  WELCOME_EXPECTED_WARNING,
+  type InstallerShaVoucher,
+} from "./installerHonesty";
 
 interface Props {
   firstRun: FirstRunState;
@@ -11,6 +17,35 @@ interface Props {
   onOpenSettings: () => void;
   onSetMode?: (m: ProductMode) => void;
   onDismiss: () => void;
+  installerShaVoucher: InstallerShaVoucher;
+  packagedWindowsHonesty: boolean;
+}
+
+function InstallerHonestyStrip({
+  voucher,
+  packagedWindowsHonesty,
+}: {
+  voucher: InstallerShaVoucher;
+  packagedWindowsHonesty: boolean;
+}) {
+  const paint = paintInstallerSha(voucher, "welcome");
+  return (
+    <div className="onboarding-honesty" role="status">
+      {packagedWindowsHonesty ? <p>{WELCOME_EXPECTED_WARNING}</p> : null}
+      <p>
+        {paint.statusText}
+        {paint.hex ? (
+          <>
+            {" "}
+            <code className="installer-sha" title={SHA_TITLE}>
+              {paint.hex}
+            </code>
+          </>
+        ) : null}
+      </p>
+      {paint.hint ? <p>{paint.hint}</p> : null}
+    </div>
+  );
 }
 
 export function Onboarding({
@@ -22,6 +57,8 @@ export function Onboarding({
   onOpenSettings,
   onSetMode,
   onDismiss,
+  installerShaVoucher,
+  packagedWindowsHonesty,
 }: Props) {
   const isChat = mode === "chat";
   const steps = [
@@ -127,6 +164,10 @@ export function Onboarding({
           Skip
         </Button>
       </div>
+      <InstallerHonestyStrip
+        voucher={installerShaVoucher}
+        packagedWindowsHonesty={packagedWindowsHonesty}
+      />
       <ol className="onboarding-steps">
         {steps.map((s, i) => (
           <li key={s.id} className={s.done ? "done" : ""}>

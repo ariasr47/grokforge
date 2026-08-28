@@ -185,4 +185,25 @@ describe("phase leftover adversaries from journal apply", () => {
     assert.notEqual(phaseCopy(d).status, "Thinking…");
     assert.notEqual(phaseCopy(d).status, "Reading notes.md");
   });
+
+  it("execution_owner_lost terminal clears Writing… and is not Answered", () => {
+    let a = reduceRunEvent(initialRunProjection(), started());
+    a = reduceRunEvent(a, event({ kind: "message_delta", segmentId: "m", delta: "partial words" }, 2));
+    assert.equal(phaseCopy(deriveLivePhaseFromRun(a.runsById.r1)).status, "Writing…");
+    a = reduceRunEvent(a, event({
+      kind: "run_terminal",
+      terminalKind: "failed",
+      finalAnswer: null,
+      answerVouched: false,
+      failure: { code: "execution_owner_lost", message: "Owner lost", retryable: true, recoveryAction: "reconnect" },
+      terminalAt: "",
+    }, 3));
+    const d = deriveLivePhaseFromRun(a.runsById.r1);
+    assert.equal(d.kind, "clear");
+    assert.equal(phaseCopy(d).status, null);
+    assert.notEqual(phaseCopy(d).status, "Writing…");
+    assert.equal(a.runsById.r1.terminalKind, "failed");
+    assert.equal(a.runsById.r1.answerVouched, false);
+    assert.equal(a.runsById.r1.finalAnswer, null);
+  });
 });

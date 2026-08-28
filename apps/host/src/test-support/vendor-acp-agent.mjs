@@ -3,12 +3,19 @@
  * Fake vendor `grok agent stdio` ACP child. Speaks JSON-RPC on stdio.
  * Modes via GROKFORGE_VENDOR_FIXTURE: ok | fail-initialize | fail-session-new |
  * emit-session-update | request-permission | exit-after-live | journey |
+ * prompt-midturn-only | prompt-empty-finish | prompt-double-done |
+ * prompt-with-open-permission | prompt-with-permission-and-diff |
+ * prompt-hang-midturn | prompt-fail |
  * child-agent | child-agent-incomplete | child-agent-first-done |
  * child-agent-first-failed | child-agent-late | child-agent-unmapped |
  * child-agent-multi | browser-fetch | browser-fetch-first-done |
  * browser-fetch-first-failed | browser-fetch-rejected | browser-fetch-snapshot |
  * browser-fetch-multi | browser-fetch-incomplete | browser-toolkind-other |
- * browser-toolkind-execute | browser-title-only | browser-no-url-title
+ * browser-toolkind-execute | browser-title-only | browser-no-url-title |
+ * mcp-server | mcp-server-incomplete | mcp-server-multi | mcp-server-first-error |
+ * mcp-server-late-idle | mcp-server-unmapped | mcp-server-late-error |
+ * hooks | hooks-incomplete | hooks-multi | hooks-first-done |
+ * hooks-late-idle | hooks-late-failed | hooks-unmapped
  */
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -215,6 +222,192 @@ function emitToolCall(update) {
   });
 }
 
+function emitMcpStatus(params) {
+  write({
+    jsonrpc: "2.0",
+    method: "_x.ai/mcp/server_status",
+    params: { sessionId: "vendor-session", source: "local", ...params },
+  });
+}
+
+function emitMcpFixture() {
+  if (FIXTURE === "mcp-server") {
+    emitMcpStatus({ name: "railway", status: "ready", reason: "initialized" });
+    return true;
+  }
+  if (FIXTURE === "mcp-server-incomplete") {
+    emitMcpStatus({ name: "figma" });
+    return true;
+  }
+  if (FIXTURE === "mcp-server-multi") {
+    emitMcpStatus({ name: "railway", status: "ready", reason: "initialized" });
+    emitMcpStatus({ name: "chrome-devtools", status: "ready", reason: "initialized" });
+    return true;
+  }
+  if (FIXTURE === "mcp-server-first-error") {
+    emitMcpStatus({ name: "figma", status: "unavailable", reason: "handshake_failed" });
+    return true;
+  }
+  if (FIXTURE === "mcp-server-late-idle") {
+    emitMcpStatus({ name: "railway", status: "ready", reason: "initialized" });
+    write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+    write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+    setTimeout(() => {
+      emitMcpStatus({ name: "railway", status: "idle" });
+    }, 80);
+    return "late";
+  }
+  if (FIXTURE === "mcp-server-late-error") {
+    emitMcpStatus({ name: "railway", status: "ready", reason: "initialized" });
+    write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+    write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+    setTimeout(() => {
+      emitMcpStatus({ name: "railway", status: "unavailable", reason: "transport_closed" });
+    }, 80);
+    return "late";
+  }
+  if (FIXTURE === "mcp-server-unmapped") {
+    emitChildAgent({ sessionUpdate: "nested_mcp_v2" });
+    return true;
+  }
+  return false;
+}
+
+function hookMember(name, extra = {}) {
+  return {
+    name,
+    event: "pre_tool_use",
+    handlerType: "command",
+    matcher: "Write|Edit",
+    command: "echo hook",
+    url: null,
+    timeoutMs: 5000,
+    sourceDir: "/tmp/hooks",
+    disabled: false,
+    ...extra,
+  };
+}
+
+function emitHookExecution(runs) {
+  write({
+    jsonrpc: "2.0",
+    method: "_x.ai/session_notification",
+    params: {
+      sessionId: "vendor-session",
+      update: {
+        sessionUpdate: "hook_execution",
+        event_name: "pre_tool_use",
+        tool_name: "write",
+        runs,
+      },
+    },
+  });
+}
+
+function hooksListResult() {
+  if (FIXTURE === "hooks-incomplete") {
+    return { result: { hooks: [{ name: "project/settings:pre_tool_use[0].hooks[0]" }], projectTrusted: true } };
+  }
+  if (FIXTURE === "hooks-multi") {
+    return {
+      result: {
+        hooks: [
+          hookMember("project/settings:pre_tool_use[0].hooks[0]"),
+          hookMember("project/spire-path-guard:pre_tool_use[0].hooks[0]"),
+        ],
+        projectTrusted: true,
+      },
+    };
+  }
+  if (FIXTURE === "hooks-first-done" || FIXTURE === "hooks-unmapped") {
+    return { result: { hooks: [], projectTrusted: true } };
+  }
+  if (
+    FIXTURE === "hooks" ||
+    FIXTURE === "hooks-late-idle" ||
+    FIXTURE === "hooks-late-failed"
+  ) {
+    return {
+      result: {
+        hooks: [hookMember("project/spire-path-guard:pre_tool_use[0].hooks[0]")],
+        projectTrusted: true,
+      },
+    };
+  }
+  return { result: { hooks: [], projectTrusted: true } };
+}
+
+function emitHooksFixture() {
+  if (FIXTURE === "hooks") {
+    emitHookExecution([
+      {
+        name: "project/spire-path-guard:pre_tool_use[0].hooks[0]",
+        status: { status: "success", elapsed_ms: 246 },
+      },
+    ]);
+    return true;
+  }
+  if (FIXTURE === "hooks-incomplete") {
+    emitHookExecution([{ name: "project/settings:pre_tool_use[0].hooks[0]" }]);
+    return true;
+  }
+  if (FIXTURE === "hooks-multi") {
+    emitHookExecution([
+      { name: "project/settings:pre_tool_use[0].hooks[0]", status: { status: "success", elapsed_ms: 10 } },
+      { name: "project/spire-path-guard:pre_tool_use[0].hooks[0]", status: { status: "failed", elapsed_ms: 11, error: "boom" } },
+    ]);
+    return true;
+  }
+  if (FIXTURE === "hooks-first-done") {
+    emitHookExecution([
+      { name: "project/settings:pre_tool_use[0].hooks[0]", status: { status: "success", elapsed_ms: 1 } },
+    ]);
+    return true;
+  }
+  if (FIXTURE === "hooks-late-idle") {
+    emitHookExecution([
+      { name: "project/spire-path-guard:pre_tool_use[0].hooks[0]", status: { status: "success", elapsed_ms: 1 } },
+    ]);
+    write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+    write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+    setTimeout(() => {
+      emitHookExecution([
+        { name: "project/spire-path-guard:pre_tool_use[0].hooks[0]", status: { status: "skipped" } },
+      ]);
+    }, 80);
+    return "late";
+  }
+  if (FIXTURE === "hooks-late-failed") {
+    emitHookExecution([
+      { name: "project/spire-path-guard:pre_tool_use[0].hooks[0]", status: { status: "success", elapsed_ms: 1 } },
+    ]);
+    write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+    write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+    setTimeout(() => {
+      emitHookExecution([
+        { name: "project/spire-path-guard:pre_tool_use[0].hooks[0]", status: { status: "failed", elapsed_ms: 2, error: "late" } },
+      ]);
+    }, 80);
+    return "late";
+  }
+  if (FIXTURE === "hooks-unmapped") {
+    emitChildAgent({ sessionUpdate: "nested_hooks_v2" });
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "hook_execution",
+          runs: [{ name: "invented", status: { status: "success" } }],
+        },
+      },
+    });
+    return true;
+  }
+  return false;
+}
+
 function emitBrowserFixture() {
   if (FIXTURE === "browser-fetch") {
     emitToolCall({
@@ -396,6 +589,47 @@ function emitPermissionRequest() {
   });
 }
 
+function emitThoughtAndMessage(thought, message) {
+  write({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "vendor-session",
+      update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: thought } },
+    },
+  });
+  if (message != null) {
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: message } },
+      },
+    });
+  }
+}
+
+function emitFileEdit() {
+  write({
+    jsonrpc: "2.0",
+    method: "file_edit",
+    params: {
+      id: "edit-1",
+      editId: "edit-1",
+      invocationId: "edit-1",
+      path: "notes.md",
+      diff: "--- a/notes.md\n+++ b/notes.md\n@@ -1 +1 @@\n-old\n+new\n",
+      status: "proposed",
+      kind: "content",
+    },
+  });
+}
+
+function returnPromptStop(id, stopReason) {
+  write({ jsonrpc: "2.0", id, result: { stopReason } });
+}
+
 const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 rl.on("line", (line) => {
   const trimmed = line.trim();
@@ -412,6 +646,9 @@ rl.on("line", (line) => {
     persist({ permissionResult: msg });
     process.stderr.write("ACP_RESULT " + JSON.stringify(msg) + "\n");
     write({ jsonrpc: "2.0", method: "agent_log", params: { level: "info", message: "ACP_RESULT " + JSON.stringify(msg) } });
+    if (FIXTURE === "prompt-with-open-permission" || FIXTURE === "prompt-with-permission-and-diff") {
+      return;
+    }
     write({ jsonrpc: "2.0", method: "text_delta", params: { text: "allowed" } });
     write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
     return;
@@ -429,6 +666,10 @@ rl.on("line", (line) => {
       }
       write({ jsonrpc: "2.0", id, result: { protocolVersion: 1 } });
       break;
+    case "authenticate":
+      persist({ authenticate: params });
+      write({ jsonrpc: "2.0", id, result: { ok: true } });
+      break;
     case "session/new":
       if (FIXTURE === "fail-session-new") {
         write({ jsonrpc: "2.0", id, error: { code: -32000, message: "session/new failed" } });
@@ -440,6 +681,47 @@ rl.on("line", (line) => {
     case "session/prompt": {
       const text = promptText(params);
       persist({ lastPrompt: text, promptFirstToken: firstToken(text) });
+      if (FIXTURE === "prompt-midturn-only") {
+        emitThoughtAndMessage("considering", "pong");
+        returnPromptStop(id, "end_turn");
+        break;
+      }
+      if (FIXTURE === "prompt-empty-finish") {
+        emitThoughtAndMessage("silent reasoning", null);
+        returnPromptStop(id, "end_turn");
+        break;
+      }
+      if (FIXTURE === "prompt-double-done") {
+        emitThoughtAndMessage("considering", "pong");
+        returnPromptStop(id, "end_turn");
+        write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+        break;
+      }
+      if (FIXTURE === "prompt-with-open-permission") {
+        emitThoughtAndMessage("need write", "about to write");
+        emitPermissionRequest();
+        returnPromptStop(id, "end_turn");
+        break;
+      }
+      if (FIXTURE === "prompt-with-permission-and-diff") {
+        emitThoughtAndMessage("need both", "about to mutate");
+        emitPermissionRequest();
+        emitFileEdit();
+        returnPromptStop(id, "end_turn");
+        break;
+      }
+      if (FIXTURE === "prompt-hang-midturn") {
+        write({ jsonrpc: "2.0", id, result: { ok: true, accepted: true } });
+        setTimeout(() => {
+          emitThoughtAndMessage("considering", "pong");
+        }, 20);
+        break;
+      }
+      if (FIXTURE === "prompt-fail") {
+        emitThoughtAndMessage("considering", "partial words");
+        returnPromptStop(id, "error");
+        break;
+      }
       write({ jsonrpc: "2.0", id, result: { ok: true, accepted: true } });
       if (FIXTURE === "exit-after-live") {
         setTimeout(() => process.exit(1), 20);
@@ -543,6 +825,20 @@ rl.on("line", (line) => {
           write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
           return;
         }
+        const mcp = emitMcpFixture();
+        if (mcp === "late") return;
+        if (mcp) {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        const hooks = emitHooksFixture();
+        if (hooks === "late") return;
+        if (hooks) {
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok from vendor" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
         if (FIXTURE === "child-agent-multi") {
           emitChildAgent({
             sessionUpdate: "agent",
@@ -586,6 +882,9 @@ rl.on("line", (line) => {
       }, 20);
       break;
     }
+    case "_x.ai/hooks/list":
+      write({ jsonrpc: "2.0", id, result: hooksListResult() });
+      break;
     case "session/cancel":
       write({ jsonrpc: "2.0", id, result: { ok: true } });
       write({ jsonrpc: "2.0", method: "done", params: { reason: "cancelled" } });
@@ -593,6 +892,9 @@ rl.on("line", (line) => {
     case "permission/respond":
       process.stderr.write("GOT_PERMISSION_RESPOND\n");
       write({ jsonrpc: "2.0", method: "agent_log", params: { level: "warn", message: "GOT_PERMISSION_RESPOND" } });
+      break;
+    case "edit/respond":
+      write({ jsonrpc: "2.0", id, result: { ok: true } });
       break;
     case "dispose":
       write({ jsonrpc: "2.0", id, result: { ok: true } });

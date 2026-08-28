@@ -31,10 +31,30 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
       : fixture === "git-review-surface"
         ? path.join(root, "apps", "host", "src", "test-support", "git-review-surface-agent.mjs")
         : path.join(root, "apps", "host", "src", "test-support", "fake-acp-agent.mjs");
+  // Inherit the operator environment except PATH. A real `grok` CLI on PATH
+  // makes Code acquire vendor `grok agent stdio` instead of GROKFORGE_AGENT_ENTRY,
+  // so fixture agents never see the prompt and run-event waits time out.
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.toLowerCase() === "path" || key.toLowerCase() === "pathext") continue;
+    env[key] = value;
+  }
+  env.PATH = "";
+  if (process.platform === "win32") {
+    env.Path = "";
+    env.PATHEXT = ".EXE;.CMD";
+  }
+  env.XAI_API_KEY = "fixture-test-key";
+  env.GROKFORGE_API_KEY = "fixture-test-key";
+  env.GROKFORGE_PORT = String(actualPort);
+  env.GROKFORGE_DATA_DIR = dataDir;
+  env.GROKFORGE_AGENT_ENTRY = agent;
+  env.GROKFORGE_FIXTURE = fixture;
   const child = spawn(process.execPath, ["--import", "tsx", path.join(root, "apps", "host", "src", "index.ts")], {
     cwd: root,
-    env: { ...process.env, XAI_API_KEY: "fixture-test-key", GROKFORGE_API_KEY: "fixture-test-key", GROKFORGE_PORT: String(actualPort), GROKFORGE_DATA_DIR: dataDir, GROKFORGE_AGENT_ENTRY: agent, GROKFORGE_FIXTURE: fixture },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
   const MAX_LOG = 64 * 1024;
   let output = "";

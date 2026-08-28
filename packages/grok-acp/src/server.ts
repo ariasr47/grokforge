@@ -47,6 +47,24 @@ interface Incoming {
   params?: Record<string, unknown>;
 }
 type RunOwner = { sessionId: string; runId: string; connectionGeneration: number };
+
+/** Accept a string or ACP content-block sequence (`[{ type, text }]`). */
+function coercePromptText(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+          return (part as { text: string }).text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  return raw == null ? "" : String(raw);
+}
+
 function fixedInspectionPath(inspection:{args:string[]}):string|undefined {
   const args=inspection.args;
   if(args[0]==="diff"){const i=args.indexOf("--");return i>=0?args[i+1]:undefined;}
@@ -198,7 +216,7 @@ export class GrokAcpServer {
         }
         case "session/prompt": {
           const sessionId = String(params?.sessionId ?? "");
-          const prompt = String(params?.prompt ?? "");
+          const prompt = coercePromptText(params?.prompt);
           const session = this.sessions.get(sessionId);
           if (!session) {
             this.respondError(id ?? null, -32000, "Unknown session");

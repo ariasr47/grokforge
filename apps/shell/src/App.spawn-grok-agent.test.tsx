@@ -428,5 +428,101 @@ describe("spawn-grok-agent — run provenance + agent_exited", () => {
       assert.ok(screen.getByText("Run failed"));
     });
     assert.equal(screen.queryByText("Run in progress…"), null);
+    assert.ok(screen.getAllByText(CODE_AGENT_VENDOR).length >= 1);
+    assert.equal(screen.queryByText(/Mini-Grok/), null);
+  });
+
+  it("live vendor ends (answered, cancelled, failed, agent-exit) keep Grok Code and do not paint Mini-Grok", async () => {
+    const ends: Array<{ seq: number; payload: RunEventEnvelope["payload"] }> = [
+      {
+        seq: 2,
+        payload: {
+          kind: "run_terminal",
+          terminalKind: "answered",
+          finalAnswer: "pong",
+          answerVouched: true,
+          failure: null,
+          terminalAt: "",
+        },
+      },
+      {
+        seq: 2,
+        payload: {
+          kind: "run_terminal",
+          terminalKind: "cancelled",
+          finalAnswer: null,
+          answerVouched: false,
+          failure: null,
+          terminalAt: "",
+        },
+      },
+      {
+        seq: 2,
+        payload: {
+          kind: "run_terminal",
+          terminalKind: "failed",
+          finalAnswer: null,
+          answerVouched: false,
+          failure: {
+            code: "missing_final_answer",
+            message: "Missing final answer",
+            retryable: true,
+            recoveryAction: "retry_prompt",
+          },
+          terminalAt: "",
+        },
+      },
+      {
+        seq: 2,
+        payload: {
+          kind: "run_terminal",
+          terminalKind: "failed",
+          finalAnswer: null,
+          answerVouched: false,
+          failure: {
+            code: "agent_exited",
+            message: "Agent exited",
+            retryable: true,
+            recoveryAction: "retry_prompt",
+          },
+          terminalAt: "",
+        },
+      },
+    ];
+    for (const end of ends) {
+      cleanup();
+      resetBrowserState();
+      const host = createFakeHost({
+        mode: "code",
+        workspace: WORKSPACE,
+        workspaceName: "repo",
+        busy: false,
+        connected: true,
+        hasApiKey: true,
+        codeAgent: vendorFact,
+      });
+      globalThis.fetch = host.fetchImpl;
+      globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+      render(<App />);
+      await waitFor(() => assert.ok(FakeWebSocket.latest()));
+      const ws = FakeWebSocket.latest()!;
+      ws.emit(
+        envelope(
+          {
+            kind: "run_started",
+            run: runSnapshot({
+              codeAgentProvenance: { identity: "vendor", fallbackReason: null },
+            }),
+          },
+          1,
+        ) as unknown as Record<string, unknown>,
+      );
+      ws.emit(envelope(end.payload, end.seq) as unknown as Record<string, unknown>);
+      await waitFor(() => {
+        assert.ok(screen.getAllByText(CODE_AGENT_VENDOR).length >= 1);
+      });
+      assert.equal(screen.queryByText(/Mini-Grok/), null);
+      assert.equal(screen.queryByText(CODE_AGENT_HARD_FAIL), null);
+    }
   });
 });

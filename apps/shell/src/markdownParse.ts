@@ -13,6 +13,19 @@ export type MarkdownBlock =
   | { type: "hr" }
   | { type: "blockquote"; text: string };
 
+export type RichMarkdownSegment = {
+  code: string;
+  /** Inclusive-exclusive UTF-16 offsets into the lifted source parseMarkdownBlocks uses. */
+  start: number;
+  end: number;
+};
+
+type ParseGrain = {
+  lifted: string;
+  blocks: MarkdownBlock[];
+  segments: RichMarkdownSegment[];
+};
+
 function isTableRow(line: string): boolean {
   const t = line.trim();
   return t.includes("|") && !t.startsWith("```");
@@ -29,15 +42,54 @@ function splitRow(line: string): string[] {
   return t.split("|").map((c) => c.trim());
 }
 
-function parseBlocks(src: string): MarkdownBlock[] {
-  const lines = src.replace(/\r\n/g, "\n").split("\n");
+function lineOffsets(src: string): { lines: string[]; offsets: number[] } {
+  const lines = src.split("\n");
+  const offsets: number[] = new Array(lines.length);
+  let pos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    offsets[i] = pos;
+    pos += lines[i]!.length;
+    if (i < lines.length - 1) pos += 1;
+  }
+  return { lines, offsets };
+}
+
+/**
+ * Whole failed/incomplete grok-ui markdown block = fence markers + `block.code`
+ * + that block’s surrounding blanks (the blank lines parseBlocks skips as
+ * separators immediately before/after the fence).
+ */
+function richFenceRange(
+  lines: string[],
+  offsets: number[],
+  srcLen: number,
+  fenceStart: number,
+  fenceEnd: number,
+): { start: number; end: number } {
+  let lead = fenceStart;
+  while (lead > 0 && !lines[lead - 1]!.trim()) lead -= 1;
+  let trail = fenceEnd;
+  while (trail < lines.length && !lines[trail]!.trim()) trail += 1;
+  const start = lead < offsets.length ? offsets[lead]! : srcLen;
+  const end = trail < offsets.length ? offsets[trail]! : srcLen;
+  return { start, end };
+}
+
+function parseBlocks(src: string): {
+  blocks: MarkdownBlock[];
+  segments: RichMarkdownSegment[];
+} {
+  const { lines, offsets } = lineOffsets(src);
+  const srcLen = src.length;
   const blocks: MarkdownBlock[] = [];
+  const segments: RichMarkdownSegment[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
 
     if (line.startsWith("```")) {
       const lang = line.slice(3).trim();
+      const fenceStart = i;
       const body: string[] = [];
       i += 1;
       while (i < lines.length && !lines[i]!.startsWith("```")) {
@@ -48,6 +100,8 @@ function parseBlocks(src: string): MarkdownBlock[] {
       const code = body.join("\n");
       if (isRichUiLang(lang)) {
         blocks.push({ type: "rich", code });
+        const { start, end } = richFenceRange(lines, offsets, srcLen, fenceStart, i);
+        segments.push({ code, start, end });
       } else {
         blocks.push({ type: "code", lang, code });
       }
@@ -152,20 +206,38 @@ function parseBlocks(src: string): MarkdownBlock[] {
     }
     blocks.push({ type: "p", text: para.join("\n") });
   }
-  return blocks;
+  return { blocks, segments };
 }
 
-const blockCache = createParseCache<MarkdownBlock[]>(80);
+const grainCache = createParseCache<ParseGrain>(80);
+
+function parseMarkdownGrain(text: string): ParseGrain {
+  const key = hashKey(text);
+  const hit = grainCache.get(key);
+  if (hit) return hit;
+  const lifted = liftUnfencedRichUi(text).replace(/\r\n/g, "\n");
+  const { blocks, segments } = parseBlocks(lifted);
+  const grain = { lifted, blocks, segments };
+  grainCache.set(key, grain);
+  return grain;
+}
 
 export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
-  const key = hashKey(text);
-  const hit = blockCache.get(key);
-  if (hit) return hit;
-  const blocks = parseBlocks(liftUnfencedRichUi(text));
-  blockCache.set(key, blocks);
-  return blocks;
+  return parseMarkdownGrain(text).blocks;
+}
+
+/**
+ * Rich fence segments from the same lift+parse grain as parseMarkdownBlocks.
+ * Callers must not call liftUnfencedRichUi again for elevatability.
+ */
+export function listRichMarkdownSegments(text: string): {
+  lifted: string;
+  segments: RichMarkdownSegment[];
+} {
+  const grain = parseMarkdownGrain(text);
+  return { lifted: grain.lifted, segments: grain.segments };
 }
 
 export function markdownCacheSize(): number {
-  return blockCache.size;
+  return grainCache.size;
 }

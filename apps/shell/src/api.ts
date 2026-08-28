@@ -266,6 +266,54 @@ export type BrowserWorkMembershipFact = {
   members: BrowserWorkMember[] | null;
 };
 
+/** Closed MCP chip statuses — never unconfirmed / disconnected / stuck. */
+export type McpServerStatus = "connected" | "idle" | "error";
+
+export type McpServerMember = {
+  serverId: string;
+  name: string | null;
+  status: McpServerStatus | null;
+  restore: "restored" | "unrestorable";
+  firstEventSeq: number;
+};
+
+/**
+ * Disposition token includes `for_` (matches Browser; differs from childAgents).
+ * Shell MCP reads mcpServers.members only.
+ */
+export type McpServersMembershipFact = {
+  disposition:
+    | "absent_for_non_code_or_non_vendor"
+    | "hydrating"
+    | "ready"
+    | "obtain_failed";
+  members: McpServerMember[] | null;
+};
+
+/** Closed Hooks chip statuses — never unconfirmed / stuck / connected/error. */
+export type HookStatus = "running" | "idle" | "done" | "failed";
+
+export type HookMember = {
+  hookId: string;
+  name: string | null;
+  status: HookStatus | null;
+  restore: "restored" | "unrestorable";
+  firstEventSeq: number;
+};
+
+/**
+ * Disposition token includes `for_` (matches Browser/MCP; differs from childAgents).
+ * Shell Hooks reads hooks.members only.
+ */
+export type HooksMembershipFact = {
+  disposition:
+    | "absent_for_non_code_or_non_vendor"
+    | "hydrating"
+    | "ready"
+    | "obtain_failed";
+  members: HookMember[] | null;
+};
+
 export type SkillsCatalogFact = {
   disposition:
     | "absent_non_vendor"
@@ -410,6 +458,18 @@ export interface PublicState {
    * Shell Browser reads browserWork.members only.
    */
   browserWork?: BrowserWorkMembershipFact;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing → treat as unvouched absent; never invent servers.
+   * Shell MCP reads mcpServers.members only — no second journal roster.
+   */
+  mcpServers?: McpServersMembershipFact;
+  /**
+   * Always present on a current host. Optional so older hosts can omit it.
+   * Missing → treat as unvouched absent; never invent hooks.
+   * Shell Hooks reads hooks.members only — no second journal roster.
+   */
+  hooks?: HooksMembershipFact;
 }
 
 export type ShellCapabilityView =
@@ -659,6 +719,7 @@ export const api = {
       dataDir?: string;
       log?: string;
       pid?: number;
+      installerSha256: string | null;
     }>("/api/health"),
   state: () => json<PublicState>("/api/state"),
   runState: (runId: string, sessionId: string, after = 0) => json<{ run: import("./runReducer").RunSnapshot; events: import("./runReducer").RunEventEnvelope[] }>(`/api/runs/${encodeURIComponent(runId)}?sessionId=${encodeURIComponent(sessionId)}&after=${after}`),

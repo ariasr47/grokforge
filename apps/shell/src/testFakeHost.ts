@@ -151,6 +151,8 @@ export interface FakeHost {
     lastAttempt?: ChatPackLastAttempt;
   } | null;
   completeHydrate: () => PublicState | null;
+  healthInstallerSha256: string | null;
+  healthFail: boolean;
 }
 
 const BASE_STATE: PublicState = {
@@ -222,6 +224,15 @@ export interface FakeHostOptions {
   } | null;
   /** Hydrate confirm-fail seam (HTTP 200, confirmFailed: true). */
   chatPackConfirmFailed?: boolean;
+  /**
+   * GET /api/health installer digest voucher. Default `null` (from-source /
+   * no pin). Pass a 64-char lowercase hex to script a present digest.
+   */
+  healthInstallerSha256?: string | null;
+  /** Extra fields merged onto the health body (version/channel overrides). */
+  healthOverrides?: Record<string, unknown>;
+  /** When true, GET /api/health answers non-2xx so the shell treats SHA as unreachable. */
+  healthFail?: boolean;
 }
 
 export function createFakeHost(
@@ -244,6 +255,8 @@ export function createFakeHost(
     conversationId: string;
     members: { files: Array<{ path: string }>; note: string | null };
   } | null = null;
+  let healthInstallerSha256: string | null = opts.healthInstallerSha256 ?? null;
+  let healthFail = opts.healthFail === true;
 
   function storedChatPack(): ChatPackView {
     return state.chatPack ?? emptyChatPackView(null);
@@ -345,7 +358,15 @@ export function createFakeHost(
     search?: URLSearchParams,
   ): Promise<unknown> {
     if (path === "/api/health") {
-      // INTERFACE_CONTRACT.md conformance block: nine fields.
+      if (healthFail) {
+        return {
+          __error: true,
+          status: 503,
+          error: "engine unreachable",
+          code: "unreachable",
+        };
+      }
+      // INTERFACE_CONTRACT.md conformance block: ten fields including installerSha256.
       return {
         ok: true,
         service: "grokforge-host",
@@ -356,6 +377,8 @@ export function createFakeHost(
         dataDir: "C:\\Users\\qa\\.grokforge",
         log: "C:\\Users\\qa\\.grokforge\\logs\\host.log",
         pid: 4242,
+        installerSha256: healthInstallerSha256,
+        ...(opts.healthOverrides ?? {}),
       };
     }
     if (path === "/api/state") return snapshot();
@@ -827,6 +850,18 @@ export function createFakeHost(
       nextChatPackRefuse = value;
     },
     completeHydrate,
+    get healthInstallerSha256() {
+      return healthInstallerSha256;
+    },
+    set healthInstallerSha256(value: string | null) {
+      healthInstallerSha256 = value;
+    },
+    get healthFail() {
+      return healthFail;
+    },
+    set healthFail(value: boolean) {
+      healthFail = value;
+    },
   };
 }
 

@@ -174,8 +174,10 @@ export function projectBrowserWork(input: {
   parentTerminal: boolean;
   ownershipLost?: boolean;
   runNonTerminal: boolean;
+  hostRosterEligible?: boolean;
 }): BrowserWorkProjection {
   if (input.mode !== "code" || input.codeAgent?.identity !== "vendor") return ABSENT;
+  if (input.hostRosterEligible === false) return ABSENT;
   const fact = input.browserWork;
   if (!fact) return ABSENT;
   if (fact.disposition === "absent_for_non_code_or_non_vendor") return ABSENT;

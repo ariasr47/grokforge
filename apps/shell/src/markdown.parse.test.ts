@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { markdownCacheSize, parseMarkdownBlocks } from "./markdownParse.js";
+import {
+  listRichMarkdownSegments,
+  markdownCacheSize,
+  parseMarkdownBlocks,
+} from "./markdownParse.js";
 import { tokenizeLine, shouldHighlight } from "./codeHighlight.js";
 import { parseRichDocumentProgressive } from "./richUi.js";
 
@@ -91,6 +95,41 @@ describe("parseMarkdownBlocks", () => {
     parseMarkdownBlocks(src);
     parseMarkdownBlocks(src);
     assert.ok(markdownCacheSize() >= 1);
+  });
+
+  it("listRichMarkdownSegments ranges cover fence markers for a failed fence", () => {
+    const src = "```grok-ui\nnot-json{{{{{\n```";
+    const { lifted, segments } = listRichMarkdownSegments(src);
+    assert.equal(segments.length, 1);
+    const slice = lifted.slice(segments[0]!.start, segments[0]!.end);
+    assert.ok(slice.includes("```"));
+    assert.ok(slice.includes("not-json"));
+    assert.equal(segments[0]!.code, "not-json{{{{{");
+    const rich = parseMarkdownBlocks(src).filter((b) => b.type === "rich");
+    assert.equal(rich.length, segments.length);
+  });
+
+  it("listRichMarkdownSegments matches parseMarkdownBlocks rich count after unfenced lift", () => {
+    const src =
+      "charge for it. grok-ui " +
+      JSON.stringify({
+        version: 1,
+        blocks: [
+          {
+            type: "metrics",
+            title: "Quick verdict",
+            items: [{ label: "Demand", value: "Real" }],
+          },
+        ],
+      }) +
+      "  ## Judgment\n**The job-to-be-done is proven.**";
+    const blocks = parseMarkdownBlocks(src);
+    const { segments } = listRichMarkdownSegments(src);
+    assert.ok(blocks.some((b) => b.type === "rich"));
+    assert.equal(
+      blocks.filter((b) => b.type === "rich").length,
+      segments.length,
+    );
   });
 });
 

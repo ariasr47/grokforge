@@ -259,6 +259,147 @@ describe("acp-live-streams App path", () => {
     });
   });
 
+  it("vouched mid-turn-only finish keeps Mid-turn secondary and clears Writing…", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "message_delta", segmentId: "m", delta: "pong" }, 2) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("pong"));
+      assert.ok(document.body.textContent?.includes("Writing…"));
+    });
+    ws.emit(envelope({
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "pong",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }, 3) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
+      assert.ok(screen.getByText("Answered"));
+    });
+    const mid = screen.getByLabelText("Mid-turn narration");
+    assert.ok(mid.textContent?.includes("pong"));
+    assert.notEqual(mid, screen.getByRole("article", { name: "Assistant answer" }));
+    assert.equal(document.body.textContent?.includes("Writing…"), false);
+    assert.ok(screen.getByText(TURN_COPY));
+  });
+
+  it("Code RunSurface Answered still paints Your turn when projected messages leave visibleMessages empty", async () => {
+    // Live Fast-pong path: sendText stamps projectedRunId on the prompt, so
+    // RunSurface consumes every owned message. A seed without that stamp keeps
+    // visibleMessages nonempty and hollows the TURN_COPY oracle.
+    cleanup();
+    localStorage.clear();
+    localStorage.setItem(
+      "grokforge.firstRun",
+      JSON.stringify({
+        dismissed: true,
+        openedFolder: true,
+        signedIn: true,
+        sentMessage: true,
+        pickedMode: true,
+        seenAt: new Date().toISOString(),
+      }),
+    );
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        [WORKSPACE]: [{
+          id: SESSION_ID,
+          workspace: WORKSPACE,
+          title: "ACP live streams",
+          messages: [{
+            id: "u1",
+            role: "user",
+            content: "Reply with one word only: pong",
+            projectedRunId: RUN_ID,
+          }],
+          updatedAt: Date.now(),
+          status: "live",
+          subagents: [],
+          open: true,
+        }],
+      },
+      activeId: { [WORKSPACE]: SESSION_ID },
+      pinned: [WORKSPACE],
+      expanded: [WORKSPACE],
+    });
+    FakeWebSocket.reset();
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({
+      kind: "run_started",
+      run: runSnapshot({ acceptedPrompt: "Reply with one word only: pong" }),
+    }, 1) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(document.querySelector(`[data-run-id="${RUN_ID}"]`));
+    });
+    assert.equal(document.querySelectorAll('[data-msg-role="user"]').length, 0);
+    ws.emit(envelope({ kind: "message_delta", segmentId: "m", delta: "pong" }, 2) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "pong",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }, 3) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
+      assert.ok(screen.getByText("Answered"));
+    });
+    assert.equal(document.body.textContent?.includes("Writing…"), false);
+    assert.equal(document.querySelectorAll('[data-msg-role="user"]').length, 0);
+    assert.ok(screen.getByText(TURN_COPY));
+  });
+
+  it("execution_owner_lost clears Writing…, keeps Mid-turn unvouched, and is not Answered", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "message_delta", segmentId: "m", delta: "partial words" }, 2) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("partial words"));
+    });
+    ws.emit(envelope({
+      kind: "run_terminal",
+      terminalKind: "failed",
+      finalAnswer: null,
+      answerVouched: false,
+      failure: {
+        code: "execution_owner_lost",
+        message: "Owner lost",
+        retryable: true,
+        recoveryAction: "reconnect",
+      },
+      terminalAt: "",
+    }, 3) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(screen.getByText("Run failed"));
+    });
+    assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("partial words"));
+    assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+    assert.equal(screen.queryByText("Answered"), null);
+    assert.equal(document.body.textContent?.includes("Writing…"), false);
+  });
+
+  it("liveness decision demotes Writing… and withholds Your turn", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "message_delta", segmentId: "m", delta: "I will edit." }, 2) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "decision_request",
+      request: {
+        requestId: "p1", invocationId: "p1", kind: "permission", status: "pending",
+        title: "Run shell", detail: "echo", expiresAt: null, policy: {},
+      },
+    }, 3) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "run_state", state: "waiting_for_decision", liveness: "decision" }, 4) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.equal(document.body.textContent?.includes("Writing…"), false);
+    });
+    assert.equal(screen.queryByText(TURN_COPY), null);
+  });
+
   it("App source does not treat private thinking_delta/text_delta/tool_run as live authority when a journal run is bound", () => {
     const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "App.tsx"), "utf8");
     assert.equal(appSource.includes("Writing answer…"), false);

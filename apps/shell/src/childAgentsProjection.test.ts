@@ -159,6 +159,23 @@ test("ready + [] → absent (quiet, not empty inventory copy)", () => {
   assert.equal(p.state, "absent");
 });
 
+test("hostRosterEligible false with empty journal → absent despite host members", () => {
+  const p = base({ hostRosterEligible: false, journalMembers: [] });
+  assert.equal(p.state, "absent");
+});
+
+test("hostRosterEligible false with journal members paints journal only", () => {
+  const p = base({
+    hostRosterEligible: false,
+    journalMembers: [doneChild],
+    childAgents: readyFact([researcher]),
+  });
+  assert.equal(p.state, "ready");
+  if (p.state !== "ready") return;
+  assert.equal(p.members.length, 1);
+  assert.equal(p.members[0]!.childId, "c2");
+});
+
 test("eligibility keys off vendor, not connected — offline still projects members", () => {
   const p = base({ connected: false });
   assert.equal(p.state, "ready");

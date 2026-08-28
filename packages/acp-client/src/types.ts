@@ -56,6 +56,18 @@ export type AcpUiEvent =
       childId: string;
       identityLabel: string;
       status: "running" | "done" | "failed";
+    }
+  | {
+      type: "mcp_server";
+      serverId: string;
+      name: string | null;
+      status: "connected" | "idle" | "error";
+    }
+  | {
+      type: "hook";
+      hookId: string;
+      name: string | null;
+      status: "running" | "idle" | "done" | "failed";
     };
 
 export type AuthMode = "signed_out" | "api_key" | "sub_pool";
@@ -80,6 +92,8 @@ export interface AgentSpawnConfig {
   executionProfile: HostExecutionProfile;
   /** Vendor Code initialize — exact string "default". Omit for grok-acp. */
   initializePermissionMode?: "default";
+  /** Vendor grok agent: call `authenticate` after session/new. Omit for grok-acp. */
+  authenticateMethod?: "cached_token";
 }
 
 export type ToolReasonCode = "shell_resolution_failed" | "unsupported_platform" | "shell_dialect_incompatible" | "leading_command_unresolved" | "protected_recursive_delete" | "outside_workspace" | "authorization_refused" | "plan_phase_refused" | "missing_target" | "non_regular_file" | "non_regular_text" | "dest_exists";

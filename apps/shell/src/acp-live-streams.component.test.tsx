@@ -193,6 +193,22 @@ test("status bar uses phaseLabel from DerivedLivePhase — no retired lies", () 
   assert.equal(screen.queryByText("Thinking field…"), null);
 });
 
+test("owner-loss failed: Mid-turn stays unvouched, Writing gone, no Assistant answer", () => {
+  render(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "failed",
+    answerVouched: false,
+    finalAnswer: null,
+    message: { m: "partial words" },
+    failure: { code: "execution_owner_lost", message: "Owner lost", retryable: true, recoveryAction: "reconnect" },
+  })} ownershipLost />);
+  const mid = screen.getByLabelText("Mid-turn narration");
+  assert.ok(mid.textContent?.includes("partial words"));
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+  assert.equal(screen.queryByText("Answered"), null);
+  assert.ok(screen.getByText("Run failed"));
+});
+
 test("Plan-owned bar and footer helpers agree on kind", () => {
   const d = deriveLivePhase({
     terminal: false, ownedBusy: true, liveness: "provider", planOwned: true,

@@ -2,11 +2,15 @@ import React from "react";
 void React;
 import type { ActivityRecord, RunProjectionRun } from "./runReducer";
 import { RunTerminalNotice } from "./RunTerminalNotice";
-import { api, type BrowserWorkMembershipFact, type ChildAgentsMembershipFact, type CodeAgentFact, type ProductMode } from "./api";
+import { api, type BrowserWorkMembershipFact, type ChildAgentsMembershipFact, type CodeAgentFact, type HooksMembershipFact, type McpServersMembershipFact, type ProductMode } from "./api";
 import { ChildAgentsSection } from "./ChildAgentsSection";
 import { projectChildAgents } from "./childAgentsProjection";
 import { BrowserSection } from "./BrowserSection";
 import { projectBrowserWork } from "./browserWorkProjection";
+import { McpServersSection } from "./McpServersSection";
+import { projectMcpServers } from "./mcpServersProjection";
+import { HooksSection } from "./HooksSection";
+import { projectHooks } from "./hooksProjection";
 import { memo, useEffect, useMemo, useState } from "react";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
@@ -23,6 +27,7 @@ import { projectChatPackTurn } from "./chatPackTurn";
 import { ChatPackTurnChip } from "./ChatPackTurnChip";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
+import { elevateArtifact } from "./artifactEligibility";
 import { SETTLE_IN_DOCK } from "./copyDock";
 import { ToolActivityGroup } from "./ToolActivity";
 import type { ChatMessage } from "./messageBlocks";
@@ -85,6 +90,10 @@ export interface RunSurfaceProps {
   codeAgent?: CodeAgentFact | null;
   childAgents?: ChildAgentsMembershipFact | null;
   browserWork?: BrowserWorkMembershipFact | null;
+  mcpServers?: McpServersMembershipFact | null;
+  hooks?: HooksMembershipFact | null;
+  /** ACP-parent-global observe facts may paint only on the live owned parent that produced them. */
+  hostRosterEligible?: boolean;
   ownershipLost?: boolean;
   onRetryPrompt?: (prompt: string) => void;
   onReconnect?: () => void;
@@ -92,8 +101,12 @@ export interface RunSurfaceProps {
   onExportDiagnostics?: () => void;
   onFocusDiffRequest?: (requestId: string) => void;
   onChoose?: (label: string, meta?: string) => void;
+  artifactOpen?: boolean;
+  onOpenArtifact?: (runId: string) => void;
 }
-export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose }: RunSurfaceProps) {
+const OPEN_TOOLTIP =
+  "Show this turn’s document beside the transcript. Closing hides the panel without deleting the turn.";
+export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose, artifactOpen = false, onOpenArtifact }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
@@ -168,6 +181,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     parentTerminal: run.state === "terminal",
     ownershipLost,
     runNonTerminal: run.state !== "terminal",
+    hostRosterEligible,
   });
   const browserProjection = projectBrowserWork({
     mode: productMode,
@@ -177,11 +191,41 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     parentTerminal: run.state === "terminal",
     ownershipLost,
     runNonTerminal: run.state !== "terminal",
+    hostRosterEligible,
+  });
+  const mcpProjection = projectMcpServers({
+    mode: productMode,
+    codeAgent,
+    mcpServers,
+    connected: !offline,
+    parentTerminal: run.state === "terminal",
+    ownershipLost,
+    runNonTerminal: run.state !== "terminal",
+    hostRosterEligible,
+  });
+  const hooksProjection = projectHooks({
+    mode: productMode,
+    codeAgent,
+    hooks,
+    connected: !offline,
+    parentTerminal: run.state === "terminal",
+    ownershipLost,
+    runNonTerminal: run.state !== "terminal",
+    hostRosterEligible,
   });
   const reasoning = Object.values(run.reasoning).join("");
   const midturn = Object.values(run.message ?? {}).join("");
   const answer = run.finalAnswer;
   const vouchedAnswer = Boolean(run.terminalKind === "answered" && run.answerVouched && answer?.trim());
+  const elevate = useMemo(
+    () => (vouchedAnswer && answer ? elevateArtifact(answer) : { kind: "none" as const, body: null }),
+    [vouchedAnswer, answer],
+  );
+  const answerElevatable = elevate.kind !== "none";
+  const openTitle =
+    elevate.kind === "long-markdown" || (answer?.length ?? 0) >= 1500
+      ? "Open in panel"
+      : OPEN_TOOLTIP;
   const thoughtStreaming = run.state !== "terminal";
   const toolMessages = useMemo(
     () => Object.values(run.activities).map(activityToToolMessage),
@@ -266,6 +310,8 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     ) : null}
     {productMode === "code" ? <ChildAgentsSection projection={childProjection} /> : null}
     {productMode === "code" ? <BrowserSection projection={browserProjection} /> : null}
+    {productMode === "code" ? <McpServersSection projection={mcpProjection} /> : null}
+    {productMode === "code" ? <HooksSection projection={hooksProjection} /> : null}
     {Object.values(run.activities).length > 0 && (
       <div className="activity-output" aria-label="Activity">
         <ToolActivityGroup
@@ -337,7 +383,29 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
         {run.state !== "terminal" ? <span className="md-caret" aria-hidden /> : null}
       </div>
     )}
-    {vouchedAnswer && answer && <div className="assistant-answer" role="article" aria-label="Assistant answer"><MarkdownBody text={answer} onChoose={onChoose} /></div>}
+    {vouchedAnswer && answer ? (
+      <div className="assistant-answer-wrap">
+        {answerElevatable ? (
+          <div className="assistant-answer-actions">
+            <Button
+              variant="ghost"
+              onClick={() => onOpenArtifact?.(run.runId)}
+              title={openTitle}
+            >
+              Open
+            </Button>
+          </div>
+        ) : null}
+        <div
+          className={`assistant-answer${artifactOpen ? " assistant-answer--compact" : ""}`}
+          role="article"
+          aria-label="Assistant answer"
+          hidden={artifactOpen || undefined}
+        >
+          {artifactOpen ? null : <MarkdownBody text={answer} onChoose={onChoose} />}
+        </div>
+      </div>
+    ) : null}
     {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}
   </article>;
 });
