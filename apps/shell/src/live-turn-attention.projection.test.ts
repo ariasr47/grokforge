@@ -6,6 +6,8 @@ import {
   permissionChromeFromTitle,
   railEvidenceFromRun,
   hasDockOwnedPending,
+  isStaleRailChip,
+  settledRailIdentities,
 } from "./runChangeList.js";
 import type { RunProjectionRun } from "./runReducer.js";
 
@@ -53,6 +55,24 @@ test("railEvidenceFromRun rebuilds permission + Diff proposed path from journal"
   assert.ok(evidence.some((e) => e.content === "Diff proposed: a.txt"));
 });
 
+test("settled permission/diff rail chips drop after accept or terminal", () => {
+  const pending = runWith({
+    p: { requestId: "p", invocationId: "inv-p", kind: "permission", status: "pending", title: "Write file", detail: "x", expiresAt: null, policy: {} },
+  });
+  assert.equal(settledRailIdentities(pending).size, 0);
+  const accepted = runWith({
+    p: { requestId: "p", invocationId: "inv-p", kind: "permission", status: "accepted", title: "Write file", detail: "x", expiresAt: null, policy: {} },
+  });
+  const settled = settledRailIdentities(accepted);
+  assert.ok(settled.has("permission:p"));
+  assert.ok(settled.has("permission:inv-p"));
+  const chip = { role: "system", content: "Permission requested: write", id: "perm-sys-p", activityIdentity: "permission:p" };
+  assert.equal(isStaleRailChip(chip, settled), true);
+  assert.equal(isStaleRailChip(chip, settledRailIdentities(pending)), false);
+  const terminal = { ...pending, state: "terminal" as const, terminalKind: "answered" as const };
+  assert.equal(isStaleRailChip(chip, settledRailIdentities(terminal)), true);
+});
+
 test("hasDockOwnedPending includes permission|diff|plan|recovery pending", () => {
   assert.equal(hasDockOwnedPending(runWith({
     x: { requestId: "x", invocationId: "x", kind: "plan", status: "pending", title: "Plan", detail: "", expiresAt: null, policy: {} },
@@ -67,6 +87,23 @@ test("mergePendingPermissions drops leftover cards once the run is terminal", ()
   assert.equal(prev.length, 1);
   const terminal = { ...live, state: "terminal" as const, terminalKind: "cancelled" as const };
   assert.deepEqual(mergePendingPermissions(prev, terminal).map((p) => p.id), []);
+});
+
+test("mergePendingPermissions does not wipe another run's pending cards", () => {
+  const other = {
+    id: "b",
+    kind: "write" as const,
+    detail: "notes.md",
+    sessionId: "s",
+    runId: "execute",
+    invocationId: "b",
+  };
+  const plan = runWith({
+    a: { requestId: "a", invocationId: "a", kind: "permission", status: "pending", title: "Run shell", detail: "echo", expiresAt: null, policy: {} },
+  });
+  const terminal = { ...plan, state: "terminal" as const, terminalKind: "answered" as const };
+  const merged = mergePendingPermissions([other], terminal);
+  assert.equal(merged.some((p) => p.id === "b" && p.runId === "execute"), true);
 });
 
 test("mergePendingPermissions drops settled and keeps durable pending", () => {

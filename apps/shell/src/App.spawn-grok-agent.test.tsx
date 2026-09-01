@@ -147,6 +147,8 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
       assert.ok(screen.getByText(CODE_AGENT_VENDOR));
       assert.equal(screen.queryByText(CODE_AGENT_OFFLINE), null);
     });
+    assert.ok(document.querySelector("[data-code-agent='vendor']")?.classList.contains("is-quiet"));
+    assert.ok(document.querySelector(".composer-identity"));
     assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI), null);
     assert.equal(screen.queryByText(CODE_AGENT_CHECKING), null);
     const user = userEvent.setup({ delay: null });
@@ -178,6 +180,10 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(CODE_AGENT_FALLBACK_CLI));
     });
+    assert.equal(
+      document.querySelector("[data-code-agent='fallback']")?.classList.contains("is-quiet") ?? false,
+      false,
+    );
     assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "hello");
@@ -315,6 +321,10 @@ describe("spawn-grok-agent — run provenance + agent_exited", () => {
     });
     const chip = document.querySelector("[data-code-run-provenance='vendor']");
     assert.equal(chip?.textContent, CODE_RUN_VENDOR);
+    const composer = document.querySelector("[data-code-agent='vendor']");
+    assert.ok(composer?.classList.contains("is-quiet"));
+    assert.ok(chip?.classList.contains("is-quiet"));
+    assert.ok(chip?.closest(".run-prompt"));
   });
 
   it("later generation on a new run id does not rewrite prior provenance", async () => {

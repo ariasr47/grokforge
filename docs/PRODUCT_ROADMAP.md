@@ -1,317 +1,321 @@
-# Product roadmap — ACP desktop agent shell (working titles below)
+# Product roadmap — Forge (ACP desktop agent shell)
 
-**Author voice:** Product Management (proposal)  
-**Date:** 2026-08-11 (revised same day — ACP-first positioning)  
-**Status:** Proposal for operator review — not a committed GATE I sequence  
-**Grounding:** Tauri shell + host + ACP + **grok-acp today**; dual-mode Chat|Code in dogfood; desktop-self-host not yet shipped  
+**Author voice:** Product (proposal after 0.6.6)  
+**Date:** 2026-08-27  
+**Status:** Proposal for operator review — not a GATE I sequence until a slice is chosen  
+**Grounding:** Forge **v0.6.6** is published. Code uses vendor `grok agent stdio` when the CLI resolves. Chat stays grok-acp. Windows current-user installer ships. Authenticode is still unsigned. Mac is not started.
+
+This file is the living **version ladder**.  
+Long-term identity: `docs/VISION.md`.  
+Groomed epics: `docs/EPICS.md`.  
+Daily pick: `.spire/clusters/tech/context/BACKLOG.md`. Standing rules: `PROJECT_CONTEXT.md`.
+
+---
+
+## 0. How this version was formed (five rounds)
+
+1. **What is true now.** 0.6.6 is a working Grok desktop for the operator: Chat + Code, Plan → File changes → Verify → Git review, live thought/words/tools/answer, Skills / Child agents / Browser chrome, Review / Trusted / Bypass. Other people still hit an unknown-publisher installer and no Mac.
+2. **Where the market sits.** Daily coding is Cursor/Copilot (IDE). Terminal-first agents are Claude Code and Grok Build’s TUI. Desktop command centers are Claude Desktop and the Codex app (parallel agents, in-app editor/terminal/preview, computer use). xAI’s own ACP path is `grok agent stdio` — Forge is already that host, not a second TUI.
+3. **What “next major” should mean.** Not more Code chrome. Not 1.0-by-declaration. The missing product is *someone else can run it*.
+4. **What the major after that should mean.** Once a second human can install, 1.0 is *daily Grok desktop*: vendor-complete GUI (MCP/skills/hooks stay Grok’s; Forge shows them), capable Chat, Mac.
+5. **What we refuse.** IDE clone, TUI skin, computer use, iOS Simulator, classifier auto-mode, cloud fleets, a Forge-built skills/MCP engine, a second non-ACP chat stack.
 
 ---
 
 ## 1. Product thesis
 
-### What we are building
+**Forge** is an **ACP-native desktop shell** (Chat + Code): local-first tools, permissions, diffs, policy. The GUI is Voidglass. The Code engine is the vendor Grok agent. grok-acp is Chat plus honest fallback.
 
-An **ACP-native desktop shell** for **coding agents and capable chat** — local-first, lean, highly configurable, enterprise-trustworthy. Any agent that speaks **ACP** can plug in; the UI (Chat mode, Code mode, tools, permissions, diffs, policy) stays the same.
+**Wedge:** Claude and OpenAI already have Code/desktop surfaces. **Grok’s official surface is a TUI.** Forge is the Grok desktop that is not a terminal.
 
-### Why Grok first (wedge, not ceiling)
+**Not forever Grok-only.** The north star is still “any ACP agent, same chrome.” That is the major *after* 1.0.
 
-| Fact | Implication |
-|------|-------------|
-| Claude has Claude Code / desktop surfaces | Gap closed for Anthropic users |
-| OpenAI has Codex / ChatGPT coding surfaces | Gap closed for OpenAI users |
-| **Grok has no first-class “Grok Code / Grok Desktop” agent app** | **Market gap we attack first** |
-| We have **Grok / SuperGrok pooled subscription** | Preferred auth path for daily use |
+### Positioning (do not blur)
 
-So: **Grok is the first ACP backend we ship and dogfood** — because subscription + gap — not because the product is “Grok-only forever.”
+| Kind | Examples | Forge is |
+|------|----------|----------|
+| AI editor | Cursor, Windsurf, Copilot | **No** — no LSP, no in-app file editor, no pixel-parity |
+| Terminal agent | Claude Code CLI, Grok TUI | **No** — not a TUI skin |
+| Desktop command center | Claude Desktop, Codex app | **Cousin** — Chat + Code, inspect, approve. We do not take their IDE panes or computer use |
+| ACP host GUI | Zed/JetBrains ACP, Forge | **Yes** — `grok agent stdio` in Voidglass |
+
+xAI documents three Grok Build modes: interactive TUI, headless `-p`, and **ACP** (`grok agent stdio`). Forge owns the third.
 
 ### Pillars
 
-| Pillar | Meaning |
-|--------|---------|
-| **ACP-native** | Host + UI are agent-agnostic; `grok-acp` is the first adapter; Codex/Claude ACP later |
-| **Subscription-first auth** | **Pooled sub (OAuth / SuperGrok / provider pool) preferred**; **API key is backup only** |
-| **Local-first** | Secrets, workspaces, tools on-device unless user opts in |
-| **Dual surface** | **Chat** (everyone) + **Code** (repo agent) — same protocol, different profiles |
-| **Lean & fast** | Low chrome, high signal, hard performance budgets |
-| **Enterprise-worthy** | Policy, audit, deploy — without SaaS bloat |
+| Pillar | Meaning now |
+|--------|-------------|
+| **ACP-native** | Host + UI are agent-agnostic; Code’s Grok engine is vendor ACP; grok-acp is Chat/fallback |
+| **Subscription-first auth** | Pooled sub preferred; API key backup |
+| **Local-first** | Secrets, workspaces, journals on-device |
+| **Dual surface** | Chat (everyone) + Code (repo agent) — one protocol, two profiles |
+| **Forge owns the GUI** | Voidglass, not a terminal dump; vendor decides when to think/tool/ask |
+| **Lean & fast** | Performance and config depth are product features |
+| **Trust is the moat** | Confine, staged writes, Review/Trusted/Bypass, diagnostics |
 
-**Positioning ladder**
-
-1. **Now:** Grok via ACP — dual-mode shell dogfood  
-2. **Next:** Installable product (self-host) others can run  
-3. **Then:** Connectors/MCP + team policy  
-4. **Then:** Monetize the **shell** (not tokens)  
-5. **Later:** Additional ACP agents (Codex, Claude, …) behind the same UI  
-
-**Working brand (open):**  
-- Internal/repo: *Grok Code Shell* / *grokforge*  
-- Product narrative: **ACP agent desktop** with a **Grok-first go-to-market** until multi-agent is real  
-- Modes always: **Chat** | **Code**
+**Working brand (open):** repo *grokforge* / *Grok Code Shell*; product **Forge**. Rebrand still an operator decision.
 
 ---
 
 ## 2. Principles (non-negotiable)
 
-1. **Lean before featureful** — every feature must earn retention or revenue.  
-2. **Performance is a product feature** — stream, mode switch, cold start budgets.  
-3. **Configurable, not complicated** — power in Settings / policy files; simple defaults.  
-4. **Trust is the moat** — confine, staged writes, permissions, diagnostics.  
-5. **Monetize the shell, not tokens** — no multi-human share of one consumer sub; enterprise pays for client + governance.  
-6. **ACP forever** — no second non-agent chat stack; new models/providers = new ACP agents.  
-7. **Auth hierarchy** — **pooled subscription preferred**; **API key backup only** (dev, recovery, rate-limit escape).  
-8. **Wedge discipline** — ship Grok excellence first; multi-agent when the shell is installable and loved.
+1. **Lean before featureful** — every slice must change an observable daily decision.
+2. **Performance is a product feature.**
+3. **Configurable, not complicated** — Settings / files; brother-class users never need Level 2.
+4. **Trust is the moat** — Review/Trusted/Bypass stay; never YOLO-only Code.
+5. **Monetize the shell, not tokens.**
+6. **ACP forever** — no second chat stack; new providers = new ACP agents.
+7. **Do not grow grok-acp into a Grok Build clone** (skills engine, subagents, MCP host, xhigh harness). Ride the vendor agent.
+8. **Wedge discipline** — Grok excellence before multi-agent.
 
 ---
 
-## 3. Personas & jobs-to-be-done
+## 3. Personas & jobs
 
-| Persona | Job | Success metric |
-|---------|-----|----------------|
-| **P1 Developer** | Local coding agent on preferred model (start: Grok) | Weekly Code sessions; accepted diffs |
-| **P2 Knowledge worker** (e.g. brother dogfood) | Everyday Chat: research notes, email, EN↔JA, outlines, clerical — **not** Code mode | Chat WAU; week without helper; real artifacts |
-| **P3 Team lead** | One desktop agent policy for the team | Install + policy adoption |
-| **P4 Security / IT** | Audit, SSO, no shadow AI | Enterprise pilot conversion |
-| **P5 Power admin** | MCP, allowlists, multi-agent later | Config reuse; agent switch when available |
+| Persona | Job | Success |
+|---------|-----|---------|
+| **P1 Developer** | Local Grok coding agent on a real repo | Weekly Code sessions; accepted diffs without opening the TUI |
+| **P2 Knowledge worker** | Everyday Chat: notes, email, EN↔JA, outlines | A week of Chat without the operator present |
+| **P3 Team lead** | One desktop agent policy | Install + policy pack (after 1.0) |
+| **P4 Security / IT** | Audit, signed deploy, no shadow AI | Pilot packet (after 1.0) |
+| **P5 Power admin** | MCP, allowlists, later multi-agent | Config reuse |
 
----
-
-## 4. North-star metrics
-
-| Metric | Target (directional) |
-|--------|----------------------|
-| Time-to-first successful reply (fresh install) | &lt; 3 minutes |
-| Mode switch (Chat↔Code) | &lt; 500 ms perceived; zero errors |
-| Stream UI jank | Composer stays responsive under long streams |
-| Crash / “agent dead” rate | Near-zero with clear reconnect |
-| Install success (non-dev machine) | &gt; 90% |
-| Paid conversion (when live) | Trial → paid within 14 days |
+P1 and P2 are the 0.7 / 1.0 audience. P3–P5 wait.
 
 ---
 
-## 5. Phased roadmap
+## 4. What 0.6.6 already is
 
-### Phase 0 — **Dogfood solid** (current → ~2–4 weeks)
+Shipped and published:
 
-**Goal:** You and brother trust daily use.
+- Windows current-user NSIS installer (unsigned)
+- Chat \| Code on one ACP path
+- Code: vendor `grok agent stdio` when CLI resolves; grok-acp fallback with honest chrome
+- Live Thought / mid-turn words / one tool rail / vouched Answer
+- Plan → File changes → Verify → Git review
+- Skills palette (`/`), Child agents, Browser (fetch-class) in Forge chrome
+- Named Chat home + pinned pack; PDF text extract
+- Review / Trusted / Bypass; Trusted command classes; confined delete/rename
+- Appearance-aware fenced code
+- Auto-update *channel* exists (`latest.json`); Authenticode does not
 
-| Theme | Outcomes |
-|-------|----------|
-| Dual-mode | Chat sessions vs Code folders; effort; no switch crashes |
-| Reliability | Agent start/stop, offline transcript, diagnostics |
-| Polish | Copy, empty states, settings that matter |
-| Quality bar | GATE Q on dual-mode ACs; fix P0/P1 dogfood bugs only |
+**Still not true:**
 
-**Exit:** Brother completes a week of Chat without you present; Code still works for real repos.
-
-**Not in Phase 0:** monetization UI, MCP marketplace, multi-agent.
-
----
-
-### Phase 1 — **Shipable product** (installable, shareable)
-
-**Goal:** Anyone with Windows (then Mac) can install without cloning the monorepo.
-
-| Theme | Outcomes | Why enterprise/lean |
-|-------|----------|---------------------|
-| **desktop-self-host** | Host + agent packaged with Tauri; single double-click | #1 blocker for “other people” |
-| Signed builds | Code-signed installer; auto-update channel | Trust + IT |
-| First-run | Mode pick Chat/Code; sign-in; optional sample | TTFV |
-| Stability SLOs | Crash reporting opt-in; health + reconnect | Supportable |
-| Config surface v1 | JSON/YAML user config: model, effort default, shell allowlist, theme, mode | Configurable without bloat |
-
-**Monetization readiness:** free **Personal** forever tier (local app + user brings xAI key / SuperGrok). No paid gate yet — growth.
-
-**Exit:** Public or private beta (10–50 users) on installer only.
+- A second human can install without an unknown-publisher scare (cert) or the operator in the room (walkthrough)
+- Mac
+- Chat uses the vendor engine (Chat is mini-Grok by design)
+- Forge-visible vendor worktrees (TUI has them; we now show children/skills/fetch/MCP/hooks)
+- Artifacts panel / Mermaid
+- Extra ACP agents (Codex, Claude)
 
 ---
 
-### Phase 2 — **Connectors & capability (lean MCP)**
+## 5. Competitive gap (research, 2026-08)
 
-**Goal:** Chat is “capable desktop Grok”; Code is “capable repo agent” with the same connector framework.
+Sources: xAI Grok Build docs (`grok agent stdio`, skills, MCP, subagents, worktrees); Claude Code Desktop (Chat / Cowork / Code, parallel sessions, in-app editor/terminal/preview, Artifacts, computer use, iOS Simulator); Codex app (parallel threads, worktrees, Windows sandbox, computer use); ACP registry + v2 *draft* (2026-07); Cursor as the IDE default.
 
-| Theme | Outcomes |
-|-------|----------|
-| **MCP host** | Registry + enable/disable per mode; sandbox permissions |
-| Files / folders | Polished attach, multi-root optional later |
-| Policy pack | Per-mode tool allowlists (Chat: safer defaults; Code: full) |
-| Secrets | OS keychain; never plain config for tokens |
-| Performance | Lazy-load connectors; cap concurrent MCP |
+| Capability | Grok TUI | Claude Desktop | Codex app | Forge 0.6.6 |
+|------------|----------|----------------|-----------|-------------|
+| Vendor coding engine | yes | Claude | Codex harness | **yes (Code)** |
+| Desktop GUI | no | yes | yes | **yes** |
+| Plan / diffs / approve | yes | yes | yes | **yes** |
+| Skills / slash | yes | yes | yes | **Code palette** |
+| Child / parallel agents | worktrees | desktop redesign | threads + worktrees | **visible roster, not our workers** |
+| Browser / fetch | yes | Chrome + preview | in-app browser | **fetch list, not WebView** |
+| MCP | vendor | connectors | shared MCP | **visible list, not a Forge host** |
+| Hooks / plugins | yes | — | — | **visible list, not a Forge engine** |
+| Artifacts / big docs | — | Artifacts (paid) | files/preview | **bubble only** |
+| Signed install / Mac | n/a | yes | Mac then Windows | **Windows unsigned; no Mac** |
+| Computer use / iOS sim | — | yes | yes | **anti-goal** |
 
-**Configurability:** `~/.grokforge/policy.json` + UI toggles; enterprise can lock via managed config later.
-
-**Exit:** 3–5 first-party connectors + generic MCP; brother uses one non-code connector weekly.
-
----
-
-### Phase 3 — **Team & enterprise foundation**
-
-**Goal:** Worth piloting at a company without becoming a heavy platform.
-
-| Theme | Outcomes | Lean rule |
-|-------|----------|-----------|
-| **Org identity** | SSO (OIDC/SAML) for *app* login optional; xAI still user/org key | Don’t re-implement IdP |
-| **Audit log** | Local + optional export SIEM (JSON lines) | Append-only, filterable |
-| **Policy admin** | Admin-defined allowlists, model allowlist, effort caps, blocked tools | File- or MDM-deployed first |
-| **Workspace trust** | Mark trusted folders; prompt outside trust | Same confine model |
-| **Deploy** | Silent MSI/MDM; offline docs | Windows first |
-| **Data residency** | Default local; cloud sync *optional* and off by default | Local-first |
-
-**Still out:** multi-tenant hosted agent that runs on our servers for free (cost bomb).
-
-**Exit:** 1–2 design-partner companies; security questionnaire packet complete.
+**Implication:** do not spend the next major cloning Desktop/Codex panes. Spend it on (1) other people can run Forge, (2) the vendor engine’s remaining *visible* work (MCP, hooks, worktrees) in Voidglass, (3) Chat that a non-dev will keep.
 
 ---
 
-### Phase 4 — **Monetization**
+## 6. Version ladder (concrete)
 
-**Goal:** Sustainable revenue without killing lean culture or violating seat-proxy rules.
+Semver stays `0.y.z` until 1.0. Product “majors” below are *eras*, not a promise to skip minors.
 
-#### 4.1 Pricing sketch (proposal)
+| Era | Name | One-liner | Exit |
+|-----|------|-----------|------|
+| **Now** | **0.6** Dogfood Grok desktop | Operator uses Code on the vendor engine | **Met** — v0.6.6 |
+| **Next major** | **0.7** Shareable Grok desktop | A second human installs and completes a Chat week; Code still works | Unsigned warning is honest *or* gone; walkthrough evidence; first-run does not strand |
+| **Major after that** | **1.0** Daily Grok desktop | P1 does not open the TUI for hard jobs; P2 stays in Chat; Mac exists | Vendor MCP/hooks/worktrees inspectable; Artifacts; Mac; brand frozen |
+| **After 1.0** | **2.0** ACP platform | Same chrome, other agents + team policy | Codex/Claude ACP; SSO/audit; still no IDE |
 
-| Tier | Who | Price sketch | Includes | Does not include |
-|------|-----|--------------|----------|------------------|
-| **Personal** | Individuals | **$0** | Full local app; Chat+Code; **preferred: provider subscription / pool**; API key as backup | Central admin, SSO, priority support |
-| **Pro** | Power users | **$12–20 / user / mo** | Priority updates, effort presets, multi-profile, session backup, early MCP, multi-agent when shipped | SSO |
-| **Team** | Small teams | **$25–40 / user / mo** | Shared policy packs, audit export, **app** seat admin, connector allowlist | On-prem control plane |
-| **Enterprise** | IT-led | **Custom** | SSO, MDM, air-gap license, DPA, SLA, managed policy, private updates | Running inference on our dime |
-
-**Model costs:** always **customer’s** subscription (preferred) or API key (backup) with **their** provider — we monetize the **shell, policy, connectors, multi-agent UX, and support**.
-
-#### 4.2 Monetization principles
-
-- Never resell or multi-seat-share one consumer pooled subscription across a company.  
-- License the **client + control features**, not the tokens.  
-- Free Personal stays excellent (distribution).  
-- Pro/Team = **config, trust, ops, multi-agent** — not paywalling basic Chat.
-
-#### 4.3 Growth loops
-
-1. Dev shares “open this repo in Grok Code” → installs  
-2. Brother-class users stay in Chat → viral word of mouth  
-3. Team lead standardizes policy pack → seats  
-4. Open-source core optional later (host protocol) / commercial desktop — **decision later**
+Monetization experiments only after 1.0 retention, not inside 0.7.
 
 ---
 
-### Phase 5 — **Multi-agent & platform (after shell PMF)**
+## 7. Next major — **0.7 Shareable Grok desktop**
 
-| Theme | Note |
-|-------|------|
-| **ACP agent switcher** | Codex ACP, Claude Code ACP, others — same Chat/Code chrome |
-| Per-agent auth | Each provider: **sub/pool preferred**, API backup |
-| Multi-window / multi-root | Performance-gated |
-| Mobile companion | Approve-only / view — not full agent |
-| Cloud sync of sessions | Opt-in E2E encrypted |
-| Marketplace connectors | Strict review; lean defaults |
+**Job:** someone who is not the operator can install Forge on Windows and finish a real Chat week.
 
-**Rule:** Do not block Phase 1–2 on multi-agent. Architecture stays ACP-ready so Phase 5 is additive.
+### In
 
----
+| Slice | Observable outcome | Notes |
+|-------|--------------------|--------|
+| **Honest installer** | Brother (or any second human) gets a current-user setup whose publisher story is true | **A.** Authenticode when a cert exists. **B.** If the cert never comes: SHA-256 + “unknown publisher is expected” in first-run / notes — never pretend it is signed |
+| **First-run** | Fresh profile: appearance Voidglass, Chat ready, sign-in obvious, Code explains “install Grok CLI” instead of failing mute | Uses existing `voidglass-default` / `grok-acp-fallback` |
+| **Walkthrough evidence** | The deferred `desktop-self-host` human/clean-machine rows either close or stay explicitly deferred | Operator hold remains until they lift it |
+| **Update path** | 0.6.x → 0.7 via `latest.json` without cloning the repo | Already wired; prove it on a 0.6.5 machine |
+| **Installer hygiene** | Product name **Forge**, icon, current-user, close-before-upgrade copy | Mostly true today; treat misses as 0.7 bugs |
 
-## 6. “Enterprise-worthy” checklist (what IT actually asks)
+### Out of 0.7
 
-| Area | Lean approach |
-|------|----------------|
-| Security | Path confine, staged writes, allowlists, keychain, signed builds |
-| Compliance | Local-first; audit export; no training on customer data by us |
-| Identity | Optional SSO for app; document BYO LLM keys |
-| Deployment | MSI + updates; offline mode |
-| Support | Diagnostics export (already started); support SLA only on paid |
-| Performance | Published budgets (startup, stream, mode switch) |
-| Config | Documented schema; MDM-pushable policy file |
+- Mac (Windows-first stays unless operator overrides)
+- Artifacts / Mermaid
+- Vendor MCP / hooks chrome (1.0 skip-ahead; shipped 2026-08-27, uncommitted)
+- Forge MCP host
+- Extra ACP adapters
+- Billing UI
+- Computer use, iOS Simulator, in-app editor
 
----
+### Blockers
 
-## 7. Performance & lean operating system
+- **Authenticode:** blocked-on a cert. Do not theater-sign. If 0.7 must ship without a cert, ship path **B** (honest unsigned) as a named slice, not a silent skip.
+- **Brother walkthrough:** operator-deferred since 2026-08-15. 0.7’s exit is weaker without it.
 
-### Budgets (product contracts)
+### Suggested GATE I order inside 0.7 (when `go` resumes)
 
-| Surface | Budget |
-|---------|--------|
-| Cold start to interactive UI | &lt; 3 s on mid laptop |
-| Host ready | &lt; 2 s after UI |
-| Mode switch | &lt; 500 ms to usable chrome; agent restart may lag with spinner |
-| Token stream | UI commit ≤ ~15 fps batch; never block typing |
-| Session list | 500 chats without lag (virtualize when needed) |
+1. Honest installer (cert **or** honest-unsigned first-run)  
+2. First-run / CLI-missing copy (Code already has fallback chrome — close remaining mute gaps)  
+3. Update-path proof on a real 0.6.x install  
+4. Walkthrough only if the operator lifts the hold  
 
-### Lean process
-
-- Prefer **config flags** over new screens.  
-- Prefer **one ACP agent** over many daemons.  
-- Kill features that don’t move NSMs in 2 cycles.  
-- Dogfood gate: if *you* won’t use it weekly, don’t ship it.
+Artifacts stay **later than 0.7** unless 0.7 exits early and Chat dogfood is the next pain.
 
 ---
 
-## 8. Configurability map (progressive disclosure)
+## 8. Major after that — **1.0 Daily Grok desktop**
+
+**Job:** P1’s hard jobs stay in Forge; P2’s week stays in Chat; a Mac user can install.
+
+### In
+
+| Slice | Observable outcome | Notes |
+|-------|--------------------|--------|
+| **Vendor MCP visible** *(shipped 2026-08-27)* | In Code on the vendor engine, MCP servers Grok already has are inspectable in Forge chrome | Same pattern as Skills / Browser: **show, don’t invent**. Not a Forge MCP registry |
+| **Hooks / plugins chrome** *(shipped 2026-08-27)* | Lifecycle hooks and plugins the vendor advertises are visible or honestly absent | Do not build `skills-and-hooks` as a second engine |
+| **Worktree / isolation honesty** | If the vendor puts a child in a worktree, Forge shows that identity; Forge still does not spawn worktree workers | `isolated-workers` stays parked as *our* workers |
+| **Artifacts panel** | Large Chat/Code outputs (docs, long grok-ui) sit beside the bubble | From `RICH_DISPLAY_15_ROUNDS_REPORT.md`; not a PPT clone |
+| **Mermaid (optional)** | Fenced mermaid renders or stays honest plain | After Artifacts; syntax-themes already refused a clone highlighter |
+| **Mac desktop** | Current-user Mac install; Windows remains first-class | Phase 1 Windows-first lifts here |
+| **Chat capability** | P2 week without Code: attach, pack, PDF, rich display, Artifacts | Chat stays grok-acp until there is a *product* reason to put Chat on `grok agent` (not day one of 1.0) |
+| **TUI handoff (optional)** | From Grok TUI, open this session in Forge (Claude `/desktop`, Codex `/app`) | Only if vendor/deep-link exists; do not fake it |
+
+### Out of 1.0
+
+- Codex / Claude adapters (`grok-first` until 1.0 is loved)
+- Team SSO / MDM / SIEM
+- Forge-built MCP marketplace
+- Full IDE (LSP, debug, rich git)
+- Classifier auto-mode, cloud fleets, computer use, iOS Simulator
+
+### Why this is 1.0, not 0.8
+
+0.7 makes the binary shareable. 1.0 makes the *product* the place you work. Shipping Mac + vendor MCP chrome + Artifacts under another 0.6.x patch would hide the step change.
+
+---
+
+## 9. After 1.0 — **2.0 ACP platform** (do not start now)
+
+| Theme | Outcome | Lean rule |
+|-------|---------|-----------|
+| Extra ACP agents | Codex / Claude Code behind the same Chat/Code chrome | After Grok daily-use is real |
+| Per-agent auth | Each provider: sub preferred, API backup | No seat proxy |
+| Team policy | File- or MDM-deployed allowlists, model caps | Admin console later |
+| Audit export | JSON lines, local, optional SIEM | Append-only |
+| Optional SSO | App login, not a new IdP | Don’t re-implement identity |
+| Silent MSI / MDM | Windows enterprise deploy | After signed 0.7/1.0 |
+| Monetize shell | Personal $0; Pro/Team for policy/ops | Never resell tokens |
+| ACP v2 | Track the July 2026 **draft**; adopt when stable | Do not rewrite the host for a draft |
+
+**MCP host (Forge-built registry)** stays blocked on “installer honest” *and* on “ride vendor MCP first.” A Forge MCP engine is only if Chat needs connectors the vendor will not carry.
+
+---
+
+## 10. Configurability
 
 | Level | What | Who |
 |-------|------|-----|
-| **0 Defaults** | Chat/Code, Auto effort, Voidglass | Everyone |
-| **1 Settings UI** | Model, effort, theme, density, allowlist, files panel | Power users |
-| **2 Config files** | `config.json`, `policy.json`, model maps for effort | Admins |
-| **3 Managed** | MDM / enterprise policy lock | IT |
-
-Never force Level 2 on brother-class users.
+| **0 Defaults** | Chat/Code, Auto effort, Voidglass, Review | Everyone |
+| **1 Settings** | Model, effort, theme, density, Trusted classes, diagnostics | Power users |
+| **2 Files** | `config.json`, workspace policies, Trusted class lists | Admins |
+| **3 Managed** | MDM / enterprise lock | IT (2.0) |
 
 ---
 
-## 9. Recommended near-term sequence (next 2 quarters)
+## 11. Performance budgets (unchanged contracts)
+
+| Surface | Budget |
+|---------|--------|
+| Cold start to interactive UI | &lt; 3 s on a mid laptop |
+| Host ready | &lt; 2 s after UI |
+| Mode switch | &lt; 500 ms to usable chrome; agent restart may lag with spinner |
+| Token stream | Composer stays typable; batch, don’t block |
+| Session list | 500 chats without lag (virtualize when needed) |
+
+---
+
+## 12. Near-term sequence (when the hold lifts)
 
 ```text
-Q_now     Finish dual-mode dogfood → GATE Q → harden
-Q+1       desktop-self-host + signed installer + beta cohort
-Q+1/Q+2   MCP host (lean) + policy packs + keychain
-Q+2       Pro tier experiment (billing) if retention &gt; threshold
-Q+3       Team/Enterprise design partners + SSO/audit
-Q+4+      Multi-agent ACP only if PMF clear
+0.6.6     Published. Pipeline hold until cert, Mac override, or go-with-evidence.
+0.7       Honest installer → first-run → update-path proof → walkthrough if lifted
+1.0       Vendor MCP/hooks visible → Artifacts → Mac → optional TUI handoff
+2.0       Other ACP agents + team policy  (only after 1.0 is used weekly)
 ```
 
-**Immediate backlog alignment**
+**GATE I alignment (BACKLOG §B):**
 
-1. Close **dual-mode-shell** (GATE Q + ship notes)  
-2. **desktop-self-host** (unblocks “other people”)  
-3. **mcp-host** (capability without new product category)  
-4. Monetization only after Phase 1 beta feedback  
+1. Honest Windows installer (cert or honest-unsigned)  
+2. First-run / update-path (0.7)  
+3. Mac (1.0, unless operator overrides Windows-first)  
+4. Artifacts panel (1.0 quality)  
+5. Vendor MCP visible (1.0; not a Forge MCP host)
+
+Parked until 1.0+ : skills-and-hooks *engine*, isolated-workers *we* spawn, os-sandbox, extra ACP adapters, mcp-host registry, billing.
 
 ---
 
-## 10. Risks & anti-goals
+## 13. Risks & anti-goals
 
 | Risk | Mitigation |
 |------|------------|
-| Becoming a mini-IDE | Ruthless non-goals: no LSP/debug v1 |
-| Token cost surprises | Clear BYO billing; effort presets with cost hints |
-| Dual-mode complexity | One shell, two profiles, shared ACP |
-| Enterprise feature bloat | File-based policy before admin consoles |
-| Seat proxy abuse | Legal + technical single-user token binding |
+| Becoming a mini-IDE | No LSP/debug/in-app editor in 0.7/1.0 |
+| Becoming a TUI screenshot | `forge-owns-gui`; show vendor work, don’t paste a terminal |
+| Building a second Grok engine | grok-acp stays Chat/fallback; no skills/MCP/subagent engine in grok-acp |
+| Unsigned forever | Honest-unsigned is an explicit 0.7 path, not a pretend signature |
+| Draft ACP v2 churn | Stay on negotiated v1 until v2 is stable |
+| Enterprise bloat before PMF | File policy before admin consoles |
+| Seat proxy | Single-user; no multi-human SuperGrok share |
 
-**Anti-goals forever (unless strategy changes):**  
-scrape grok.com · multi-user share one SuperGrok · cloud agent farm · Electron rewrite · marketplace of random models day one  
-
----
-
-## 11. Decisions needed from operator (when ready)
-
-1. **Brand:** keep “Grok Code Shell” or rebrand to “Grok Desktop”?  
-2. **Open core vs closed desktop:** open-source host/agent later?  
-3. **First paid tier:** Pro individual vs Team-first?  
-4. **Platform order:** Windows-only until revenue, or Mac in Phase 1?  
+**Anti-goals unless strategy changes:** scrape grok.com · share one SuperGrok · cloud agent farm · Electron rewrite · classifier auto-mode · iOS Simulator · computer use · marketplace of random models day one · pixel-parity with Claude/Codex UI
 
 ---
 
-## 12. Summary
+## 14. Decisions still needed from the operator
+
+1. **0.7 without a cert:** **locked operator A 2026-08-27** — honest-unsigned first-run (`honest-unsigned-first-run`). S2 Authenticode stays later.  
+2. **Brand:** keep Forge, or “Grok Desktop”?  
+3. **Open core:** host/protocol later?  
+4. **Mac:** stay Windows-first through 0.7, or pull Mac into 0.7?  
+5. **Chat engine:** keep Chat on grok-acp through 1.0, or move Chat to `grok agent` once Code is loved?  
+6. **First paid tier:** Pro individual vs Team-first (after 1.0 only)
+
+---
+
+## 15. Summary
 
 | Question | Answer |
 |----------|--------|
-| **What is the product?** | ACP-native desktop agent shell (Chat + Code), lean and configurable |
-| **Why Grok now?** | Market gap (no Grok Code/desktop agent) + we have pooled Grok subscription |
-| **Auth?** | **Subscription / pool preferred**; **API key backup only** |
-| **Long term?** | Any ACP agent (Codex, Claude, …) behind the same UI |
-| **Money?** | Charge for shell + policy + support; never for reselling tokens |
+| **What is the product?** | ACP-native desktop shell (Chat + Code). Voidglass GUI. Grok vendor engine in Code. |
+| **Why Grok now?** | TUI exists; Claude/OpenAI already have desktops; we have a pool sub |
+| **Where are we?** | 0.6.6 dogfood Grok desktop, Windows unsigned |
+| **Next major (0.7)?** | Shareable: honest installer + first-run + a second human |
+| **Major after that (1.0)?** | Daily Grok desktop: vendor MCP/hooks visible, Artifacts, Mac |
+| **After 1.0?** | Other ACP agents + team policy; monetize the shell |
+| **Money?** | Charge for client + policy + support; never for tokens |
 
-Make it **usable by others** via **installable self-host** and reliability.  
-Make it **enterprise-worthy** via **policy, audit, SSO, signed deploy**.  
-Stay **lean and fast** — performance and config depth are product features.
-
-*PM proposal. Promote slices into BACKLOG / GATE I as operator chooses.*
+*Proposal. Promote slices into BACKLOG / GATE I as the operator chooses.*

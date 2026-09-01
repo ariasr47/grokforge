@@ -28,9 +28,11 @@ describe("formatAttachBlock", () => {
       text: "hello",
       truncated: false,
     });
-    assert.match(s, /Attached: notes\.txt/);
+    assert.match(s, /@notes\.txt/);
+    assert.match(s, /File: notes\.txt/);
     assert.match(s, /hello/);
     assert.match(s, /End: notes\.txt/);
+    assert.match(s, /Attached file contents/);
   });
 });
 
@@ -95,7 +97,8 @@ describe("PDF attach", () => {
     const bad = pdfFile("bad.pdf", await fixtureEncryptedPdf());
     const { blocks, toasts } = await readFilesForAttach([ok, bad]);
     assert.equal(blocks.length, 1);
-    assert.match(blocks[0]!, /Attached: ok\.pdf/);
+    assert.match(blocks[0]!, /@ok\.pdf/);
+    assert.match(blocks[0]!, /File: ok\.pdf/);
     assert.equal(toasts.length, 1);
     assert.match(toasts[0]!, /^Couldn't extract text from bad\.pdf\./);
     assert.doesNotMatch(toasts[0]!, /^bad\.pdf:/);

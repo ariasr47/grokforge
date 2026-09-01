@@ -9,7 +9,8 @@ export type CodeRunProvenanceChipProps = {
 };
 
 function toneClass(projection: CodeRunProvenanceProjection): string {
-  if (projection.state === "vendor") return "is-vendor";
+  if (projection.state === "vendor" || projection.state === "house") return "is-vendor is-quiet";
+  if (projection.state === "hydrating") return "is-pending is-quiet";
   if (projection.state === "fallback") return "is-fallback-warn";
   if (projection.state === "confirm_error") return "is-error";
   return "is-pending";

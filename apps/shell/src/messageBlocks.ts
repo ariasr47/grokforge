@@ -1,4 +1,5 @@
 import type { ToolMeta } from "./toolFormat";
+import { isForgeUnavailableVendorTool } from "./activityLabel";
 
 export interface ChatMessage {
   id: string;
@@ -77,12 +78,14 @@ export function toolRunStats(tools: ChatMessage[]): {
   total: number;
   failed: number;
   notRun: number;
+  unavailable: number;
   pending: number;
   ok: number;
   names: string[];
 } {
   let failed = 0;
   let notRun = 0;
+  let unavailable = 0;
   let pending = 0;
   let ok = 0;
   const names: string[] = [];
@@ -90,9 +93,13 @@ export function toolRunStats(tools: ChatMessage[]): {
     const n = t.toolMeta?.name;
     if (n && !names.includes(n)) names.push(n);
     if (t.toolMeta?.done === false || t.toolMeta?.status === "running") pending += 1;
-    else if (t.toolMeta?.execution === "not_executed" || t.toolMeta?.status === "rejected") notRun += 1;
+    else if (isForgeUnavailableVendorTool(t.toolMeta?.name)) unavailable += 1;
+    else if (
+      t.toolMeta?.execution === "not_executed" ||
+      t.toolMeta?.status === "rejected"
+    ) notRun += 1;
     else if (t.toolMeta?.ok === false || t.toolMeta?.status === "failed") failed += 1;
     else ok += 1;
   }
-  return { total: tools.length, failed, notRun, pending, ok, names };
+  return { total: tools.length, failed, notRun, unavailable, pending, ok, names };
 }

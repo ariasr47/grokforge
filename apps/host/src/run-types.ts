@@ -1,7 +1,7 @@
 export type RunState = "admitted"|"running"|"waiting_for_decision"|"recovering"|"cancelling"|"terminal";
 export type TerminalKind = "answered"|"failed"|"cancelled";
 export type FailureCode = "missing_final_answer"|"provider_unavailable"|"provider_liveness_exhausted"|"execution_owner_lost"|"agent_exited"|"interrupted"|"journal_unavailable"|"configuration_required"|"authentication_required"|"edit_conflict"|"internal_error";
-export type CodeRunAgentProvenance = { identity:"vendor"|"fallback"; fallbackReason:"cli_missing"|"spawn_failed"|null };
+export type CodeRunAgentProvenance = { identity:"vendor"|"fallback"|"house"; fallbackReason:"cli_missing"|"spawn_failed"|null };
 export type SkillHandoffProvenance = { kind:"consumed"|"none"; name:string|null };
 export type RecoveryAction = "retry_prompt"|"open_settings"|"reconnect"|"export_diagnostics"|null;
 export type WorkspacePolicyMode = "review"|"trusted_workspace";

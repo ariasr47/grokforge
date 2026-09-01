@@ -19,18 +19,35 @@ test("Code renders nothing", () => {
   assert.equal(container.textContent, "");
 });
 
-test("uncommitted shows Name this home placeholder", () => {
+test("uncommitted empty title shows Name this home placeholder", () => {
   render(
     <ChatHomeName
       mode="chat"
       committedName={false}
-      title="auto title"
+      title="New chat"
       saveFailed={false}
       onCommit={() => undefined}
     />,
   );
   assert.ok(screen.getByRole("button", { name: HOME_NAME_PLACEHOLDER }));
-  assert.equal(screen.queryByText("auto title"), null);
+});
+
+test("uncommitted auto-title is shown so chats are distinguishable", () => {
+  render(
+    <ChatHomeName
+      mode="chat"
+      committedName={false}
+      title="Reply with exactly CHAT-GLANCE-OK and stop. Do not edit files."
+      saveFailed={false}
+      onCommit={() => undefined}
+    />,
+  );
+  assert.ok(
+    screen.getByRole("button", {
+      name: "Reply with exactly CHAT-GLANCE-OK and stop. Do not edit files.",
+    }),
+  );
+  assert.equal(screen.queryByRole("button", { name: HOME_NAME_PLACEHOLDER }), null);
 });
 
 test("committed shows title", () => {

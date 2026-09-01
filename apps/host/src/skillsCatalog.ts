@@ -17,7 +17,8 @@ export const ABSENT_NON_VENDOR: SkillsCatalogFact = {
   commands: null,
 };
 
-export function enterAwaiting(_prior: SkillsCatalogFact): SkillsCatalogFact {
+export function enterAwaiting(prior: SkillsCatalogFact): SkillsCatalogFact {
+  if (prior.disposition === "obtain_failed") return prior;
   return { disposition: "awaiting_first_valid", commands: null };
 }
 
@@ -47,20 +48,31 @@ export function clearToAbsent(_prior: SkillsCatalogFact): SkillsCatalogFact {
   return ABSENT_NON_VENDOR;
 }
 
+/** ACP advertises `name` without a leading slash; Forge palettes/handoff use `/name`. */
+export function normalizeAvailableCommandName(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  if (withSlash.length < 2) return null;
+  if (/\s/.test(withSlash)) return null;
+  return withSlash;
+}
+
 export function parseAvailableCommands(raw: unknown): SkillsCatalogCommand[] | null {
   if (!Array.isArray(raw)) return null;
   const out: SkillsCatalogCommand[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const name = (item as { name?: unknown }).name;
-    if (typeof name !== "string" || !name.startsWith("/") || name.length < 2) return null;
-    if (/\s/.test(name)) return null;
+    if (!item || typeof item !== "object") continue;
+    const name = normalizeAvailableCommandName((item as { name?: unknown }).name);
+    if (!name) continue;
     const description = (item as { description?: unknown }).description;
     out.push({
       name,
       description: typeof description === "string" ? description : null,
     });
   }
+  if (raw.length > 0 && out.length === 0) return null;
   return out;
 }
 

@@ -2,12 +2,12 @@ import path from "node:path";
 
 export type CodeAgentFact = {
   resolveStatus: "resolving" | "ready" | "hard_fail";
-  identity: "vendor" | "fallback" | "hard_fail" | null;
+  identity: "vendor" | "fallback" | "house" | "hard_fail" | null;
   fallbackReason: "cli_missing" | "spawn_failed" | null;
 };
 
 export type CodeRunAgentProvenance = {
-  identity: "vendor" | "fallback";
+  identity: "vendor" | "fallback" | "house";
   fallbackReason: "cli_missing" | "spawn_failed" | null;
 };
 
@@ -15,6 +15,7 @@ export function stampCodeAgentFact(
   input:
     | { kind: "resolving" }
     | { kind: "vendor" }
+    | { kind: "house" }
     | { kind: "cli_missing" }
     | { kind: "spawn_failed" }
     | { kind: "hard_fail" },
@@ -24,6 +25,8 @@ export function stampCodeAgentFact(
       return { resolveStatus: "resolving", identity: null, fallbackReason: null };
     case "vendor":
       return { resolveStatus: "ready", identity: "vendor", fallbackReason: null };
+    case "house":
+      return { resolveStatus: "ready", identity: "house", fallbackReason: null };
     case "cli_missing":
       return { resolveStatus: "ready", identity: "fallback", fallbackReason: "cli_missing" };
     case "spawn_failed":
@@ -43,7 +46,7 @@ export function resolveVendorCliPath(input: {
   const dirs = input.pathEnv.split(sep).filter(Boolean);
   const names =
     input.platform === "win32"
-      ? ["grok.exe", "grok"]
+      ? ["grok.exe", "grok.cmd", "grok"]
       : ["grok"];
   for (const name of names) {
     for (const dir of dirs) {

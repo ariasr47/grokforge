@@ -1,3 +1,5 @@
+import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
+
 const KEY = "grokforge.sessions.v2";
 const LEGACY_KEY = "grokforge.sessions.v1";
 const MAX_PER_WS = 20;
@@ -261,7 +263,11 @@ export function listPinnedWorkspaces(): string[] {
 export function hasAnyStoredHistory(): boolean {
   const store = loadStore();
   return Object.values(store.byWorkspace).some((list) =>
-    list.some((s) => s.open !== false && s.messages.length > 0),
+    list.some(
+      (s) =>
+        s.open !== false &&
+        (s.messages.length > 0 || s.committedName === true),
+    ),
   );
 }
 
@@ -300,9 +306,26 @@ export function setExpanded(workspace: string, open: boolean): void {
   saveStore(store);
 }
 
+export function defaultSessionTitle(workspace: string): string {
+  return workspace.startsWith("chat:") ? "New chat" : "New session";
+}
+
+/** List/heading label. Placeholder only while the home has no auto-title yet. */
+export function chatListTitle(sess: {
+  committedName?: boolean;
+  title: string;
+  workspace: string;
+}): string {
+  const untitled = defaultSessionTitle(sess.workspace);
+  if (sess.committedName === true) return sess.title.trim() || untitled;
+  const title = sess.title.trim();
+  if (title && title !== untitled) return title;
+  return HOME_NAME_PLACEHOLDER;
+}
+
 export function createSession(
   workspace: string,
-  title = "New chat",
+  title = defaultSessionTitle(workspace),
   branch?: string | null,
 ): ChatSession {
   const session: ChatSession = {
@@ -505,7 +528,7 @@ export function ensureActiveSession(
       return found;
     }
   }
-  return createSession(workspace, "New chat", branch);
+  return createSession(workspace, defaultSessionTitle(workspace), branch);
 }
 
 export function deleteSession(

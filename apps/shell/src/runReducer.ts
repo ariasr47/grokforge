@@ -52,7 +52,7 @@ export type ChatPackTurnVoucher = {
 
 /** Immutable post-live stamp on an owned Code run. Null on Chat / until live. */
 export type CodeRunAgentProvenance = {
-  identity: "vendor" | "fallback";
+  identity: "vendor" | "fallback" | "house";
   fallbackReason: "cli_missing" | "spawn_failed" | null;
 };
 
@@ -188,6 +188,11 @@ export interface RunEventEnvelope { schemaVersion: 1; type: RunEventPayload["kin
 export function isRunStreamDelta(kind: RunEventPayload["kind"]): boolean {
   return kind === "answer_delta" || kind === "reasoning_delta" || kind === "message_delta";
 }
+/** Host may append these after run_terminal (plan Accept, child finish). */
+export const POST_TERMINAL_EVENT_TYPES = ["child_agent_update", "decision_request", "plan_record"] as const;
+export function isPostTerminalEventType(type: string): boolean {
+  return (POST_TERMINAL_EVENT_TYPES as readonly string[]).includes(type);
+}
 export interface RunProjection {
   runsById: Record<string, RunProjectionRun>; runOrder: string[]; sessionCursors: Record<string, number>;
 }
@@ -253,7 +258,33 @@ export function mergeRunSnapshot(state: RunProjection, snapshot: RunSnapshot): R
   if (existing && (existing.sessionId !== snapshot.sessionId || existing.connectionGeneration !== snapshot.connectionGeneration)) return state;
   // A late admission response must never downgrade an already terminal run;
   // terminal journal truth and its accumulated audit projection win.
-  if (existing?.state === "terminal") return state;
+  // Fast WS terminal can beat POST /api/prompt: still accept a late stamp when
+  // the terminal projection has none (do not invent; do not rewrite a stamp).
+  if (existing?.state === "terminal") {
+    const stamped = snapshotProvenance(snapshot, existing);
+    const handoff = snapshotSkillHandoffProvenance(snapshot, existing);
+    if (
+      stamped === existing.codeAgentProvenance &&
+      handoff === existing.skillHandoffProvenance
+    ) {
+      return state;
+    }
+    if (!existing.codeAgentProvenance && !existing.skillHandoffProvenance && !stamped && !handoff) {
+      return state;
+    }
+    if (existing.codeAgentProvenance && existing.skillHandoffProvenance) return state;
+    return {
+      ...state,
+      runsById: {
+        ...state.runsById,
+        [snapshot.runId]: {
+          ...existing,
+          codeAgentProvenance: existing.codeAgentProvenance ?? stamped,
+          skillHandoffProvenance: existing.skillHandoffProvenance ?? handoff,
+        },
+      },
+    };
+  }
   const codeAgentProvenance = snapshotProvenance(snapshot, existing);
   const skillHandoffProvenance = snapshotSkillHandoffProvenance(snapshot, existing);
   const run: RunProjectionRun = existing
@@ -291,7 +322,8 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
   if (existing && (existing.sessionId !== event.sessionId || existing.connectionGeneration !== event.connectionGeneration)) return state;
   if (existing?.seenEventSeq.has(event.eventSeq)) return state;
   if (existing?.terminalEventSeq != null && event.eventSeq > existing.terminalEventSeq) {
-    if (event.type !== "child_agent_update") return state;
+    // Host appends plan Accept after run_terminal. Dropping it leaves the dock pending.
+    if (!isPostTerminalEventType(event.type)) return state;
   }
   if (existing && event.eventSeq <= existing.lastEventSeq) return state;
   let run: RunProjectionRun;

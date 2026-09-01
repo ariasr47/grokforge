@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen } from "@testing-library/react";
-import { RunSurface } from "./RunSurface";
+import { midturnFoldedIntoAnswer, RunSurface } from "./RunSurface";
 import { RunStatusBar } from "./RunStatusBar";
 import { composerFooterPhaseText, deriveLivePhase, statusBarPhaseText } from "./derivedLivePhase";
 import type { ActivityRecord, RunProjectionRun, RunSnapshot } from "./runReducer";
@@ -72,6 +72,7 @@ test("reasoning present → Thought disclosure; not inside Answer article", () =
   const thought = screen.getByText("Thought…").closest("details");
   const answer = screen.queryByRole("article", { name: "Assistant answer" });
   assert.ok(thought);
+  assert.equal((thought as HTMLDetailsElement).open, true);
   assert.equal(answer, null);
 });
 
@@ -87,6 +88,8 @@ test("settled thought uses Thought summary and stays foldable", () => {
   assert.equal(screen.queryByText("Thought…"), null);
   assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
   assert.equal(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("why"), false);
+  const thought = screen.getByText("Thought").closest("details");
+  assert.equal((thought as HTMLDetailsElement | null)?.open, false);
 });
 
 test("message present + not yet vouched → mid-turn region with non-Answer chrome", () => {
@@ -99,7 +102,7 @@ test("message present + not yet vouched → mid-turn region with non-Answer chro
   assert.equal(mid.classList.contains("assistant-answer"), false);
 });
 
-test("vouched finalAnswer → Answer article; mid-turn yields and is not Assistant answer", () => {
+test("vouched identical mid-turn omits Earlier — Answer is enough", () => {
   render(<RunSurface run={run({
     state: "terminal",
     terminalKind: "answered",
@@ -109,10 +112,72 @@ test("vouched finalAnswer → Answer article; mid-turn yields and is not Assista
   })} />);
   const answer = screen.getByRole("article", { name: "Assistant answer" });
   assert.ok(answer.textContent?.includes("streaming words"));
+  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+});
+
+test("Earlier is omitted when the vouched answer already contains the mid-turn and more", () => {
+  render(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "answered",
+    answerVouched: true,
+    finalAnswer: "I'll write docs/dogfood/GAP.md.\n\nCreated docs/dogfood/GAP.md.",
+    message: { m: "I'll write docs/dogfood/GAP.md." },
+  })} />);
+  assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
+  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+});
+
+test("whitespace-normalized duplicate mid-turn omits Earlier", () => {
+  render(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "answered",
+    answerVouched: true,
+    finalAnswer: "Creating EARLIER.md.\n\nCreated EARLIER.md.",
+    message: { m: "Creating EARLIER.md. \n Created EARLIER.md." },
+  })} />);
+  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+});
+
+test("unique extra mid-turn paragraph keeps Earlier", () => {
+  render(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "answered",
+    answerVouched: true,
+    finalAnswer: "Created EARLIER.md.",
+    message: { m: "I'll inspect the repo first.\n\nCreated EARLIER.md." },
+  })} />);
   const mid = screen.getByLabelText("Mid-turn narration");
-  assert.ok(mid);
-  assert.notEqual(mid, answer);
-  assert.equal(mid.getAttribute("aria-label"), "Mid-turn narration");
+  assert.ok(mid.textContent?.includes("I'll inspect the repo first."));
+  assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
+});
+
+test("midturnFoldedIntoAnswer: equal / subset fold, unique paragraph does not", () => {
+  assert.equal(midturnFoldedIntoAnswer("pong", "pong", true), true);
+  assert.equal(midturnFoldedIntoAnswer("I'll write X.", "I'll write X.\n\nCreated X.", true), true);
+  assert.equal(midturnFoldedIntoAnswer("Creating X.\n\nCreated X.", "Creating X.\n\nCreated X. Done.", true), true);
+  assert.equal(midturnFoldedIntoAnswer("Creating X. \n Created X.", "Creating X.\n\nCreated X.", true), true);
+  assert.equal(
+    midturnFoldedIntoAnswer(
+      "I'll create docs/dogfood/EARLIER.md with only EARLIER-OK, then stop.",
+      "I'll create `docs/dogfood/EARLIER.md` with only `EARLIER-OK`, then stop.\n\nCreated it.",
+      true,
+    ),
+    true,
+  );
+  assert.equal(midturnFoldedIntoAnswer("secret aside\n\nCreated X.", "Created X.", true), false);
+  assert.equal(midturnFoldedIntoAnswer("streaming words", "streaming words", false), false);
+  assert.equal(midturnFoldedIntoAnswer("streaming words", null, true), false);
+});
+
+test("Earlier is omitted when answer wraps the mid-turn in markdown ticks", () => {
+  render(<RunSurface run={run({
+    state: "terminal",
+    terminalKind: "answered",
+    answerVouched: true,
+    finalAnswer: "I'll create `docs/dogfood/EARLIER.md` with only `EARLIER-OK`, then stop.\n\nCreated it.",
+    message: { m: "I'll create docs/dogfood/EARLIER.md with only EARLIER-OK, then stop." },
+  })} />);
+  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
 });
 
 test("no reasoning → no Thought chrome", () => {

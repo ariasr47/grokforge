@@ -11,6 +11,10 @@ export interface PermissionPolicyControlProps {
   disabled?: boolean;
 }
 const label = (m: PolicyMode) => m === "review" ? "Review" : "Trusted workspace";
+/** Saved file exists but cannot be used. `missing` is the honest default, not a failure. */
+export function savedPolicyUnusable(reason: string | null | undefined): boolean {
+  return reason === "invalid" || reason === "unreadable";
+}
 export function PermissionPolicyControl({ status, confirmedMode = null, fallbackReason = null, onSave, disabled }: PermissionPolicyControlProps) {
   const [draft, setDraft] = useState<PolicyMode | null>(confirmedMode);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +24,7 @@ export function PermissionPolicyControl({ status, confirmedMode = null, fallback
   async function save() { if (!draft || !onSave || draft === confirmedMode) return; setError(null); try { await onSave(draft); } catch { setError(`Couldn’t save the permission policy. ${label(confirmedMode ?? "review")} remains active.`); } }
   return <div className="policy-control" role="group" aria-label="Permission policy" aria-busy={busy}>
     <div className="policy-heading"><strong>Permission policy</strong>{confirmedMode && <span className="chip">Policy: {label(confirmedMode)}</span>}</div>
-    {fallbackReason && <p className="policy-notice" role="status">Forge couldn’t use the saved permission policy. Review is active.</p>}
+    {savedPolicyUnusable(fallbackReason) && <p className="policy-notice" role="status">Forge couldn’t use the saved permission policy. Review is active.</p>}
     {status === "loading" && <p role="status">Loading permission policy…</p>}
     {(status === "offline" || status === "stale" || status === "unconfirmed") && <p role="alert">Permission policy couldn’t be confirmed. Reconnect before sending.</p>}
     {status === "no_workspace" && <p role="status">Open a workspace to choose its permission policy.</p>}

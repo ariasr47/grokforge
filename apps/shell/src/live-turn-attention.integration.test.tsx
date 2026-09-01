@@ -10,7 +10,7 @@ import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./t
 import { reloadSessionsFromDisk } from "./sessions";
 import { WebSocket as BrowserWebSocket } from "ws";
 
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",

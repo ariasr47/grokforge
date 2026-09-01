@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forge’s two brains — grok-acp and grok agent stdio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #070b14;
+      --glass: #0e1624;
+      --rail: #182338;
+      --line: rgba(232, 238, 248, 0.1);
+      --paper: #e8eef8;
+      --mute: #8b9bb4;
+      --house: #5ce1ff;
+      --guest: #f0b45a;
+      --warn: #ff8a7a;
+      --ok: #7dffd4;
+      --max: 72rem;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(92, 225, 255, 0.08), transparent 50%),
+        radial-gradient(900px 500px at 110% 0%, rgba(240, 180, 90, 0.07), transparent 45%),
+        var(--ink);
+      color: var(--paper);
+      font-family: "Source Serif 4", Georgia, serif;
+      font-optical-sizing: auto;
+      font-size: 1.125rem;
+      line-height: 1.6;
+    }
+    a { color: var(--house); }
+    code, kbd, .mono {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.86em;
+    }
+    kbd {
+      border: 1px solid var(--line);
+      padding: 0.05em 0.4em;
+      border-radius: 4px;
+      background: var(--rail);
+    }
+    header.top {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.7rem 1.25rem;
+      background: color-mix(in srgb, var(--ink) 82%, transparent);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--line);
+    }
+    header.top .mark {
+      font-family: Syne, sans-serif;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      color: var(--mute);
+    }
+    header.top nav { margin-left: auto; display: flex; gap: 1rem; flex-wrap: wrap; }
+    header.top nav a {
+      color: var(--mute);
+      text-decoration: none;
+      font-family: Syne, sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    header.top nav a:hover { color: var(--paper); }
+    .wrap { width: min(var(--max), calc(100% - 2rem)); margin: 0 auto; }
+    .hero { padding: 4.5rem 0 2rem; }
+    .eyebrow {
+      font-family: Syne, sans-serif;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--house);
+    }
+    h1, h2, h3 { font-family: Syne, sans-serif; line-height: 1.12; letter-spacing: -0.03em; }
+    h1 { font-size: clamp(2.2rem, 6vw, 4.4rem); font-weight: 800; margin: 0.4rem 0 1rem; max-width: 16ch; }
+    h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 0 0 0.8rem; }
+    h3 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+    .lede { font-size: 1.28rem; color: var(--mute); max-width: 46rem; }
+    .lede strong { color: var(--paper); font-weight: 600; }
+    section { padding: 3.2rem 0; border-top: 1px solid var(--line); }
+    p { max-width: 46rem; }
+    .stage {
+      margin-top: 2.4rem;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 1.2rem;
+    }
+    .mode-switch {
+      display: inline-flex;
+      background: var(--rail);
+      border-radius: 999px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .mode-switch button {
+      font-family: Syne, sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border: 0;
+      background: transparent;
+      color: var(--mute);
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .mode-switch button[aria-pressed="true"] {
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .mode-switch button:focus-visible { outline: 2px solid var(--house); outline-offset: 2px; }
+    .caption { color: var(--mute); font-size: 0.92rem; margin: 0.8rem 0 0; }
+    .pipe {
+      display: grid;
+      grid-template-columns: 1fr 1.3fr 1fr;
+      gap: 0.6rem;
+      align-items: stretch;
+      margin-top: 1.2rem;
+      min-height: 220px;
+    }
+    @media (max-width: 820px) {
+      .pipe { grid-template-columns: 1fr; }
+      .wire { min-height: 64px; }
+    }
+    .box {
+      background: var(--rail);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem 1.05rem;
+    }
+    .box .who {
+      font-family: Syne, sans-serif;
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--mute);
+    }
+    .box h3 { margin-top: 0.25rem; }
+    .box ul { margin: 0.4rem 0 0; padding-left: 1.1rem; color: var(--mute); font-size: 0.95rem; }
+    .box.house { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house) 35%, transparent); }
+    .box.child { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--guest) 40%, transparent); }
+    body[data-mode="chat"] .box.child { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house) 40%, transparent); }
+    .wire {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.55rem;
+      padding: 0.4rem 0.2rem;
+    }
+    .lane {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      color: var(--mute);
+    }
+    .lane .bar {
+      flex: 1;
+      height: 3px;
+      border-radius: 99px;
+      background: repeating-linear-gradient(
+        90deg,
+        currentColor 0 10px,
+        transparent 10px 18px
+      );
+      opacity: 0.7;
+      animation: flow 1.6s linear infinite;
+    }
+    .lane.out { color: var(--house); }
+    .lane.in { color: var(--guest); }
+    body[data-mode="chat"] .lane.in { color: var(--house); }
+    @keyframes flow { to { background-position: 28px 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .lane .bar { animation: none; }
+      html { scroll-behavior: auto; }
+    }
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 780px) { .grid2 { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1.2rem 1.3rem;
+    }
+    .card.house { border-color: color-mix(in srgb, var(--house) 35%, var(--line)); }
+    .card.guest { border-color: color-mix(in srgb, var(--guest) 40%, var(--line)); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 1rem;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.7rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      font-family: Syne, sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--mute);
+      font-weight: 700;
+    }
+    .pill {
+      display: inline-block;
+      font-family: Syne, sans-serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--mute);
+    }
+    .pill.house { color: var(--ink); background: var(--house); border-color: transparent; }
+    .pill.guest { color: var(--ink); background: var(--guest); border-color: transparent; }
+    .callout {
+      border-left: 3px solid var(--guest);
+      padding: 0.2rem 0 0.2rem 1rem;
+      color: var(--mute);
+    }
+    .steps { counter-reset: s; list-style: none; padding: 0; }
+    .steps li {
+      counter-increment: s;
+      position: relative;
+      padding: 0.85rem 0 0.85rem 3.2rem;
+      border-bottom: 1px solid var(--line);
+      max-width: 46rem;
+    }
+    .steps li::before {
+      content: counter(s, decimal-leading-zero);
+      position: absolute; left: 0; top: 0.95rem;
+      font-family: Syne, sans-serif;
+      font-weight: 800;
+      color: var(--house);
+      font-size: 0.9rem;
+    }
+    details {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 1rem;
+      margin: 0.5rem 0;
+      max-width: 46rem;
+    }
+    summary {
+      font-family: Syne, sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    footer.bot {
+      padding: 2rem 0 4rem;
+      color: var(--mute);
+      font-size: 0.92rem;
+    }
+    .cmd {
+      display: block;
+      background: var(--rail);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      overflow-x: auto;
+      color: var(--ok);
+      margin: 0.8rem 0 1.2rem;
+      max-width: 46rem;
+    }
+  </style>
+</head>
+<body data-mode="chat">
+  <header class="top">
+    <div class="mark">Forge · engines</div>
+    <nav>
+      <a href="#plain">Plain English</a>
+      <a href="#stdio">stdio</a>
+      <a href="#acp">ACP</a>
+      <a href="#app">In the app</a>
+      <a href="#trade">Tradeoffs</a>
+      <a href="#scale">Scale</a>
+      <a href="#rec">Recommendations</a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <div class="hero">
+      <div class="eyebrow">House and guest</div>
+      <h1>Two brains. One window. Same kind of telephone line.</h1>
+      <p class="lede">
+        Forge does not “call Grok Studio.” It starts a <strong>child process</strong> and talks to it in a shared language called <strong>ACP</strong>, over ordinary <strong>stdin / stdout</strong>.
+        Chat starts <em>our</em> child. Code starts <em>xAI’s</em> child when the Grok CLI is on the machine.
+      </p>
+    </div>
+
+    <div class="stage" id="demo">
+      <div class="mode-switch" role="radiogroup" aria-label="Which tab">
+        <button type="button" id="btn-chat" aria-pressed="true">Chat tab</button>
+        <button type="button" id="btn-code" aria-pressed="false">Code tab</button>
+      </div>
+      <div class="pipe" aria-live="polite">
+        <article class="box house">
+          <div class="who">The house</div>
+          <h3>Forge Host</h3>
+          <ul>
+            <li>Voidglass window</li>
+            <li>Review / Trusted / Bypass</li>
+            <li>Transcript, Plan dock, File changes</li>
+            <li>Parent of the child process</li>
+          </ul>
+        </article>
+        <div class="wire">
+          <div class="lane out"><span>stdout →</span><span class="bar"></span><span>ACP events</span></div>
+          <div class="lane in"><span>← stdin</span><span class="bar"></span><span>JSON-RPC</span></div>
+          <p class="caption" id="wire-caption" style="margin:0;text-align:center">Chat: Node runs <code>packages/grok-acp</code></p>
+        </div>
+        <article class="box child" id="child-box">
+          <div class="who" id="child-who">Our child</div>
+          <h3 id="child-title">grok-acp</h3>
+          <ul id="child-list">
+            <li>Forge-written agent</li>
+            <li>Calls xAI itself</li>
+            <li>Home, pack, PDF extract</li>
+            <li>Small, owned tool set</li>
+          </ul>
+        </article>
+      </div>
+      <p class="caption">Toggle the tab. The pipe stays. Only the child on the right changes.</p>
+    </div>
+
+    <section id="plain">
+      <div class="eyebrow">The 30-second version</div>
+      <h2>Imagine a restaurant kitchen.</h2>
+      <p>The dining room is Forge — the window you see, the buttons, “may I edit this file?”. The kitchen is the model that actually thinks and uses tools.</p>
+      <p>The waiter does not shout across the kitchen. They pass <strong>notes through a tube</strong>: one direction is orders (your prompt), the other is plates coming back (thoughts, tool asks, the answer). That tube is <strong>stdio</strong>. The language on the notes is <strong>ACP</strong>.</p>
+      <p>Chat hires <strong>our cook</strong> (grok-acp). Code hires <strong>xAI’s cook</strong> when <code>grok.exe</code> is installed (<code>grok agent stdio</code>). Same tube. Different cook. If xAI’s cook is missing, Code honestly uses our cook and labels it Mini-Grok — it does not pretend to be Grok Code.</p>
+    </section>
+
+    <section id="stdio">
+      <div class="eyebrow">The tube</div>
+      <h2>What “stdio” actually means</h2>
+      <p><strong>stdio</strong> is short for <em>standard input and standard output</em>. Every program has them:</p>
+      <ul>
+        <li><strong>stdin</strong> — what gets typed into it (the in-tray).</li>
+        <li><strong>stdout</strong> — what it prints (the out-tray).</li>
+        <li><strong>stderr</strong> — a side channel for logs and complaints, not the official conversation.</li>
+      </ul>
+      <p>When you run a tool in a terminal, <em>you</em> are stdin and stdout. When Forge starts an agent, it <strong>hooks those trays to itself</strong>. The child never opens a window. It only reads lines and writes lines.</p>
+      <p>Those lines are not casual chat. They are <strong>JSON-RPC</strong>: one JSON object per line, with a method name (<code>session/prompt</code>, <code>session/request_permission</code>, …). Forge writes a request on stdin. The agent writes results and notifications on stdout. That is “agent over stdio.”</p>
+      <code class="cmd">grok.exe --cwd C:\Dev\your-repo --permission-mode default agent stdio</code>
+      <p>That command is what Code starts when the Grok CLI is found. <code>agent stdio</code> means: “don’t draw a TUI — sit on the pipe and speak ACP.” It is the headless form of the same product as the Grok terminal UI, not a separate “Studio” app.</p>
+      <div class="callout">There is no Grok Studio in Forge. People sometimes mix that name up with the official Grok CLI / TUI. In this house the guest is that CLI, in stdio mode.</div>
+    </section>
+
+    <section id="acp">
+      <div class="eyebrow">The language on the notes</div>
+      <h2>What ACP is</h2>
+      <p><strong>ACP</strong> = Agent Client Protocol. A small, shared contract so a GUI (the <em>client</em>) can drive an agent process (the <em>server</em>) without inventing a private dialect.</p>
+      <p>Typical moves on the wire:</p>
+      <ul>
+        <li>Handshake: who are you, what can you do.</li>
+        <li>Start a session in a folder (Code) or a chat sandbox (Chat).</li>
+        <li>Send a prompt; stream thoughts and text back.</li>
+        <li>Ask permission before a write or a shell command.</li>
+        <li>Advertise extras the agent actually has: skills, MCP servers, child agents, browser work, hooks.</li>
+      </ul>
+      <p>Forge’s <code>StdioAcpClient</code> is the waiter. It spawns the child, frames JSON-RPC, and turns ACP events into the live run you see (You card, Thought, tools, Answered).</p>
+      <p><strong>Both engines speak ACP over stdio.</strong> That is why Chat and Code can share one window, one Review policy, one cancel button. The split is not the protocol. The split is <em>which binary is on the other end of the pipe</em>.</p>
+    </section>
+
+    <section id="two">
+      <div class="eyebrow">The two children</div>
+      <h2>grok-acp vs grok agent stdio</h2>
+      <div class="grid2">
+        <article class="card house">
+          <span class="pill house">House child</span>
+          <h3>grok-acp</h3>
+          <p>A Node process Forge ships (<code>packages/grok-acp</code>). Host starts it with Node. It calls xAI itself (subscription pool first, API key backup). It owns a <em>small</em> tool belt: read, list, grep, write, patch, shell, delete, rename — plus Chat extras like PDF extract and pack context.</p>
+          <p>System prompt and tool policy are ours. Named home, pack pin, honest PDF failure copy — those live here because we wrote them.</p>
+          <p>UI name in Chat: just Grok. Fallback name in Code: <strong>Mini-Grok</strong>.</p>
+        </article>
+        <article class="card guest">
+          <span class="pill guest">Guest child</span>
+          <h3>grok agent stdio</h3>
+          <p>The official Grok CLI (<code>grok.exe</code> on Windows). Same brain as the Grok TUI. Forge does not reimplement skills, MCP, subagents, or the vendor planner. It <em>shows</em> what that process advertises on the ACP wire.</p>
+          <p>Spawn is roughly: <code>grok.exe --cwd &lt;repo&gt; --permission-mode default agent stdio</code>. Review → <code>default</code>, Trusted workspace → <code>acceptEdits</code>, Bypass → <code>agent --always-approve stdio</code>.</p>
+          <p>UI name: <strong>Grok Code</strong>. Only painted when the host actually spawned this child.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="app">
+      <div class="eyebrow">Inside Forge</div>
+      <h2>What happens when you press Send</h2>
+      <ol class="steps">
+        <li><strong>The window</strong> (Voidglass) posts the prompt to the Host on <code>:8788</code>.</li>
+        <li><strong>The Host</strong> decides the child. Chat → grok-acp. Code → probe PATH for <code>grok.exe</code>; if it starts, stamp Grok Code; if not, grok-acp and say Mini-Grok.</li>
+        <li><strong>ACP over stdio</strong> carries the turn. Thoughts, tool calls, and permission asks come back as events. Forge maps Review onto those asks so a write still needs Allow once unless Trusted/Bypass.</li>
+        <li><strong>Chrome is the house.</strong> Plan, File changes, Verify, Git review inspect what <em>happened</em>. Skills / MCP / child agents / browser only appear in Code when the guest advertised them. Chat does not grow a fake catalog.</li>
+        <li><strong>One live parent run per session.</strong> Cancel is “Stopped by you.” Reload must not invent a second brain.</li>
+      </ol>
+      <p>Parked on purpose: <code>chat-on-vendor</code> — putting Chat on <code>grok agent stdio</code>. That would dump email-and-PDF work into a coding agent. It is a product decision for later, not a shortcut.</p>
+    </section>
+
+    <section id="trade">
+      <div class="eyebrow">Honest ledger</div>
+      <h2>Pros, cons, and where each shines</h2>
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>grok-acp (Chat, Code fallback)</th>
+            <th>grok agent stdio (Code)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Who owns the brain</td>
+            <td>Forge. We can ship Chat features (pack, PDF, home) without waiting on CLI releases.</td>
+            <td>xAI. Hard coding jobs match the TUI. We do not maintain a second Grok Build.</td>
+          </tr>
+          <tr>
+            <td>Install story</td>
+            <td>Works without Grok CLI. Brother PCs still Chat.</td>
+            <td>Needs <code>grok</code> on PATH. First-run Code must say so, not fake it.</td>
+          </tr>
+          <tr>
+            <td>Tools &amp; skills</td>
+            <td>Fixed, small, auditable. Bad at “whatever the TUI grew this week.”</td>
+            <td>Whatever the vendor advertises: skills, MCP, subagents, plan mode. We draw; we do not invent.</td>
+          </tr>
+          <tr>
+            <td>Trust</td>
+            <td>Our permission broker and workspace confinement. Known surface.</td>
+            <td>Mapped onto CLI flags. Powerful, and a moving target when the CLI changes.</td>
+          </tr>
+          <tr>
+            <td>Failure mode</td>
+            <td>If xAI HTTP fails, Chat fails honestly. No fake “still connected.”</td>
+            <td>If spawn fails, Code falls back to Mini-Grok with a label — never a silent Grok Code badge.</td>
+          </tr>
+          <tr>
+            <td>Cost to us</td>
+            <td>We maintain a mini agent forever if we let it grow.</td>
+            <td>We maintain a waiter (ACP client) and chrome. Guest churn is their problem if we stay honest.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="scale">
+      <div class="eyebrow">Scale</div>
+      <h2>What gets expensive</h2>
+      <p><strong>Process count.</strong> Each live Code session is a CLI child. Each Chat session is a grok-acp child. They are not free. One live parent ACP run per session is the cap that keeps cancel/reload honest.</p>
+      <p><strong>Protocol surface.</strong> Scaling by teaching grok-acp to fake vendor skills/MCP/subagents is the expensive future — two brains to keep in sync with xAI. Scaling by showing vendor facts in Forge chrome is cheaper and matches the house/guest bet.</p>
+      <p><strong>A second guest.</strong> ACP is the reason Codex or Claude could sit in the same window later. The house (Review, File changes, Voidglass) stays. Only the spawn line changes. That is the 2.0 story. It only works if we do not bake Grok-only assumptions into grok-acp and then call that “the platform.”</p>
+      <p><strong>Chat volume.</strong> grok-acp is the right scale for everyday text, files, and PDF extract. It is the wrong scale for “run the whole Grok coding product in Chat.” That is why Chat stays off <code>agent stdio</code> for now.</p>
+    </section>
+
+    <section id="rec">
+      <div class="eyebrow">What to do with this</div>
+      <h2>Recommendations</h2>
+      <ul>
+        <li><strong>Keep the split.</strong> Chat = grok-acp. Code = vendor when the CLI is there. Dual engine is the product, not a mess.</li>
+        <li><strong>Do not grow grok-acp into Grok Build #2.</strong> New coding powers should come from the guest wire or be marked absent.</li>
+        <li><strong>Do not move Chat onto <code>grok agent stdio</code></strong> as a bugfix. That is a 1.0+ decision with a real UX cost (homes, packs, brother-safe copy).</li>
+        <li><strong>Keep fallback honest.</strong> Mini-Grok is allowed. A Grok Code chip without a vendor child is a defect.</li>
+        <li><strong>Invest in the waiter.</strong> <code>StdioAcpClient</code>, journals, permission mapping, “Thought is not the answer” — that is the moat. The TUI will keep changing; the house should still inspect what happened.</li>
+        <li><strong>Watch CLI spawn on Windows.</strong> PATH, <code>.exe</code> vs <code>.cmd</code>, permission flags as <em>global</em> args before <code>agent</code>. That is operational, not theoretical.</li>
+      </ul>
+    </section>
+
+    <section id="more">
+      <div class="eyebrow">Also worth knowing</div>
+      <h2>Small print that bites</h2>
+      <details>
+        <summary>Why both children use ACP if they are so different</summary>
+        <p>So Forge can be a house, not a skin. One client library, one event model, later a second vendor. If Chat spoke HTTP and Code spoke a private TUI dump, we would be gluing two products forever.</p>
+      </details>
+      <details>
+        <summary>Where the API key lives</summary>
+        <p>grok-acp uses Forge’s auth (oauth / key) to talk to xAI. The vendor CLI uses its own login (we strip ambient <code>XAI_API_KEY</code> from the spawn env so the host token is not silently reused). Two auth stories is annoying and correct.</p>
+      </details>
+      <details>
+        <summary>Plan / File changes / Skills in Chat</summary>
+        <p>Those are Code chrome over vendor facts. Chat gating them off is not a missing feature; it is the dual-engine promise. A Plan card on a Chat reload is a leak.</p>
+      </details>
+      <details>
+        <summary>Guest-completeness test</summary>
+        <p>If the Grok TUI can do X, Forge either shows X from the vendor wire or says it is absent. Implementing a fake X inside grok-acp so Code “looks complete” is a defect.</p>
+      </details>
+    </section>
+
+    <footer class="bot">
+      Written against Forge 0.6.6 as shipped: Chat → grok-acp; Code → <code>grok agent stdio</code> when <code>grok.exe</code> resolves, else Mini-Grok. Not a Grok Studio document. Source of truth in-repo: <code>docs/VISION.md</code>, <code>apps/host/src/agents.ts</code>, <code>packages/grok-acp</code>, <code>packages/acp-client</code>.
+    </footer>
+  </div>
+
+  <script>
+    const chat = {
+      who: "Our child",
+      title: "grok-acp",
+      caption: "Chat: Node runs packages/grok-acp",
+      list: [
+        "Forge-written agent",
+        "Calls xAI itself",
+        "Home, pack, PDF extract",
+        "Small, owned tool set",
+      ],
+    };
+    const code = {
+      who: "xAI’s child",
+      title: "grok agent stdio",
+      caption: "Code: grok.exe … agent stdio  (or Mini-Grok if missing)",
+      list: [
+        "Official Grok CLI",
+        "Same brain as the TUI",
+        "Skills / MCP if advertised",
+        "Review mapped to CLI flags",
+      ],
+    };
+    const who = document.getElementById("child-who");
+    const title = document.getElementById("child-title");
+    const list = document.getElementById("child-list");
+    const cap = document.getElementById("wire-caption");
+    const btnChat = document.getElementById("btn-chat");
+    const btnCode = document.getElementById("btn-code");
+
+    function apply(mode) {
+      const data = mode === "code" ? code : chat;
+      document.body.dataset.mode = mode;
+      btnChat.setAttribute("aria-pressed", String(mode === "chat"));
+      btnCode.setAttribute("aria-pressed", String(mode === "code"));
+      who.textContent = data.who;
+      title.textContent = data.title;
+      cap.textContent = data.caption;
+      list.innerHTML = data.list.map((x) => "<li>" + x + "</li>").join("");
+    }
+    btnChat.addEventListener("click", () => apply("chat"));
+    btnCode.addEventListener("click", () => apply("code"));
+  </script>
+</body>
+</html>

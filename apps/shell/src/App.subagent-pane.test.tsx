@@ -21,7 +21,7 @@ import {
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "subagent-pane-session";
 const RUN_ID = "subagent-pane-run";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 
 const vendorFact: CodeAgentFact = {
   resolveStatus: "ready",

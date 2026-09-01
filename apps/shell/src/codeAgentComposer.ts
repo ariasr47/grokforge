@@ -4,6 +4,7 @@ export type CodeAgentComposerProjection =
   | { state: "absent_chat" }
   | { state: "checking" }
   | { state: "vendor" }
+  | { state: "house" }
   | { state: "fallback"; reason: "cli_missing" | "spawn_failed" | null }
   | { state: "hard_fail" }
   | {
@@ -25,6 +26,8 @@ export const CODE_AGENT_CHECKING = "Checking Grok agent…";
 export const CODE_AGENT_VENDOR = "Grok Code";
 export const CODE_AGENT_VENDOR_TITLE =
   "Code turns use the Grok agent when the Grok CLI is available.";
+export const CODE_AGENT_HOUSE = "Grok";
+export const CODE_AGENT_HOUSE_TITLE = "Code turns use Grok.";
 export const CODE_AGENT_FALLBACK_CLI = "Mini-Grok · Grok CLI not found";
 export const CODE_AGENT_FALLBACK_SPAWN = "Mini-Grok · Couldn't start Grok agent";
 export const CODE_AGENT_FALLBACK_GENERIC = "Mini-Grok";
@@ -39,9 +42,10 @@ function readyIdentity(
   fact: CodeAgentFact,
 ): Extract<
   CodeAgentComposerProjection,
-  { state: "vendor" } | { state: "fallback" } | { state: "hard_fail" }
+  { state: "vendor" } | { state: "house" } | { state: "fallback" } | { state: "hard_fail" }
 > | null {
   if (fact.identity === "vendor") return { state: "vendor" };
+  if (fact.identity === "house") return { state: "house" };
   if (fact.identity === "fallback") {
     return { state: "fallback", reason: fact.fallbackReason };
   }
@@ -77,6 +81,7 @@ export function projectCodeAgentComposer(
     return { state: "checking" };
   }
   if (fact.identity === "vendor") return { state: "vendor" };
+  if (fact.identity === "house") return { state: "house" };
   if (fact.identity === "fallback") {
     return { state: "fallback", reason: fact.fallbackReason };
   }
@@ -89,6 +94,8 @@ export function codeAgentPrimaryCopy(p: CodeAgentComposerProjection): string {
       return CODE_AGENT_CHECKING;
     case "vendor":
       return CODE_AGENT_VENDOR;
+    case "house":
+      return CODE_AGENT_HOUSE;
     case "fallback":
       return p.reason === "cli_missing"
         ? CODE_AGENT_FALLBACK_CLI
@@ -108,6 +115,8 @@ export function codeAgentTitle(p: CodeAgentComposerProjection): string | undefin
   switch (p.state) {
     case "vendor":
       return CODE_AGENT_VENDOR_TITLE;
+    case "house":
+      return CODE_AGENT_HOUSE_TITLE;
     case "fallback":
       if (p.reason === "cli_missing") return CODE_AGENT_FALLBACK_CLI_TITLE;
       if (p.reason === "spawn_failed") return CODE_AGENT_FALLBACK_SPAWN_TITLE;
@@ -121,8 +130,13 @@ export function codeAgentTitle(p: CodeAgentComposerProjection): string | undefin
 
 export function codeAgentIdentityKind(
   p: CodeAgentComposerProjection,
-): "vendor" | "fallback" | "hard_fail" | null {
-  if (p.state === "vendor" || p.state === "fallback" || p.state === "hard_fail") {
+): "vendor" | "house" | "fallback" | "hard_fail" | null {
+  if (
+    p.state === "vendor" ||
+    p.state === "house" ||
+    p.state === "fallback" ||
+    p.state === "hard_fail"
+  ) {
     return p.state;
   }
   if (p.state === "offline_unconfirmed") return codeAgentIdentityKind(p.last);

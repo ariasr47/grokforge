@@ -12,6 +12,24 @@ export function unifiedDiffLines(diff: string): string[] {
   return diff.replace(/\r\n/g, "\n").split("\n");
 }
 
+/** File changes already names the path — drop redundant --- / +++ headers. */
+export function fileChangesDiffLines(diff: string): string[] {
+  const lines = unifiedDiffLines(diff).filter(
+    (line) => !line.startsWith("---") && !line.startsWith("+++"),
+  );
+  const hunks = lines.filter((line) => line.startsWith("@@"));
+  const changed = lines.filter(
+    (line) =>
+      (line.startsWith("+") && !line.startsWith("+++")) ||
+      (line.startsWith("-") && !line.startsWith("---")),
+  ).length;
+  // Tiny one-hunk writes (KEEP overwrites, new one-liners) don't need @@.
+  if (hunks.length <= 1 && changed <= 12) {
+    return lines.filter((line) => !line.startsWith("@@"));
+  }
+  return lines;
+}
+
 /** Split a simple unified diff into before/after line lists for side-by-side. */
 export function splitUnifiedDiff(diff: string): {
   before: string[];

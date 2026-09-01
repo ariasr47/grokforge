@@ -13,7 +13,14 @@ export type CodeAgentStatusProps = {
 
 function toneClass(projection: CodeAgentComposerProjection): string {
   const identity = projection.state === "offline_unconfirmed" ? projection.last : projection;
-  if (identity.state === "vendor") return "is-vendor";
+  // Happy-path vendor is inline meta, not a second pill next to grok-4.6.
+  // Fallback / hard_fail / offline / checking keep chip chrome.
+  if (identity.state === "vendor") {
+    return projection.state === "offline_unconfirmed" ? "is-vendor" : "is-vendor is-quiet";
+  }
+  if (identity.state === "house") {
+    return projection.state === "offline_unconfirmed" ? "is-vendor" : "is-vendor is-quiet";
+  }
   if (identity.state === "fallback") return "is-fallback-warn";
   if (identity.state === "hard_fail") return "is-error";
   if (projection.state === "checking") return "is-pending";
@@ -23,7 +30,7 @@ function toneClass(projection: CodeAgentComposerProjection): string {
 export const CodeAgentStatus = memo(function CodeAgentStatus({
   projection,
 }: CodeAgentStatusProps) {
-  const prevKindRef = useRef<"vendor" | "fallback" | "hard_fail" | null>(null);
+  const prevKindRef = useRef<"vendor" | "house" | "fallback" | "hard_fail" | null>(null);
   const [announce, setAnnounce] = useState("");
 
   useEffect(() => {
@@ -41,7 +48,7 @@ export const CodeAgentStatus = memo(function CodeAgentStatus({
       return;
     }
     setAnnounce(codeAgentPrimaryCopy(projection));
-  }, [projection]);
+  }, [projection.state, projection]);
 
   if (projection.state === "absent_chat") return null;
 

@@ -4,7 +4,7 @@ import React from "react";
 void React;
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RunSurface } from "./RunSurface";
-import { PermissionPolicyControl } from "./PermissionPolicyControl";
+import { PermissionPolicyControl, savedPolicyUnusable } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
 import { api } from "./api";
 import { setDesktopBridge } from "./desktopBridge";
@@ -33,6 +33,9 @@ test("renders only a vouched terminal answer once", () => {
   render(<RunSurface run={run({ state: "terminal", terminalKind: "answered", finalAnswer: "Complete", answerVouched: true })} />);
   assert.equal(screen.getAllByRole("article", { name: /assistant answer/i }).length, 1);
   assert.equal(screen.getByText("Answered").textContent, "Answered");
+  const answered = screen.getByText("Answered");
+  assert.ok(answered.className.includes("run-answered"));
+  assert.equal(answered.className.includes("run-status"), false);
 });
 test("renders durable received answer segments before and after a non-answer terminal", () => {
   const { rerender } = render(<RunSurface run={run({ answer: { seg: "answer before cancel" } })} />);
@@ -174,6 +177,13 @@ test("§4 copy/action matrix exposes every supported policy, run, recovery, and 
   for (const [status, copy] of policyCases) { cleanup(); render(<PermissionPolicyControl status={status} confirmedMode={status === "saving" ? "review" : null} />); assert.ok(screen.getByText(copy, { exact: true })); }
   cleanup();
   render(<PermissionPolicyControl status="confirmed" confirmedMode="review" fallbackReason="missing" />);
+  assert.equal(savedPolicyUnusable("missing"), false);
+  assert.equal(screen.queryByText("Forge couldn’t use the saved permission policy. Review is active."), null);
+  cleanup();
+  render(<PermissionPolicyControl status="confirmed" confirmedMode="review" fallbackReason="invalid" />);
+  assert.ok(screen.getByText("Forge couldn’t use the saved permission policy. Review is active.", { exact: true }));
+  cleanup();
+  render(<PermissionPolicyControl status="confirmed" confirmedMode="review" fallbackReason="unreadable" />);
   assert.ok(screen.getByText("Forge couldn’t use the saved permission policy. Review is active.", { exact: true }));
   cleanup();
   const states: Array<[Partial<RunProjectionRun>, string]> = [

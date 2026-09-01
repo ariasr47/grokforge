@@ -9,6 +9,7 @@ import {
   PDF_SOURCE_MAX_BYTES,
   type PdfExtractFailureClass,
 } from "@grokforge/pdf-extract";
+import { MENTION_ATTACH_MARKER } from "./expandMentions";
 
 const MAX_CHARS = 80_000;
 const MAX_FILES = 8;
@@ -77,7 +78,7 @@ export function capAttachEmittedText(
 
 export function formatAttachBlock(r: Extract<AttachResult, { ok: true }>): string {
   const note = r.truncated ? "\n…[truncated for message size]" : "";
-  return `\n\n--- Attached: ${r.name} ---\n${r.text}${note}\n--- End: ${r.name} ---\n`;
+  return `\n@${r.name}\n\n${MENTION_ATTACH_MARKER}\n\n--- File: ${r.name} ---\n${r.text}${note}\n--- End: ${r.name} ---\n`;
 }
 
 export function formatAttachFailureToast(

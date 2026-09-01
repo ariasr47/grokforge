@@ -254,6 +254,15 @@ test("hydrating with no prior ready → loading + null members (not false empty)
   assert.equal(p.sectionCopy, HOOKS_LOADING);
 });
 
+test("hydrating with no members on a terminal run is absent, not Loading hooks", () => {
+  const p = base({
+    hooks: { disposition: "hydrating", members: null },
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(p.state, "absent");
+});
+
 test("hydrating ∩ offline still uses Loading as section lead (not offline string)", () => {
   const p = base({
     hooks: { disposition: "hydrating", members: [runningPre] },

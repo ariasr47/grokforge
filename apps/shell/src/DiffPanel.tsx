@@ -6,6 +6,7 @@ export interface PendingDiff {
   id: string;
   path: string;
   diff: string;
+  runId?: string;
 }
 
 interface Props {

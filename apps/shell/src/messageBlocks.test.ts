@@ -89,6 +89,33 @@ describe("toolRunStats", () => {
     assert.equal(stats.ok, 1);
     assert.equal(stats.failed, 1);
     assert.equal(stats.pending, 1);
+    assert.equal(stats.unavailable, 0);
     assert.deepEqual(stats.names, ["read_file", "run_shell"]);
+  });
+
+  it("counts Grok TUI output-fetch as unavailable, not not-run", () => {
+    const stats = toolRunStats([
+      msg({
+        id: "1",
+        role: "tool",
+        toolMeta: { name: "run_terminal_command", done: true, ok: true },
+      }),
+      msg({
+        id: "2",
+        role: "tool",
+        toolMeta: {
+          name: "get_command_or_subagent_output",
+          done: true,
+          ok: false,
+          execution: "executed",
+          status: "failed",
+        },
+      }),
+    ]);
+    assert.equal(stats.total, 2);
+    assert.equal(stats.ok, 1);
+    assert.equal(stats.failed, 0);
+    assert.equal(stats.notRun, 0);
+    assert.equal(stats.unavailable, 1);
   });
 });

@@ -282,6 +282,28 @@ test("title-only missing kind → tool_run + ToolKind class seam log; no fetch",
   );
 });
 
+test("missing kind ordinary write/read → tool_run; no ToolKind class seam spam", async () => {
+  for (const title of ["Write file", "Read notes.md", "search_replace"]) {
+    const events = await collectFromUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "m1",
+      title,
+      status: "pending",
+    });
+    assert.equal(events.some((e) => e.type === "tool_run"), true, title);
+    assert.equal(
+      events.some((e) => e.type === "agent_log" && e.message.startsWith("ToolKind class seam:")),
+      false,
+      title,
+    );
+    assert.notEqual(
+      (events.find((e) => e.type === "tool_run") as { acpToolKind?: string } | undefined)?.acpToolKind,
+      "fetch",
+      title,
+    );
+  }
+});
+
 test("ordinary kind read → tool_run; no ToolKind class seam spam; no fetch", async () => {
   const events = await collectFromUpdate({
     sessionUpdate: "tool_call",

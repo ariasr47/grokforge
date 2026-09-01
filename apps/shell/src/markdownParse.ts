@@ -166,7 +166,9 @@ function parseBlocks(src: string): {
 
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]!)) {
+      while (i < lines.length) {
+        while (i < lines.length && !lines[i]!.trim()) i += 1;
+        if (i >= lines.length || !/^\s*[-*]\s+/.test(lines[i]!)) break;
         items.push(lines[i]!.replace(/^\s*[-*]\s+/, ""));
         i += 1;
       }
@@ -176,7 +178,9 @@ function parseBlocks(src: string): {
 
     if (/^\s*\d+\.\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]!)) {
+      while (i < lines.length) {
+        while (i < lines.length && !lines[i]!.trim()) i += 1;
+        if (i >= lines.length || !/^\s*\d+\.\s+/.test(lines[i]!)) break;
         items.push(lines[i]!.replace(/^\s*\d+\.\s+/, ""));
         i += 1;
       }

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "./ui/Button";
 void React;
-import { unifiedDiffLineClass, unifiedDiffLines } from "./diffUtil";
+import { fileChangesDiffLines, unifiedDiffLineClass } from "./diffUtil";
 import type { RunChangeListProjection, RunChangeMember } from "./runChangeList";
 
 export const FILE_CHANGES_HEADER = "File changes";
@@ -117,7 +117,7 @@ export type FileChangesSectionProps = {
 function ColorizedDiff({ diff }: { diff: string }) {
   return (
     <div className="diff-body unified file-changes-diff" role="region" aria-label="Stored diff">
-      {unifiedDiffLines(diff).map((line, i) => (
+      {fileChangesDiffLines(diff).map((line, i) => (
         <div key={i} className={unifiedDiffLineClass(line)}>
           {line || " "}
         </div>
@@ -156,12 +156,14 @@ function PathRow({
   const showRevert = member.recoveryAvailable && !conflict && !reverted && !revertPending;
   const copy = recoveryCopy(member.kind);
   const label = rowLabel(member);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(
+    () => member.settlement === "pending" || member.settlement === "applied" || Boolean(open),
+  );
   return (
     <li className="file-changes-row">
       <details
         className="file-changes-path-details"
-        open={expanded}
+        open={expanded || open}
         onToggle={(ev) => {
           const nextOpen = (ev.currentTarget as HTMLDetailsElement).open;
           if (nextOpen === expanded) return;
@@ -184,6 +186,20 @@ function PathRow({
           {chipKind ? (
             <span className={`chip file-changes-chip file-changes-chip-${chipKind}`}>{SETTLEMENT_CHIP[chipKind]}</span>
           ) : null}
+          {member.diffUnavailable ? null : (
+            <span
+              className="file-changes-actions"
+              onClick={(e) => e.preventDefault()}
+            >
+              <Button
+                variant="ghost"
+                aria-expanded={open}
+                onClick={() => (open ? onHideDiff?.(member) : onViewDiff?.(member))}
+              >
+                {open ? "Hide diff" : "View diff"}
+              </Button>
+            </span>
+          )}
         </summary>
         {member.settlement === "pending" ? (
           <p className="file-changes-helper">{FILE_CHANGES_PENDING_HELPER}</p>
@@ -205,17 +221,7 @@ function PathRow({
         ) : null}
         {member.diffUnavailable ? (
           <p className="file-changes-unavailable" role="status">{FILE_CHANGES_DIFF_UNAVAILABLE}</p>
-        ) : (
-          <div className="file-changes-actions">
-            <Button
-              variant="ghost"
-              aria-expanded={open}
-              onClick={() => (open ? onHideDiff?.(member) : onViewDiff?.(member))}
-            >
-              {open ? "Hide diff" : "View diff"}
-            </Button>
-          </div>
-        )}
+        ) : null}
         {open && member.diff ? <ColorizedDiff diff={member.diff} /> : null}
         {showRevert ? (
           <div className="file-changes-revert">

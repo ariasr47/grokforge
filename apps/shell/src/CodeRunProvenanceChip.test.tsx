@@ -25,9 +25,10 @@ test("hydrating / vendor / fallback / confirm-error exact copy", () => {
   );
   assert.ok(screen.getByText(CODE_RUN_HYDRATING));
   assert.ok(screen.getByRole("status"));
+  assert.ok(container.querySelector(".code-run-provenance.is-pending.is-quiet"));
   rerender(<CodeRunProvenanceChip projection={{ state: "vendor" }} />);
   assert.ok(screen.getByText(CODE_RUN_VENDOR));
-  assert.ok(container.querySelector(".code-run-provenance.is-vendor"));
+  assert.ok(container.querySelector(".code-run-provenance.is-vendor.is-quiet"));
   rerender(
     <CodeRunProvenanceChip
       projection={{ state: "fallback", reason: "cli_missing" }}

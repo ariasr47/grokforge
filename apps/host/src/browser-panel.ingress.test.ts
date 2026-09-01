@@ -118,18 +118,19 @@ describe("browser-panel ingress remap", () => {
       );
       const hits = replay.events.filter((e) => e.type === "activity_update" && e.payload.kind === "activity_update");
       const fetchHits = hits.filter((e) => {
-        const activity = e.payload.activity as { acpToolKind?: string; invocationId?: string; name?: string };
-        return activity.acpToolKind === "fetch" && activity.invocationId === "fetch-1";
+        const activity = "activity" in e.payload ? e.payload.activity : null;
+        return activity?.acpToolKind === "fetch" && activity.invocationId === "fetch-1";
       });
       assert.ok(fetchHits.length >= 1);
       for (const hit of fetchHits) {
-        const activity = hit.payload.activity as {
+        const activity = ("activity" in hit.payload ? hit.payload.activity : null) as {
           acpToolKind?: string;
           invocationId?: string;
           name?: string;
           title?: string | null;
           url?: string | null;
-        };
+        } | null;
+        assert.ok(activity);
         assert.equal(activity.acpToolKind, "fetch");
         assert.notEqual(activity.acpToolKind, activity.name);
         assert.equal(activity.invocationId, "fetch-1");

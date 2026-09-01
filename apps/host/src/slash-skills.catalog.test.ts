@@ -107,13 +107,13 @@ describe("slash-skills catalog on PublicState", () => {
     }
   });
 
-  it("pre-acquire vendor + connected false does not invent catalog loss", async () => {
+  it("pre-acquire vendor + connected false is awaiting, not absent_non_vendor", async () => {
     const ctx = await setup({ fixture: "ok" });
     try {
       const state = await ctx.session.openWorkspace(ctx.workspace);
       assert.equal(state.codeAgent?.identity, "vendor");
       assert.equal(state.connected, false);
-      assert.equal(state.skillsCatalog.disposition, "absent_non_vendor");
+      assert.equal(state.skillsCatalog.disposition, "awaiting_first_valid");
       assert.equal(state.skillsCatalog.commands, null);
     } finally {
       await ctx.session.shutdown().catch(() => undefined);
@@ -250,6 +250,95 @@ describe("slash-skills catalog on PublicState", () => {
       );
       assert.equal(cat.commands, null);
       assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
+    } finally {
+      await ctx.session.shutdown().catch(() => undefined);
+      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("first mixed interior-junk → ready with /a and /b (not obtain_failed, not prefix-only)", async () => {
+    const ctx = await setup({ fixture: "skills-mixed-interior" });
+    try {
+      await ctx.session.openWorkspace(ctx.workspace);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "catalog01" });
+      const cat = await waitForCatalog(ctx.session, (c) => c.disposition === "ready", "mixed ready");
+      assert.deepEqual(cat.commands, [
+        { name: "/a", description: null },
+        { name: "/b", description: "bee" },
+      ]);
+      assert.equal(cat.commands!.some((c) => c.name === "no-slash"), false);
+    } finally {
+      await ctx.session.shutdown().catch(() => undefined);
+      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("mixed non-object interior junk still ready with /a and /b", async () => {
+    const ctx = await setup({ fixture: "skills-mixed-nonobject" });
+    try {
+      await ctx.session.openWorkspace(ctx.workspace);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "catalog01" });
+      const cat = await waitForCatalog(ctx.session, (c) => c.disposition === "ready", "nonobject mixed");
+      assert.deepEqual(cat.commands, [
+        { name: "/a", description: null },
+        { name: "/b", description: "bee" },
+      ]);
+    } finally {
+      await ctx.session.shutdown().catch(() => undefined);
+      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("all-skipped with no prior → obtain_failed (not ready-empty, not forever Checking)", async () => {
+    const ctx = await setup({ fixture: "skills-all-skipped" });
+    try {
+      await ctx.session.openWorkspace(ctx.workspace);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "catalog01" });
+      const cat = await waitForCatalog(ctx.session, (c) => c.disposition === "obtain_failed", "all-skipped");
+      assert.equal(cat.commands, null);
+    } finally {
+      await ctx.session.shutdown().catch(() => undefined);
+      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("later replace-shrink drops stale names (not union)", async () => {
+    const ctx = await setup({ fixture: "skills-replace-shrink" });
+    try {
+      await ctx.session.openWorkspace(ctx.workspace);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "catalog01" });
+      const cat = await waitForCatalog(
+        ctx.session,
+        (c) =>
+          c.disposition === "ready" &&
+          Array.isArray(c.commands) &&
+          c.commands.some((x) => x.name === "/new") &&
+          !c.commands.some((x) => x.name === "/stale"),
+        "replaced",
+      );
+      assert.deepEqual(cat.commands, [
+        { name: "/keep", description: null },
+        { name: "/new", description: "n" },
+      ]);
+    } finally {
+      await ctx.session.shutdown().catch(() => undefined);
+      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it("workspace skill dirs do not invent catalog members", async () => {
+    const ctx = await setup({ fixture: "skills-mixed-interior" });
+    try {
+      await fs.mkdir(path.join(ctx.workspace, ".agents", "skills", "disk-only"), { recursive: true });
+      await fs.mkdir(path.join(ctx.workspace, "skills", "also-disk"), { recursive: true });
+      await fs.writeFile(path.join(ctx.workspace, ".agents", "skills", "disk-only", "SKILL.md"), "# disk\n");
+      await ctx.session.openWorkspace(ctx.workspace);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "catalog01" });
+      const cat = await waitForCatalog(ctx.session, (c) => c.disposition === "ready", "ready no disk");
+      const names = (cat.commands ?? []).map((c) => c.name);
+      assert.deepEqual(names, ["/a", "/b"]);
+      assert.equal(names.includes("/disk-only"), false);
+      assert.equal(names.includes("/also-disk"), false);
     } finally {
       await ctx.session.shutdown().catch(() => undefined);
       await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);

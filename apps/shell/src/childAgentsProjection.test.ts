@@ -209,6 +209,23 @@ test("hydrating with no prior ready → loading + null members (not false empty)
   assert.equal(p.members, null);
 });
 
+test("hydrating with no members on a terminal run is absent, not Loading child agents", () => {
+  const empty = base({
+    childAgents: { disposition: "hydrating", members: null },
+    journalMembers: [],
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(empty.state, "absent");
+  const zero = base({
+    childAgents: { disposition: "hydrating", members: [] },
+    journalMembers: [],
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(zero.state, "absent");
+});
+
 test("obtain_failed → Couldn't load copy", () => {
   const p = base({
     childAgents: { disposition: "obtain_failed", members: null },

@@ -13,7 +13,7 @@ import type { ActivityRecord, DecisionRequest, RunEventEnvelope, RunSnapshot } f
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "live-turn-session";
 const RUN_ID = "live-turn-run";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 const SHELL_DETAIL = "echo live-turn-attention";
 
 function resetBrowserState(mode: "chat" | "code" = "code"): void {
@@ -221,6 +221,28 @@ describe("live-turn-attention App wiring", () => {
     await waitFor(() => {
       assert.equal(document.body.textContent?.includes("Allow running a command?"), false);
     });
+    assert.equal(
+      document.body.textContent?.includes("Permission requested: shell") ?? false,
+      false,
+    );
+  });
+
+  it("decision_not_found from Allow once does not raise an error banner", async () => {
+    const { host, ws } = await mountApp("code");
+    host.nextPermissionError = {
+      status: 404,
+      error: "no pending permission",
+      code: "decision_not_found",
+    };
+    ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
+    const dock = await screen.findByRole("region", { name: "Pending agent actions" });
+    fireEvent.click(within(dock).getByRole("button", { name: "Allow once" }));
+    await waitFor(() => {
+      assert.ok(host.callsTo("/api/permission").length >= 1);
+    });
+    assert.equal(document.querySelector(".banner-error"), null);
+    assert.equal(screen.queryByText("no pending permission"), null);
   });
 
   it("GET /api/runs catch-up rebuilds dock and rail including Diff proposed path", async () => {

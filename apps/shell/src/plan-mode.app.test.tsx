@@ -7,7 +7,7 @@ import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { PLAN_ARM_BLOCKED_UNVOUCHED, PLAN_ARM_HELPER_ARMED, PLAN_LIVE_FOOTER, PLAN_LIVE_STATUS } from "./planArm";
 import { PLAN_EMPTY, PLAN_HEADER } from "./PlanSection";
-import { PLAN_ACCEPT, PLAN_DOCK_EMPTY, PLAN_DOCK_REVIEW, PLAN_END_EMPTY, PLAN_KEEP } from "./ActionDock";
+import { PLAN_ACCEPT, PLAN_DECISION_FAILURE, PLAN_DOCK_EMPTY, PLAN_DOCK_REVIEW, PLAN_END_EMPTY, PLAN_KEEP } from "./ActionDock";
 import type { DecisionRequest, PlanRecord, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -183,6 +183,60 @@ describe("plan-mode App journeys", () => {
       assert.ok(screen.getByText(PLAN_ARM_HELPER_ARMED));
     });
     assert.equal(host.state.planEngagement?.engaged, true);
+  });
+
+  it("E1 Plan chip POST includes the prompting sessionId", async () => {
+    const host = createFakeHost({
+      mode: "code",
+      workspace: WORKSPACE,
+      workspaceName: "repo",
+      busy: false,
+      planEngagement: { engaged: false, vouched: true },
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    render(<App />);
+    await screen.findByLabelText("Message to agent");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Plan" }));
+    await waitFor(() => {
+      const calls = host.callsTo("/api/plan-engagement");
+      assert.ok(calls.length >= 1);
+      const body = calls[calls.length - 1]?.body as { engaged?: boolean; sessionId?: string };
+      assert.equal(body.engaged, true);
+      assert.equal(body.sessionId, SESSION_ID);
+    });
+  });
+
+  it("E1 New session does not POST Plan off — Plan stays composer-scoped", async () => {
+    const host = createFakeHost({
+      mode: "code",
+      workspace: WORKSPACE,
+      workspaceName: "repo",
+      busy: false,
+      planEngagement: { engaged: true, vouched: true },
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    render(<App />);
+    await screen.findByLabelText("Message to agent");
+    await waitFor(() => {
+      assert.ok(screen.getByText(PLAN_ARM_HELPER_ARMED));
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "New session" }));
+    await waitFor(() => {
+      const offs = host.callsTo("/api/plan-engagement").filter((c) => {
+        try {
+          return JSON.parse(String(c.body ?? "{}")).engaged === false;
+        } catch {
+          return false;
+        }
+      });
+      assert.equal(offs.length, 0);
+    });
+    assert.equal(host.state.planEngagement?.engaged, true);
+    assert.ok(screen.getByText(PLAN_ARM_HELPER_ARMED));
   });
 
   it("empty ready plan shows No changes proposed and empty dock copy (AC-12)", async () => {
@@ -362,5 +416,51 @@ describe("plan-mode App journeys", () => {
       assert.ok(screen.getByRole("button", { name: PLAN_ACCEPT }));
     });
     assert.ok(host.callsTo("/api/runs").length >= 1);
+  });
+
+  it("F0 a new plan request clears a failed Accept dock so Accept plan returns", async () => {
+    const host = createFakeHost({
+      mode: "code",
+      workspace: WORKSPACE,
+      workspaceName: "repo",
+      busy: false,
+      planEngagement: { engaged: true, vouched: true },
+    });
+    host.nextPlanError = {
+      status: 404,
+      error: "no pending plan",
+      code: "decision_not_found",
+    };
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    render(<App />);
+    await screen.findByLabelText("Message to agent");
+    await waitFor(() => assert.ok(FakeWebSocket.latest()));
+    const ws = FakeWebSocket.latest()!;
+    ws.emit(envelope({ kind: "run_started", run: planSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "plan_record",
+      plan: readyPlan({
+        body: "Would change src/a.ts",
+        proposedMembers: [{ path: "src/a.ts", summary: "Update helper" }],
+      }),
+    }, 2) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "decision_request",
+      request: planDecision({ title: "Review plan" }),
+    }, 3) as unknown as Record<string, unknown>);
+    const user = userEvent.setup();
+    await waitFor(() => {
+      assert.ok(screen.getByRole("button", { name: PLAN_ACCEPT }));
+    });
+    await user.click(screen.getByRole("button", { name: PLAN_ACCEPT }));
+    await waitFor(() => {
+      assert.ok(screen.getByText(PLAN_DECISION_FAILURE));
+    });
+    assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
+    await user.click(screen.getByRole("button", { name: "New session" }));
+    await waitFor(() => {
+      assert.equal(screen.queryByText(PLAN_DECISION_FAILURE), null);
+    });
   });
 });

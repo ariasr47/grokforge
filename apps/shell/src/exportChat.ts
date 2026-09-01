@@ -2,6 +2,42 @@
  * Export current transcript as Markdown (knowledge-worker artifact).
  */
 import type { ChatMessage } from "./messageBlocks";
+import { visibleUserPrompt } from "./expandMentions";
+
+/** Fold a vouched live run into export when it is still on RunSurface, not messages. */
+export function mergeLiveRunsForExport(
+  messages: ChatMessage[],
+  runs: Array<{
+    runId: string;
+    acceptedPrompt?: string;
+    finalAnswer?: string | null;
+    terminalKind?: string | null;
+  }>,
+): ChatMessage[] {
+  const out = messages.slice();
+  for (const run of runs) {
+    const answer = (run.finalAnswer || "").trim();
+    if (!answer) continue;
+    if (run.terminalKind && run.terminalKind !== "answered") continue;
+    if (out.some((m) => m.role === "assistant" && m.content.trim() === answer)) continue;
+    if (
+      run.acceptedPrompt &&
+      !out.some((m) => m.role === "user")
+    ) {
+      out.push({
+        id: `export-you-${run.runId}`,
+        role: "user",
+        content: visibleUserPrompt(run.acceptedPrompt),
+      });
+    }
+    out.push({
+      id: `export-grok-${run.runId}`,
+      role: "assistant",
+      content: answer,
+    });
+  }
+  return out;
+}
 
 export function transcriptToMarkdown(opts: {
   title?: string;

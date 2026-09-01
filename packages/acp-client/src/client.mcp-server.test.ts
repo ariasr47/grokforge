@@ -194,19 +194,42 @@ test("disconnected/failed-equivalent maps to error", async () => {
   assert.equal(hit.serverId, "figma");
 });
 
-test("servers_updated without status is incomplete; no mcp_server", async () => {
-  const events = await collectFromNotifications([
-    {
-      jsonrpc: "2.0",
-      method: NAMED_MCP_JSONRPC_SERVERS_UPDATED,
-      params: {
-        mcpServers: [{ name: "railway", command: "railway", args: ["mcp"] }],
-      },
-    },
-  ]);
-  assert.equal(events.some((e) => e.type === "mcp_server"), false);
-  assert.equal(
-    events.some((e) => e.type === "agent_log" && /incomplete|malformed|mcp/i.test(e.message)),
-    true,
-  );
+test("servers_updated without status is a known no-op; no mcp_server, no warn", async () => {
+  const client = new StdioAcpClient({
+    workspaceRoot: process.cwd(),
+    command: process.execPath,
+    args: [
+      "-e",
+      childScriptNotifications([
+        {
+          jsonrpc: "2.0",
+          method: NAMED_MCP_JSONRPC_SERVERS_UPDATED,
+          params: {
+            mcpServers: [{ name: "railway", command: "railway", args: ["mcp"] }],
+          },
+        },
+      ]),
+    ],
+    env: Object.freeze({}),
+    executionProfile: profile,
+    initializePermissionMode: "default",
+  });
+  const events: AcpUiEvent[] = [];
+  client.onEvent((e) => events.push(e));
+  try {
+    await client.initialize();
+    await client.newSession();
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(events.some((e) => e.type === "mcp_server"), false);
+    assert.equal(
+      events.some((e) => e.type === "agent_log" && /incomplete|malformed|mcp/i.test(e.message)),
+      false,
+    );
+    assert.equal(
+      events.some((e) => e.type === "agent_log" && e.message.startsWith("Unmapped vendor sessionUpdate kind")),
+      false,
+    );
+  } finally {
+    await client.dispose();
+  }
 });

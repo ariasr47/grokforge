@@ -50,7 +50,7 @@ test("plan-mode additive type shapes are exportable", () => {
   assert.equal(payload.kind, "plan_record");
 });
 
-import { derivePlanProposedMembers, bodyNamesIntendedChanges } from "./plan-record.js";
+import { derivePlanProposedMembers, bodyNamesIntendedChanges, isVendorPlanExitTool, planBodyFromVendorExit, planReadyIsEmpty, planDecisionTitle } from "./plan-record.js";
 
 test("derive multi-path members from markdown bullets", () => {
   const body = `- Update \`src/a.ts\` to export helper\n- Create apps/shell/src/b.tsx for UI`;
@@ -72,4 +72,42 @@ test("body names changes without extractable paths → incomplete, not empty", (
 
 test("singleton path still yields one member", () => {
   assert.equal(derivePlanProposedMembers("Update `only.ts`.").length, 1);
+});
+
+test("vendor TUI exit plan mode is the plan-dock trigger", () => {
+  assert.equal(isVendorPlanExitTool("exit_plan_mode"), true);
+  assert.equal(isVendorPlanExitTool("exit plan mode"), true);
+  assert.equal(isVendorPlanExitTool("enter_plan_mode"), false);
+  assert.equal(isVendorPlanExitTool("run_terminal_command"), false);
+});
+
+test("vendor exit body prefers planContent / plan.md over early narration", () => {
+  const plan = "- Update `src/a.ts`\n- Create apps/shell/src/b.tsx";
+  assert.equal(planBodyFromVendorExit("Plan: Exit", plan), plan);
+  assert.equal(planBodyFromVendorExit("Plan: Exit", "  "), null);
+  assert.equal(planBodyFromVendorExit("exit", ""), null);
+  assert.equal(planBodyFromVendorExit("- Update `only.ts`.", ""), "- Update `only.ts`.");
+  assert.equal(
+    planBodyFromVendorExit(plan, "I'll inspect apps/shell TypeScript config."),
+    plan,
+  );
+  assert.equal(
+    planBodyFromVendorExit("Plan: Exit", "I'll inspect apps/shell.", plan),
+    plan,
+  );
+});
+
+test("a three-step plan is Review plan even with no file members", () => {
+  const body = "Three-step plan for apps/shell typecheck.\n\n1. Set-Location apps/shell\n2. npx tsc --noEmit\n3. Read the result.";
+  assert.equal(planReadyIsEmpty(body, 0), false);
+  assert.equal(planDecisionTitle([], body), "Review plan");
+  assert.equal(planReadyIsEmpty("Nothing to change in this workspace.", 0), true);
+  assert.equal(planDecisionTitle([], "Nothing to change in this workspace."), "Plan complete · no changes");
+  assert.equal(planReadyIsEmpty(null, 0), true);
+  assert.equal(planReadyIsEmpty(body, 1), false);
+});
+
+test("empty Plan: Exit is not a zero-member ready body", () => {
+  assert.equal(planBodyFromVendorExit("Plan: Exit", null), null);
+  assert.equal(planBodyFromVendorExit("Plan: Exit", undefined), null);
 });

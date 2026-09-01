@@ -9,6 +9,7 @@ import type {
 import {
   PLAN_LOAD_FAILURE,
   isLivePlanning,
+  planReadyIsEmpty,
   projectRunPlanSection,
 } from "./runPlanSection";
 
@@ -146,6 +147,22 @@ test("accepted / kept_planning / cancelled / failed / superseded", () => {
   if (accepted.state === "accepted") {
     assert.equal(accepted.policyLabel, "Trusted workspace");
     assert.equal(accepted.bypassActive, true);
+    assert.equal(accepted.body, null);
+  }
+  const acceptedBody = projectRunPlanSection(
+    run({
+      plan: planRecord({
+        status: "accepted",
+        body: "Three-step plan for apps/shell typecheck.\n\n1. Set-Location apps/shell\n2. npx tsc --noEmit\n3. Read the result.",
+      }),
+    }),
+    { phase: "closed" },
+  );
+  assert.equal(acceptedBody.state, "accepted");
+  if (acceptedBody.state === "accepted") {
+    assert.match(acceptedBody.body ?? "", /1\.\s*Set-Location/);
+    assert.match(acceptedBody.body ?? "", /2\.\s*npx tsc/);
+    assert.match(acceptedBody.body ?? "", /3\.\s*Read/);
   }
   assert.equal(
     projectRunPlanSection(run({ plan: planRecord({ status: "kept_planning" }) }), { phase: "closed" }).state,
@@ -203,16 +220,35 @@ test("offline with preserved proposal", () => {
   assert.equal(projected.state, "offline");
 });
 
-test("forbidden: ready && empty:false && proposedMembers.length===0 cannot be produced", () => {
+test("ready with a real plan body is not empty even with zero file members", () => {
   const projected = projectRunPlanSection(
-    run({ plan: planRecord({ status: "ready", proposedMembers: [] }) }),
+    run({
+      plan: planRecord({
+        status: "ready",
+        body: "Three-step plan for apps/shell typecheck.\n\n1. Set-Location apps/shell\n2. npx tsc --noEmit\n3. Read the result.",
+        proposedMembers: [],
+      }),
+    }),
     { phase: "closed" },
   );
   assert.equal(projected.state, "ready");
   if (projected.state === "ready") {
-    assert.equal(projected.empty, true);
+    assert.equal(projected.empty, false);
     assert.equal(projected.proposedMembers.length, 0);
   }
+});
+
+test("ready && zero members && blank/nothing-to-change is empty", () => {
+  const blank = projectRunPlanSection(
+    run({ plan: planRecord({ status: "ready", body: null, proposedMembers: [] }) }),
+    { phase: "closed" },
+  );
+  assert.equal(blank.state, "ready");
+  if (blank.state === "ready") {
+    assert.equal(blank.empty, true);
+    assert.equal(blank.proposedMembers.length, 0);
+  }
+  assert.equal(planReadyIsEmpty("Nothing to change in this workspace.", 0), true);
 });
 
 test("isLivePlanning only when executionPhase === plan and non-terminal", () => {

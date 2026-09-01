@@ -55,6 +55,17 @@ test("arm failure exact copy + Try again", () => {
   assert.equal(retried, true);
 });
 
+test("default Plan chip is the only visible Plan word", () => {
+  const { container } = render(
+    <PlanArmControl
+      projection={{ state: "default", engaged: false, vouched: true }}
+    />,
+  );
+  const label = container.querySelector(".plan-arm-label");
+  assert.ok(label?.classList.contains("sr-only"));
+  assert.ok(screen.getByRole("button", { name: "Plan" }));
+});
+
 test("default chip is available and not selected", () => {
   let next: boolean | null = null;
   render(

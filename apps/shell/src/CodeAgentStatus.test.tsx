@@ -29,14 +29,14 @@ test("checking copy is not final Grok Code", () => {
   assert.ok(screen.getByRole("status"));
 });
 
-test("vendor chip is status with cyan/violet class and tooltip", () => {
+test("vendor is quiet inline status with tooltip — not a second pill", () => {
   const { container } = render(
     <CodeAgentStatus projection={{ state: "vendor" }} />,
   );
   assert.ok(screen.getByText(CODE_AGENT_VENDOR));
   const status = screen.getByRole("status");
   assert.equal(status.getAttribute("title"), CODE_AGENT_VENDOR_TITLE);
-  assert.ok(container.querySelector(".code-agent-status.is-vendor"));
+  assert.ok(container.querySelector(".code-agent-status.is-vendor.is-quiet"));
   assert.equal(container.querySelector(".is-fallback-warn"), null);
 });
 
@@ -48,6 +48,7 @@ test("fallback uses warn-tint class and distinct reason copy", () => {
   );
   assert.ok(screen.getByText(CODE_AGENT_FALLBACK_CLI));
   assert.ok(container.querySelector(".code-agent-status.is-fallback-warn"));
+  assert.equal(container.querySelector(".is-quiet"), null);
   assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
   rerender(
     <CodeAgentStatus
@@ -67,7 +68,7 @@ test("hard_fail uses error class and is not Mini-Grok fallback", () => {
 });
 
 test("offline keeps last identity and reconnect copy; does not upgrade fallback", () => {
-  render(
+  const { container } = render(
     <CodeAgentStatus
       projection={{
         state: "offline_unconfirmed",
@@ -78,6 +79,22 @@ test("offline keeps last identity and reconnect copy; does not upgrade fallback"
   assert.ok(screen.getByText(CODE_AGENT_FALLBACK_CLI));
   assert.ok(screen.getByText(CODE_AGENT_OFFLINE));
   assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
+  assert.equal(container.querySelector(".is-quiet"), null);
+});
+
+test("offline vendor keeps chip chrome (not quiet meta)", () => {
+  const { container } = render(
+    <CodeAgentStatus
+      projection={{
+        state: "offline_unconfirmed",
+        last: { state: "vendor" },
+      }}
+    />,
+  );
+  assert.ok(screen.getByText(CODE_AGENT_VENDOR));
+  assert.ok(screen.getByText(CODE_AGENT_OFFLINE));
+  assert.ok(container.querySelector(".code-agent-status.is-vendor"));
+  assert.equal(container.querySelector(".is-quiet"), null);
 });
 
 test("polite live region only on vendor↔fallback / hard_fail flips", () => {

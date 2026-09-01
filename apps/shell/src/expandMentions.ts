@@ -5,6 +5,33 @@
 const MAX_PER_FILE = 40_000;
 const MAX_TOTAL = 100_000;
 
+/** Injected after the typed prompt for the model. Never show this in You. */
+export const MENTION_ATTACH_MARKER = "[Attached file contents for @mentions]";
+
+/** User-typed prompt only — drop the @file body dump. */
+export function visibleUserPrompt(prompt: string): string {
+  const idx = prompt.indexOf(MENTION_ATTACH_MARKER);
+  if (idx === -1) return prompt;
+  return prompt.slice(0, idx).trimEnd();
+}
+
+export function splitUserPromptMentions(
+  text: string,
+): Array<{ kind: "text" | "mention"; value: string }> {
+  const re = /(@(?:"[^"]+"|[^\s@]+))/g;
+  const out: Array<{ kind: "text" | "mention"; value: string }> = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push({ kind: "text", value: text.slice(last, m.index) });
+    out.push({ kind: "mention", value: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
+  if (!out.length) out.push({ kind: "text", value: text });
+  return out;
+}
+
 export async function expandAtMentions(
   text: string,
   readFile: (path: string) => Promise<{ content: string; truncated?: boolean }>,
@@ -36,5 +63,5 @@ export async function expandAtMentions(
     }
   }
   if (!blocks.length) return text;
-  return `${text}\n\n[Attached file contents for @mentions]${blocks.join("")}`;
+  return `${text}\n\n${MENTION_ATTACH_MARKER}${blocks.join("")}`;
 }

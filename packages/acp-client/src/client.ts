@@ -1,7 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { isValidToolRunEvent } from "./types.js";
+import { vendorUpdateImpliesNonZeroExit } from "./vendorShellExit.js";
 import type {
   AcpClient,
   AcpUiEvent,
@@ -46,6 +49,22 @@ interface JsonRpcNotification {
   params?: unknown;
 }
 
+/** Handshake / permission RPCs. `session/prompt` is not on this clock. */
+export const ACP_RPC_TIMEOUT_MS = 120_000;
+/** Vendor `session/prompt` stays open until the child returns or exits — wall clock must not stall a live turn. */
+export const ACP_PROMPT_RPC_TIMEOUT_MS = 0;
+
+/** Vendor reverse-RPC that parks until the client answers plan approval. */
+export const VENDOR_EXIT_PLAN_METHODS = ["_x.ai/exit_plan_mode", "x.ai/exit_plan_mode"] as const;
+
+/**
+ * Vendor grok agent shell has no workingDirectory parameter (model will
+ * otherwise run subdirectory commands at workspace root first and fail).
+ * Appended on vendor `session/new` `_meta.rules`. grok-acp is not sent this.
+ */
+export const VENDOR_ACP_SHELL_CWD_RULE =
+  "The shell tool has no workingDirectory. Commands run at the workspace root. When the user names a subdirectory (apps/shell, apps/host, packages/...), the FIRST shell command must be Set-Location DIR; then the command in the SAME invocation. Example: Set-Location apps/shell; node --test src/markdown.parse.test.ts. Never run the relative path at workspace root first — that attempt always fails.";
+
 /**
  * ACP stdio host client.
  * Spawns one agent subprocess per client instance (one per active thread in v1).
@@ -78,8 +97,16 @@ export class StdioAcpClient implements AcpClient {
       url: string | null;
       title: string | null;
       snapshotJournaled: boolean;
+      path: string | null;
     }
   >();
+  /** After a vendor tool, the next thought/message chunk starts a new paragraph. */
+  private thoughtBreakAfterTool = false;
+  private messageBreakAfterTool = false;
+  private lastThoughtText = "";
+  private lastMessageText = "";
+  /** First-seen workspace file body, so overwrite diffs have a before-image. */
+  private writeBaselines = new Map<string, string | null>();
 
   constructor(private readonly config: AgentSpawnConfig) {}
 
@@ -101,13 +128,18 @@ export class StdioAcpClient implements AcpClient {
   async initialize(): Promise<void> {
     if (this.child) return;
 
-    this.child = spawn(this.config.command, this.config.args, {
+    const command = this.config.command;
+    const winCmd = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+    // Node CreateProcess cannot launch .cmd/.bat without a shell (EINVAL).
+    // Live vendor on Windows is grok.exe — shell stays off. Test shims are .cmd.
+    this.child = spawn(command, this.config.args, {
       cwd: this.config.workspaceRoot,
       env: Object.fromEntries(Object.entries(this.config.env).filter(([key]) => key !== "GROKFORGE_BYPASS_SECRET")),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       detached: process.platform !== "win32",
-    });
+      shell: winCmd,
+    }) as ChildProcessWithoutNullStreams;
 
     this.child.stderr.on("data", (chunk: Buffer) => {
       const msg = chunk.toString("utf8").trim();
@@ -153,14 +185,18 @@ export class StdioAcpClient implements AcpClient {
   }
 
   async newSession(): Promise<string> {
-    const result = (await this.request("session/new", {
+    const params: Record<string, unknown> = {
       cwd: this.config.workspaceRoot,
       executionProfile: this.config.executionProfile,
       // Vendor grok agent ≥1.0.5 requires this field (JSON-RPC -32602
       // "missing field `mcpServers`"). Empty list is honest: Forge does not
       // inject a host MCP registry. grok-acp ignores unknown keys.
       mcpServers: [],
-    })) as { sessionId: string };
+    };
+    if (this.config.initializePermissionMode === "default") {
+      params._meta = { rules: VENDOR_ACP_SHELL_CWD_RULE };
+    }
+    const result = (await this.request("session/new", params)) as { sessionId: string };
     if (this.config.authenticateMethod) {
       await this.request("authenticate", { methodId: this.config.authenticateMethod });
     }
@@ -325,37 +361,50 @@ export class StdioAcpClient implements AcpClient {
     await this.request("edit/respond", { id, action, sessionId, ...(ownership ?? this.activeOwnership ?? {}) });
   }
 
+  async respondPlanExit(id: string, outcome: "approved" | "cancelled" | "abandoned"): Promise<boolean> {
+    if (!this.pendingAcpRequestIds.has(id)) return false;
+    this.writeResult(id, { outcome });
+    this.pendingAcpRequestIds.delete(id);
+    return true;
+  }
+
   private request(
     method: string,
     params?: unknown,
-    timeoutMs = 120_000,
+    timeoutMs?: number,
   ): Promise<unknown> {
     if (!this.child?.stdin.writable) {
       return Promise.reject(new Error("Agent process not running"));
     }
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
+    const ms =
+      timeoutMs ??
+      (method === "session/prompt" ? ACP_PROMPT_RPC_TIMEOUT_MS : ACP_RPC_TIMEOUT_MS);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (!this.pending.has(id)) return;
-        this.pending.delete(id);
-        const err = new Error(
-          `Agent RPC timeout after ${timeoutMs}ms: ${method}`,
-        );
-        this.emit({
-          type: "error",
-          code: "rpc_timeout",
-          message: err.message,
-        });
-        reject(err);
-      }, timeoutMs);
+      const timer =
+        ms > 0
+          ? setTimeout(() => {
+              if (!this.pending.has(id)) return;
+              this.pending.delete(id);
+              const err = new Error(
+                `Agent RPC timeout after ${ms}ms: ${method}`,
+              );
+              this.emit({
+                type: "error",
+                code: "rpc_timeout",
+                message: err.message,
+              });
+              reject(err);
+            }, ms)
+          : null;
       this.pending.set(id, {
         resolve: (v) => {
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           resolve(v);
         },
         reject: (e) => {
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           reject(e);
         },
       });
@@ -449,12 +498,40 @@ export class StdioAcpClient implements AcpClient {
       const toolCall = (p.toolCall && typeof p.toolCall === "object" ? p.toolCall : {}) as Record<string, unknown>;
       const kindRaw = String(toolCall.kind ?? p.kind ?? "");
       const kind: "write" | "shell" = kindRaw === "execute" || kindRaw === "shell" ? "shell" : "write";
+      const toolCallIdRaw = toolCall.toolCallId ?? toolCall.id;
+      const toolCallId =
+        typeof toolCallIdRaw === "string" && toolCallIdRaw
+          ? toolCallIdRaw
+          : null;
       const detail = String(toolCall.title ?? p.detail ?? toolCall.path ?? kind);
+      if (kind === "write") {
+        const permPath = extractVendorFsPath(
+          toolCall,
+          typeof toolCall.kind === "string" ? toolCall.kind : null,
+          typeof toolCall.title === "string" ? toolCall.title : detail,
+          this.config.workspaceRoot,
+        );
+        if (permPath) {
+          readWriteBaseline(this.config.workspaceRoot, permPath, this.writeBaselines, true);
+        }
+      }
       this.emit({
         type: "permission_request",
         id: String(id),
         kind,
         detail,
+        toolCallId,
+      });
+      return;
+    }
+    if ((VENDOR_EXIT_PLAN_METHODS as readonly string[]).includes(method)) {
+      this.pendingAcpRequestIds.set(String(id), { rawId: id, options: [] });
+      const wrapped = p.params && typeof p.params === "object" ? (p.params as Record<string, unknown>) : null;
+      const raw = p.planContent ?? wrapped?.planContent ?? p.content ?? wrapped?.content;
+      this.emit({
+        type: "vendor_plan_exit",
+        id: String(id),
+        planContent: typeof raw === "string" && raw.trim() ? raw : null,
       });
       return;
     }
@@ -525,11 +602,7 @@ export class StdioAcpClient implements AcpClient {
         break;
       }
       case NAMED_MCP_JSONRPC_SERVERS_UPDATED: {
-        this.emit({
-          type: "agent_log",
-          level: "warn",
-          message: "Incomplete vendor MCP advertisement ignored (no status).",
-        });
+        // Roster snapshot without per-server status — known no-op, not a journal member.
         break;
       }
       case "text_delta":
@@ -672,13 +745,27 @@ export class StdioAcpClient implements AcpClient {
     ) as Record<string, unknown>;
     const kind = String(update.sessionUpdate ?? "");
     if (kind === "agent_thought_chunk") {
-      const text = acpContentText(update.content);
-      if (text) this.emit({ type: "thinking_delta", text });
+      let text = acpContentText(update.content);
+      if (text && this.thoughtBreakAfterTool) {
+        text = paragraphBreak(this.lastThoughtText, text);
+      }
+      this.thoughtBreakAfterTool = false;
+      if (text) {
+        this.lastThoughtText += text;
+        this.emit({ type: "thinking_delta", text });
+      }
       return;
     }
     if (kind === "agent_message_chunk") {
-      const text = acpContentText(update.content);
-      if (text) this.emit({ type: "text_delta", text });
+      let text = acpContentText(update.content);
+      if (text && this.messageBreakAfterTool) {
+        text = paragraphBreak(this.lastMessageText, text);
+      }
+      this.messageBreakAfterTool = false;
+      if (text) {
+        this.lastMessageText += text;
+        this.emit({ type: "text_delta", text });
+      }
       return;
     }
     if (kind === "agent") {
@@ -719,7 +806,22 @@ export class StdioAcpClient implements AcpClient {
       const input = update.rawInput ?? update.input ?? null;
       const command = typeof update.command === "string" ? update.command : null;
       const url = extractVendorUrl(update);
+      const fsPath = extractVendorFsPath(update, acpToolKind, title, this.config.workspaceRoot);
+      this.thoughtBreakAfterTool = true;
+      this.messageBreakAfterTool = true;
       const mapped = mapVendorToolStatus(update.status);
+      const callOutput =
+        acpContentText(update.content) || acpContentText(update.rawOutput) || mapped.output;
+      const failedFromOutput =
+        mapped.status === "succeeded" && vendorUpdateImpliesNonZeroExit(update);
+      const existing = fsPath
+        ? readWriteBaseline(this.config.workspaceRoot, fsPath, this.writeBaselines)
+        : null;
+      const diskBody =
+        fsPath && mapped.lifecycle === "terminal"
+          ? currentFileBody(this.config.workspaceRoot, fsPath)
+          : null;
+      const diff = fsPath ? vendorWriteDiff(fsPath, update, null, existing, diskBody) : null;
       const snapshotJournaled =
         acpToolKind === "fetch" &&
         (contentHasImage(update.content) || contentHasImage(update.rawOutput));
@@ -731,6 +833,7 @@ export class StdioAcpClient implements AcpClient {
         url,
         title,
         snapshotJournaled,
+        path: fsPath,
       });
       if (shouldStopAndNameToolKindSeam(acpToolKind, title) && acpToolKind !== "fetch") {
         this.emit({
@@ -746,13 +849,13 @@ export class StdioAcpClient implements AcpClient {
         toolCallId,
         lifecycle: mapped.lifecycle,
         execution: mapped.execution,
-        status: mapped.status,
+        status: failedFromOutput ? ("failed" as const) : mapped.status,
         name,
         input,
         summary: title,
         command,
-        output: mapped.output,
-        error: mapped.error,
+        output: callOutput || mapped.output,
+        error: failedFromOutput ? callOutput || "non-zero exit" : mapped.error,
         reasonCode: mapped.reasonCode,
         reason: mapped.reason,
         shellDisplayName: null,
@@ -761,6 +864,9 @@ export class StdioAcpClient implements AcpClient {
         url,
         title,
         snapshotJournaled,
+        ...(fsPath
+          ? { path: fsPath, kind: "content" as const, editId: toolCallId, ...(diff ? { diff } : {}) }
+          : {}),
       };
       if (!isValidToolRunEvent(event)) {
         this.emit({ type: "agent_log", level: "warn", message: "Malformed vendor tool_call ignored." });
@@ -776,21 +882,36 @@ export class StdioAcpClient implements AcpClient {
         return;
       }
       const commands: Array<{ name: string; description: string | null }> = [];
+      let skipped = 0;
       for (const item of raw) {
         if (!item || typeof item !== "object") {
-          this.emit({ type: "available_commands", commands: null, valid: false });
-          return;
+          skipped += 1;
+          continue;
         }
-        const name = (item as { name?: unknown }).name;
-        if (typeof name !== "string" || !name.startsWith("/") || name.length < 2 || /\s/.test(name)) {
-          this.emit({ type: "available_commands", commands: null, valid: false });
-          return;
+        const name = normalizeAvailableCommandName((item as { name?: unknown }).name);
+        if (!name) {
+          skipped += 1;
+          continue;
         }
         const description = (item as { description?: unknown }).description;
         commands.push({
           name,
           description: typeof description === "string" ? description : null,
         });
+      }
+      if (skipped > 0) {
+        this.emit({
+          type: "agent_log",
+          level: "warn",
+          message:
+            skipped === 1
+              ? "Skipped unusable available_commands member."
+              : `Skipped ${skipped} unusable available_commands members.`,
+        });
+      }
+      if (raw.length > 0 && commands.length === 0) {
+        this.emit({ type: "available_commands", commands: null, valid: false });
+        return;
       }
       this.emit({ type: "available_commands", commands, valid: true });
       return;
@@ -809,6 +930,8 @@ export class StdioAcpClient implements AcpClient {
       const title =
         typeof update.title === "string" ? update.title : prior?.title ?? null;
       const url = extractVendorUrl(update) ?? prior?.url ?? null;
+      const fsPath =
+        extractVendorFsPath(update, acpToolKind, title, this.config.workspaceRoot) ?? prior?.path ?? null;
       const snapshotJournaled =
         prior?.snapshotJournaled === true ||
         (acpToolKind === "fetch" &&
@@ -824,10 +947,25 @@ export class StdioAcpClient implements AcpClient {
         url,
         title,
         snapshotJournaled,
+        path: fsPath,
       });
       const outputText = acpContentText(update.content) || acpContentText(update.rawOutput);
-      const failed = status === "failed" || status === "error";
+      const failed =
+        status === "failed" ||
+        status === "error" ||
+        vendorUpdateImpliesNonZeroExit(update);
       const rejected = status === "cancelled" || status === "rejected";
+      const existing = fsPath
+        ? readWriteBaseline(this.config.workspaceRoot, fsPath, this.writeBaselines)
+        : null;
+      const diskBody =
+        fsPath && !rejected ? currentFileBody(this.config.workspaceRoot, fsPath) : null;
+      const diff = fsPath
+        ? vendorWriteDiff(fsPath, update, prior?.input ?? null, existing, diskBody)
+        : null;
+      const editFields = fsPath
+        ? { path: fsPath, kind: "content" as const, editId: toolCallId, ...(diff ? { diff } : {}) }
+        : {};
       const event = failed
         ? {
             type: "tool_run" as const,
@@ -851,6 +989,7 @@ export class StdioAcpClient implements AcpClient {
             url,
             title,
             snapshotJournaled,
+            ...editFields,
           }
         : rejected
           ? {
@@ -875,6 +1014,7 @@ export class StdioAcpClient implements AcpClient {
               url,
               title,
               snapshotJournaled,
+              ...editFields,
             }
           : {
               type: "tool_run" as const,
@@ -898,6 +1038,7 @@ export class StdioAcpClient implements AcpClient {
               url,
               title,
               snapshotJournaled,
+              ...editFields,
             };
       if (!isValidToolRunEvent(event)) {
         this.emit({ type: "agent_log", level: "warn", message: `Malformed vendor tool_call_update ignored (${status}).` });
@@ -906,12 +1047,198 @@ export class StdioAcpClient implements AcpClient {
       this.emit(event);
       return;
     }
+    if (kind === "session_info_update" || kind === "user_message_chunk" || kind === "current_mode_update") {
+      // Known vendor extras Forge does not surface — not an unknown kind.
+      return;
+    }
     this.emit({
       type: "agent_log",
       level: "warn",
       message: `Unmapped vendor sessionUpdate kind: ${kind || "(missing)"}`,
     });
   }
+}
+
+function looksLikeHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+/** One blank line after a tool — not two, if the previous chunk already ended a line. */
+function paragraphBreak(previous: string, next: string): string {
+  if (!next || /^\s/.test(next)) return next;
+  return /\n$/.test(previous) ? `\n${next}` : `\n\n${next}`;
+}
+
+/** Workspace-relative display path when the file is inside the open workspace. */
+function toWorkspaceDisplayPath(workspaceRoot: string, fsPath: string): string {
+  const root = path.resolve(workspaceRoot);
+  const resolved = path.isAbsolute(fsPath) ? path.resolve(fsPath) : path.resolve(root, fsPath);
+  const rel = path.relative(root, resolved);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return fsPath;
+  return rel.split(path.sep).join("/");
+}
+
+/** Workspace file path for vendor edit/write tools — never a fetch URL. */
+function extractVendorFsPath(
+  update: Record<string, unknown>,
+  _acpToolKind: string | null,
+  title: string | null,
+  workspaceRoot: string,
+): string | null {
+  const candidates: string[] = [];
+  const fromTitle = typeof title === "string" ? title.match(/Write `([^`]+)`/) : null;
+  if (fromTitle?.[1]) candidates.push(fromTitle[1]);
+  const raw = update.rawInput;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const rec = raw as { path?: unknown; file_path?: unknown };
+    const filePath = rec.path ?? rec.file_path;
+    if (typeof filePath === "string" && filePath) candidates.push(filePath);
+  }
+  const locations = update.locations;
+  if (Array.isArray(locations) && locations[0] && typeof locations[0] === "object") {
+    const filePath = (locations[0] as { path?: unknown }).path;
+    if (typeof filePath === "string" && filePath) candidates.push(filePath);
+  }
+  const hit = candidates.find((p) => !looksLikeHttpUrl(p)) ?? null;
+  return hit ? toWorkspaceDisplayPath(workspaceRoot, hit) : null;
+}
+
+function rawInputOf(update: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = update.rawInput ?? update.input;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return raw as Record<string, unknown>;
+}
+
+function extractVendorWriteBody(update: Record<string, unknown>): string | null {
+  const rec = rawInputOf(update);
+  if (!rec) return null;
+  for (const key of ["content", "contents"] as const) {
+    const value = rec[key];
+    if (typeof value === "string") return value;
+  }
+  if (typeof rec.new_string === "string" && typeof rec.old_string !== "string") {
+    return rec.new_string;
+  }
+  return null;
+}
+
+function extractVendorReplacePair(
+  update: Record<string, unknown>,
+): { oldString: string; newString: string } | null {
+  const rec = rawInputOf(update);
+  if (!rec) return null;
+  const oldString = rec.old_string ?? rec.oldString;
+  const newString = rec.new_string ?? rec.newString;
+  if (typeof oldString === "string" && typeof newString === "string") {
+    return { oldString, newString };
+  }
+  return null;
+}
+
+function splitDiffLines(content: string): string[] {
+  const normalized = content.replace(/\r\n/g, "\n");
+  if (normalized === "") return [""];
+  return normalized.endsWith("\n") ? normalized.slice(0, -1).split("\n") : normalized.split("\n");
+}
+
+function syntheticWriteDiff(relPath: string, content: string): string {
+  const slash = relPath.replace(/\\/g, "/");
+  const lines = splitDiffLines(content);
+  const plus = lines.map((line) => `+${line}`).join("\n");
+  const count = lines.length;
+  const header = `--- /dev/null\n+++ b/${slash}\n@@ -0,0 +${count === 0 ? "0" : `1,${count}`} @@\n`;
+  return `${header}${plus}\n`;
+}
+
+function syntheticReplaceDiff(relPath: string, oldString: string, newString: string): string {
+  const slash = relPath.replace(/\\/g, "/");
+  const oldLines = splitDiffLines(oldString);
+  const newLines = splitDiffLines(newString);
+  const minus = oldLines.map((line) => `-${line}`).join("\n");
+  const plus = newLines.map((line) => `+${line}`).join("\n");
+  return `--- a/${slash}\n+++ b/${slash}\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n${minus}\n${plus}\n`;
+}
+
+function readWriteBaseline(
+  workspaceRoot: string,
+  relPath: string,
+  cache: Map<string, string | null>,
+  refresh = false,
+): string | null {
+  if (!refresh && cache.has(relPath)) return cache.get(relPath) ?? null;
+  let old: string | null = null;
+  try {
+    old = fs.readFileSync(path.resolve(workspaceRoot, relPath), "utf8");
+  } catch {
+    old = null;
+  }
+  cache.set(relPath, old);
+  return old;
+}
+
+function currentFileBody(workspaceRoot: string, relPath: string): string | null {
+  try {
+    return fs.readFileSync(path.resolve(workspaceRoot, relPath), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function sameWriteText(a: string, b: string): boolean {
+  return a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+}
+
+function vendorWriteDiff(
+  relPath: string,
+  update: Record<string, unknown>,
+  priorInput: unknown = null,
+  existing: string | null = null,
+  diskBody: string | null = null,
+): string | null {
+  if (typeof update.diff === "string" && update.diff) return update.diff;
+  if (existing != null && diskBody != null && !sameWriteText(existing, diskBody)) {
+    return syntheticReplaceDiff(relPath, existing, diskBody);
+  }
+  const pair =
+    extractVendorReplacePair(update) ??
+    (priorInput != null ? extractVendorReplacePair({ rawInput: priorInput }) : null);
+  if (pair) {
+    if (existing != null) {
+      const existingNorm = existing.replace(/\r\n/g, "\n");
+      const oldNorm = pair.oldString.replace(/\r\n/g, "\n");
+      if (!existingNorm.includes(oldNorm)) {
+        const existingLines = splitDiffLines(existingNorm).length;
+        const oldLines = splitDiffLines(oldNorm).length;
+        const newLines = splitDiffLines(pair.newString).length;
+        const wholeFileReplace =
+          existingLines <= 20 &&
+          oldLines <= 20 &&
+          Math.abs(existingLines - oldLines) <= 2 &&
+          Math.abs(existingLines - newLines) <= 2;
+        if (wholeFileReplace) {
+          const after =
+            diskBody != null && !sameWriteText(existing, diskBody)
+              ? diskBody
+              : pair.newString;
+          if (!sameWriteText(existing, after)) {
+            return syntheticReplaceDiff(relPath, existing, after);
+          }
+        }
+      }
+    }
+    return syntheticReplaceDiff(relPath, pair.oldString, pair.newString);
+  }
+  const body =
+    extractVendorWriteBody(update) ??
+    (priorInput != null ? extractVendorWriteBody({ rawInput: priorInput }) : null) ??
+    diskBody;
+  if (body == null) return null;
+  if (existing != null && !sameWriteText(existing, body)) {
+    return syntheticReplaceDiff(relPath, existing, body);
+  }
+  // New file, or a late snapshot that already matches the write — still show
+  // the landed bytes instead of Diff unavailable.
+  return syntheticWriteDiff(relPath, body);
 }
 
 function extractVendorUrl(update: Record<string, unknown>): string | null {
@@ -994,13 +1321,31 @@ function mapVendorToolStatus(raw: unknown): {
   };
 }
 
+function titleLooksLikeFetchClass(title: string | null): boolean {
+  if (!title) return false;
+  const t = title.toLowerCase();
+  if (t.includes("http://") || t.includes("https://")) return true;
+  return /\b(browse|fetch|http|https)\b/.test(t);
+}
+
 function shouldStopAndNameToolKindSeam(
   kind: string | null,
-  _title: string | null,
+  title: string | null,
 ): boolean {
   if (kind === "other" || kind === "execute") return true;
-  if (kind == null || kind === "") return true; // missing / title-only
+  if (kind == null || kind === "") return titleLooksLikeFetchClass(title);
   return false;
+}
+
+/** ACP advertises `name` without a leading slash; Forge palettes/handoff use `/name`. */
+function normalizeAvailableCommandName(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  if (withSlash.length < 2) return null;
+  if (/\s/.test(withSlash)) return null;
+  return withSlash;
 }
 
 function acpContentText(content: unknown): string {
@@ -1056,4 +1401,11 @@ export class StubAcpClient implements AcpClient {
     _id: string,
     _decision: PermissionDecision,
   ): Promise<void> {}
+
+  async respondPlanExit(
+    _id: string,
+    _outcome: "approved" | "cancelled" | "abandoned",
+  ): Promise<boolean> {
+    return false;
+  }
 }

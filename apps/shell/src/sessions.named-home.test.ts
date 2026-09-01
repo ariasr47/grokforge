@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
+import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 import {
   clearPackMembers,
   commitHomeName,
   createSession,
+  chatListTitle,
+  defaultSessionTitle,
   flushSessions,
   getLastSessionSaveError,
   listSessions,
@@ -14,6 +17,25 @@ import {
 } from "./sessions";
 
 const PART = "chat:__sandbox__";
+
+it("chatListTitle shows auto-title so uncommitted homes are distinguishable", () => {
+  assert.equal(
+    chatListTitle({
+      committedName: false,
+      title: "Reply with exactly CHAT-GLANCE-OK and stop. Do not edit files.",
+      workspace: PART,
+    }),
+    "Reply with exactly CHAT-GLANCE-OK and stop. Do not edit files.",
+  );
+  assert.equal(
+    chatListTitle({ committedName: false, title: "New chat", workspace: PART }),
+    HOME_NAME_PLACEHOLDER,
+  );
+  assert.equal(
+    chatListTitle({ committedName: true, title: "Atlas", workspace: PART }),
+    "Atlas",
+  );
+});
 
 function resetStore(): void {
   localStorage.clear();
@@ -28,6 +50,13 @@ function resetStore(): void {
 describe("named-home session durability", () => {
   beforeEach(() => {
     resetStore();
+  });
+
+  it("Code folder titles New session; Chat titles New chat", () => {
+    assert.equal(defaultSessionTitle("chat:__sandbox__"), "New chat");
+    assert.equal(defaultSessionTitle("C:\\Dev\\grokforge"), "New session");
+    assert.equal(createSession("C:\\repo").title, "New session");
+    assert.equal(createSession("chat:__sandbox__").title, "New chat");
   });
 
   it("new session defaults committedName false and empty packMembers", () => {

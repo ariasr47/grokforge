@@ -13,7 +13,7 @@ import type { ActivityRecord, RunEventEnvelope, RunSnapshot } from "./runReducer
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "als-session";
 const RUN_ID = "als-run";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 
 function resetBrowserState(mode: "chat" | "code" = "code"): void {
   localStorage.clear();
@@ -254,12 +254,11 @@ describe("acp-live-streams App path", () => {
     render(<App />);
     await waitFor(() => {
       assert.ok(screen.getByText("think"));
-      assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("kept"));
-      assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
+      assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("kept"));
     });
   });
 
-  it("vouched mid-turn-only finish keeps Mid-turn secondary and clears Writing…", async () => {
+  it("vouched mid-turn-only finish clears Writing… and does not duplicate Earlier", async () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "message_delta", segmentId: "m", delta: "pong" }, 2) as unknown as Record<string, unknown>);
@@ -279,9 +278,7 @@ describe("acp-live-streams App path", () => {
       assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
       assert.ok(screen.getByText("Answered"));
     });
-    const mid = screen.getByLabelText("Mid-turn narration");
-    assert.ok(mid.textContent?.includes("pong"));
-    assert.notEqual(mid, screen.getByRole("article", { name: "Assistant answer" }));
+    assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
     assert.equal(document.body.textContent?.includes("Writing…"), false);
     assert.ok(screen.getByText(TURN_COPY));
   });

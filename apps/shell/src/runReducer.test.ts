@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, restoreRunProjection, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
+import { initialRunProjection, isPostTerminalEventType, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, POST_TERMINAL_EVENT_TYPES, reduceRunEvent, restoreRunProjection, type RunEventEnvelope, type RunSnapshot } from "./runReducer";
 const snap = (sessionId="s1", runId="r1"): RunSnapshot => ({ sessionId, runId, connectionGeneration:1, state:"admitted", acceptedPrompt:"prompt", admittedAt:"", updatedAt:"", lastEventSeq:0, policy:{mode:"review"}, model:{model:"grok-4.6"}, terminalKind:null, finalAnswer:null, answerVouched:false, failure:null });
 const started = (s=snap(), seq=1): RunEventEnvelope => ({ schemaVersion:1,type:"run_started",sessionId:s.sessionId,runId:s.runId,eventSeq:seq,connectionGeneration:s.connectionGeneration,occurredAt:"",payload:{kind:"run_started",run:s} });
 function event(payload: RunEventEnvelope["payload"], seq:number, s="s1", r="r1"): RunEventEnvelope { return {schemaVersion:1,type:payload.kind,sessionId:s,runId:r,eventSeq:seq,connectionGeneration:1,occurredAt:"",payload}; }
@@ -19,6 +19,56 @@ test("reasoning and answer segments remain distinct",()=>{let a=reduceRunEvent(i
 test("answered terminal requires vouch",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"answered",finalAnswer:"answer",answerVouched:false,failure:null,terminalAt:""},2)); assert.equal(a.runsById.r1.finalAnswer,null);});
 test("failed terminal retains null answer",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"failed",finalAnswer:null,answerVouched:false,failure:{code:"missing_final_answer",message:"Missing final answer",retryable:true,recoveryAction:"retry_prompt"},terminalAt:""},2)); assert.equal(a.runsById.r1.finalAnswer,null);});
 test("late events cannot mutate terminal",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"cancelled",finalAnswer:null,answerVouched:false,failure:null,terminalAt:""},2)); assert.strictEqual(reduceRunEvent(a,event({kind:"answer_delta",segmentId:"x",delta:"late"},3)),a);});
+test("POST_TERMINAL_EVENT_TYPES is the only post-terminal allow list", () => {
+  assert.deepEqual([...POST_TERMINAL_EVENT_TYPES], ["child_agent_update", "decision_request", "plan_record"]);
+  assert.equal(isPostTerminalEventType("decision_request"), true);
+  assert.equal(isPostTerminalEventType("activity_update"), false);
+  assert.equal(isPostTerminalEventType("answer_delta"), false);
+});
+test("Accept-plan settlement after terminal updates the pending decision", () => {
+  const pending = {
+    requestId: "p1",
+    invocationId: "p1",
+    kind: "plan" as const,
+    status: "pending" as const,
+    title: "Review plan",
+    detail: "1. Edit a file",
+    expiresAt: null,
+    policy: { effectiveMode: "review" },
+  };
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "decision_request", request: pending }, 2));
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "run_terminal",
+        terminalKind: "answered",
+        finalAnswer: "plan body",
+        answerVouched: true,
+        failure: null,
+        terminalAt: "",
+      },
+      3,
+    ),
+  );
+  assert.equal(a.runsById.r1.decisions.p1.status, "pending");
+  assert.equal(a.runsById.r1.state, "terminal");
+  const before = a;
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "decision_request",
+        request: { ...pending, status: "accepted" },
+      },
+      4,
+    ),
+  );
+  assert.notEqual(a, before);
+  assert.equal(a.runsById.r1.decisions.p1.status, "accepted");
+  assert.equal(a.runsById.r1.state, "terminal");
+});
 test("replay cursor tracks last accepted event",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_state",state:"running",liveness:"provider"},3)); assert.equal(a.sessionCursors.s1,3);});
 test("snapshots remain immutable after event",()=>{let a=reduceRunEvent(initialRunProjection(),started()); const before=a.runsById.r1.policy; a=reduceRunEvent(a,event({kind:"run_state",state:"running",liveness:null},2)); assert.deepEqual(a.runsById.r1.policy,before);});
 test("two sessions retain independent runs",()=>{let a=reduceRunEvent(initialRunProjection(),started(snap("s1","r1"))); a=reduceRunEvent(a,started(snap("s2","r2"))); assert.deepEqual(a.runOrder,["r1","r2"]);});
@@ -630,7 +680,7 @@ test("post-terminal child_agent_update done applies after run_terminal", () => {
   assert.equal(a.runsById.r1.childAgents?.c1?.firstEventSeq, 2);
 });
 
-test("post-terminal answer_delta is still dropped; only child_agent_update reopens the gate", () => {
+test("post-terminal answer_delta and activity_update are still dropped", () => {
   let a = reduceRunEvent(initialRunProjection(), started());
   a = reduceRunEvent(a, event({
     kind: "run_terminal",

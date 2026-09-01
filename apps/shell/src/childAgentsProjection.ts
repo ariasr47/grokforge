@@ -183,6 +183,8 @@ export function projectChildAgents(input: {
   const members = sourceMembers(fact, input.journalMembers);
 
   if (fact.disposition === "hydrating") {
+    // Settled turn with no children: don't leave a Loading child agents… band.
+    if (input.parentTerminal && (members == null || members.length === 0)) return ABSENT;
     return {
       state: "loading",
       members: members == null ? null : mapRows(members, voucher),

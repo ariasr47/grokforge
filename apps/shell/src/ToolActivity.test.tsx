@@ -61,6 +61,245 @@ test("tool activity opens automatically and remains open after settlement", () =
   assert.equal(screen.getByRole("region", { name: "Tool activity details" }).isConnected, true);
 });
 
+test("run-tools group stays open while live and collapses after a clean settlement", () => {
+  const tools = [row(1), row(2), row(3)];
+  const { rerender } = render(
+    <ToolActivityGroup tools={tools} groupKey="run-tools:abc" live />,
+  );
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "true");
+  assert.ok(screen.getByRole("region", { name: "Tool activity details" }));
+  rerender(<ToolActivityGroup tools={tools} groupKey="run-tools:abc" live={false} />);
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "false");
+  assert.equal(screen.queryByRole("region", { name: "Tool activity details" }), null);
+});
+
+test("run-tools group stays open after settlement when a tool failed", () => {
+  const tools = [row(1), row(2, "fail")];
+  render(<ToolActivityGroup tools={tools} groupKey="run-tools:fail" live={false} />);
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "true");
+  assert.ok(screen.getByRole("region", { name: "Tool activity details" }));
+});
+
+test("run-tools explicit open survives settlement", () => {
+  const tools = [row(1), row(2)];
+  const { rerender } = render(
+    <ToolActivityGroup tools={tools} groupKey="run-tools:stay" live />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /tool activity/i }));
+  fireEvent.click(screen.getByRole("button", { name: /tool activity/i }));
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "true");
+  rerender(<ToolActivityGroup tools={tools} groupKey="run-tools:stay" live={false} />);
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "true");
+});
+
+test("collapsed single write header shows the path, not write", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t-write",
+          role: "tool",
+          content: "ok",
+          toolMeta: {
+            name: "write",
+            title: "docs/dogfood/WRAP.md",
+            summary: "docs/dogfood/WRAP.md",
+            done: true,
+            ok: true,
+            execution: "executed",
+            status: "succeeded",
+          },
+        },
+      ]}
+      groupKey="run-tools:write"
+      live={false}
+    />,
+  );
+  const head = screen.getByRole("button", { name: /tool activity/i });
+  assert.equal(head.getAttribute("aria-expanded"), "false");
+  assert.match(head.textContent || "", /docs\/dogfood\/WRAP\.md/);
+  assert.equal(/\bwrite\b/i.test(head.textContent || ""), false);
+});
+
+test("collapsed write header extracts the path from Write `path` titles", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t-write-tick",
+          role: "tool",
+          content: "ok",
+          toolMeta: {
+            name: "write",
+            title: "Write `docs/dogfood/WRAP.md`",
+            summary: "Write `docs/dogfood/WRAP.md`",
+            done: true,
+            ok: true,
+            execution: "executed",
+            status: "succeeded",
+          },
+        },
+      ]}
+      groupKey="run-tools:write-tick"
+      live={false}
+    />,
+  );
+  const head = screen.getByRole("button", { name: /tool activity/i });
+  assert.match(head.textContent || "", /docs\/dogfood\/WRAP\.md/);
+  assert.equal(/\bwrite\b/i.test(head.textContent || ""), false);
+});
+
+test("collapsed run-tools header shows the shell command, not run terminal command", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t1",
+          role: "tool",
+          content: "ok",
+          toolMeta: {
+            name: "run_terminal_command",
+            title: "Execute `node --import tsx --test src/plan-engagement.test.ts`",
+            command: "Set-Location apps/host; node --import tsx --test src/plan-engagement.test.ts",
+            done: true,
+            ok: true,
+            execution: "executed",
+            status: "succeeded",
+          },
+        },
+      ]}
+      groupKey="run-tools:host"
+      live={false}
+    />,
+  );
+  assert.equal(screen.getByRole("button", { name: /tool activity/i }).getAttribute("aria-expanded"), "false");
+  assert.ok(screen.getByText(/Set-Location apps\/host/));
+  assert.equal(screen.queryByText("run terminal command"), null);
+});
+
+test("generic shell rows show the command, not run terminal command", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t1",
+          role: "tool",
+          content: "ok",
+          toolMeta: {
+            name: "run_terminal_command",
+            title: "Execute `node --test src/ComposerPane.test.tsx`",
+            summary: "Execute `node --test src/ComposerPane.test.tsx`",
+            command: "cd apps/shell; node --test src/ComposerPane.test.tsx",
+            done: true,
+            ok: true,
+            status: "succeeded",
+          },
+        },
+      ]}
+      groupKey="activity-run:shell"
+    />,
+  );
+  assert.ok(screen.getAllByText("cd apps/shell; node --test src/ComposerPane.test.tsx").length >= 1);
+  assert.equal(screen.queryByText("run terminal command"), null);
+  assert.ok(document.querySelector(".tool-row-name-plain"));
+});
+
+test("failed shell whose vendor body is just completed peeks Non-zero exit", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t-fail",
+          role: "tool",
+          content: "completed",
+          toolMeta: {
+            name: "run_terminal_command",
+            title: "Execute `node -e \"process.exit(2)\"`",
+            command: "node -e \"process.exit(2)\"",
+            done: true,
+            ok: false,
+            execution: "executed",
+            status: "failed",
+          },
+        },
+      ]}
+      groupKey="activity-run:shell-fail"
+    />,
+  );
+  assert.ok(screen.getByText("Failed"));
+  assert.ok(screen.getByText("Non-zero exit"));
+  assert.equal(screen.queryByText("completed"), null);
+});
+
+test("unavailable vendor TUI tool is omitted from the group subtitle", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t-shell",
+          role: "tool",
+          content: "ok",
+          toolMeta: {
+            name: "run_terminal_command",
+            command: "node --test",
+            done: true,
+            ok: true,
+            execution: "executed",
+            status: "succeeded",
+          },
+        },
+        {
+          id: "t-miss",
+          role: "tool",
+          content: "task not found",
+          toolMeta: {
+            name: "get_command_or_subagent_output",
+            done: true,
+            ok: false,
+            execution: "executed",
+            status: "failed",
+          },
+        },
+      ]}
+      groupKey="activity-run:mixed-tui"
+    />,
+  );
+  const sub = document.querySelector(".tool-activity-sub");
+  assert.equal(sub, null);
+  assert.ok(screen.getByText("Not in Forge"));
+  assert.ok(screen.getByText("Completed"));
+});
+
+test("Grok TUI output-fetch is Not in Forge, not a Failed product tool", () => {
+  render(
+    <ToolActivityGroup
+      tools={[
+        {
+          id: "t-miss",
+          role: "tool",
+          content: "task not found",
+          toolMeta: {
+            name: "get_command_or_subagent_output",
+            done: true,
+            ok: false,
+            execution: "executed",
+            status: "failed",
+            activityEvent: {
+              error: "failed",
+              output: "task not found",
+            } as unknown as import("./api.js").ToolRunEvent,
+          },
+        },
+      ]}
+      groupKey="activity-run:tool-miss"
+    />,
+  );
+  assert.ok(screen.getByText("Not in Forge"));
+  assert.ok(screen.getByText("Not available in Forge Code."));
+  assert.equal(screen.queryByText("Failed"), null);
+  assert.equal(screen.queryByText("task not found"), null);
+});
+
 test("explicit collapse persists and body is keyboard reachable", () => {
   const tools = [row(1), row(2)];
   render(<ToolActivityGroup tools={tools} groupKey="activity-run:1" />);
@@ -71,6 +310,14 @@ test("explicit collapse persists and body is keyboard reachable", () => {
   const body = screen.getByRole("region", { name: "Tool activity details" });
   assert.equal(body.getAttribute("tabindex"), "0");
   assert.ok(screen.getAllByText("Completed").length >= 2);
+});
+
+test("one completed tool does not repeat Completed on the group header", () => {
+  render(<ToolActivityGroup tools={[row(1)]} groupKey="activity-run:one" />);
+  assert.equal(screen.getAllByText("Completed").length, 1);
+  const head = screen.getByRole("button", { name: /tool activity/i });
+  assert.match(head.textContent || "", /run shell/i);
+  assert.equal((head.textContent || "").includes("Completed"), false);
 });
 
 const followScrollTop = new WeakMap<HTMLElement, number>();
@@ -202,7 +449,7 @@ test("PDF extract-failed read_file paints failed with vouched class, never OCR",
       groupKey="activity-run:pdf-enc"
     />,
   );
-  assert.ok(screen.getByText("failed"));
+  assert.ok(screen.getByText("Failed"));
   assert.ok(screen.getByText("Couldn't extract text from enc.pdf. (encrypted)"));
   assert.equal(screen.queryByText(/OCR/i), null);
   assert.equal(screen.queryByText(/PDF viewer/i), null);
@@ -222,7 +469,7 @@ test("missing/confine read_file failure does not reuse extract-failed copy", () 
       groupKey="activity-run:pdf-miss"
     />,
   );
-  assert.ok(screen.getByText("failed"));
+  assert.ok(screen.getByText("Failed"));
   assert.ok(screen.getByText("File not found"));
   assert.equal(screen.queryByText(/Couldn't extract text/i), null);
   assert.equal(screen.queryByText(/empty-extract/i), null);

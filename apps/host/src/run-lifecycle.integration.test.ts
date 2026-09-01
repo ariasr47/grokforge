@@ -305,6 +305,35 @@ test("production host restart interrupts orphan once and preserves received cont
   } catch(error){ await first.stop(); throw error; }
 });
 
+test("concurrent second prompt on the same session is run_active", async () => {
+  const host = await startHost({
+    port: await freePort(),
+    env: {
+      GROKFORGE_AGENT_ENTRY: path.resolve(here, "./test-support/fake-acp-agent.mjs"),
+      GROKFORGE_FIXTURE: "delayed-final",
+      XAI_API_KEY: "fixture",
+    },
+  });
+  const sid = "concurrent-busy";
+  try {
+    const body = (text: string) =>
+      JSON.stringify({ sessionId: sid, text, effort: "auto", history: [] });
+    const headers = { "content-type": "application/json" };
+    const p1 = fetch(`${host.baseUrl}/api/prompt`, { method: "POST", headers, body: body("first") });
+    const p2 = fetch(`${host.baseUrl}/api/prompt`, { method: "POST", headers, body: body("BUSY-SECOND-MUST-NOT-SEND") });
+    const [a, b] = await Promise.all([p1, p2]);
+    const ja = await a.json() as { code?: string; error?: string };
+    const jb = await b.json() as { code?: string; error?: string };
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    assert.equal(statuses[0], 202, JSON.stringify({ a: a.status, b: b.status, ja, jb }));
+    assert.equal(statuses[1], 409, JSON.stringify({ a: a.status, b: b.status, ja, jb }));
+    const rejected = a.status === 409 ? ja : jb;
+    assert.equal(rejected.code, "run_active");
+  } finally {
+    await host.stop();
+  }
+});
+
 test("production cancel stays owned until ACP terminal and then reopens admission", async()=>{
   const host=await startHost({port:await freePort(),env:{GROKFORGE_AGENT_ENTRY:path.resolve(here,"./test-support/fake-acp-agent.mjs"),GROKFORGE_FIXTURE:"cancel-content",XAI_API_KEY:"fixture"}}); const sid="cancel-boundary";
   try {

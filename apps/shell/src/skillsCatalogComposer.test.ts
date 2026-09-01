@@ -17,7 +17,9 @@ import {
   mayOpenSkillsPalette,
   projectSkillsPalette,
   shouldClearArmedInvocation,
+  slashTokenAt,
   slashTokenFilter,
+  stripLeadingSlashToken,
 } from "./skillsCatalogComposer";
 
 const vendor: CodeAgentFact = {
@@ -140,6 +142,44 @@ test("ready lists only voucher names — no invented extras", () => {
   assert.equal(p.commands.some((c) => c.name === "/invented"), false);
 });
 
+test("mixed ready voucher lists every accepted /name — junk absent", () => {
+  const p = projectSkillsPalette({
+    mode: "code",
+    codeAgent: vendor,
+    skillsCatalog: {
+      disposition: "ready",
+      commands: [
+        { name: "/a", description: null },
+        { name: "/b", description: "bee" },
+      ],
+    },
+  });
+  assert.equal(p.state, "ready");
+  if (p.state !== "ready") throw new Error("expected ready");
+  assert.deepEqual(
+    p.commands.map((c) => c.name),
+    ["/a", "/b"],
+  );
+  assert.equal(p.commands.some((c) => c.name === "no-slash"), false);
+  assert.equal(shouldClearArmedInvocation(p), false);
+});
+
+test("ready→ready shrink still projects replace list; does not invent chip-clear rule", () => {
+  const shrunk = projectSkillsPalette({
+    mode: "code",
+    codeAgent: vendor,
+    skillsCatalog: {
+      disposition: "ready",
+      commands: [{ name: "/keep", description: null }],
+    },
+  });
+  assert.equal(shrunk.state, "ready");
+  if (shrunk.state !== "ready") throw new Error("expected ready");
+  assert.deepEqual(shrunk.commands.map((c) => c.name), ["/keep"]);
+  // Shipped rule: clear only when projection is not ready.
+  assert.equal(shouldClearArmedInvocation(shrunk), false);
+});
+
 test("unconfirmed/offline awaiting withholds armable rows", () => {
   const p = projectSkillsPalette({
     mode: "code",
@@ -193,6 +233,10 @@ test("slash token filter and palette-open predicate", () => {
   assert.equal(mayOpenSkillsPalette({ state: "absent" }, "/", 1), false);
   assert.equal(slashTokenFilter("/forge", 6), "forge");
   assert.equal(slashTokenFilter("x /ab", 5), "ab");
+  assert.equal(mayOpenSkillsPalette(readyP, "/session-info", 0), true);
+  assert.equal(slashTokenFilter("/session-info", 0), "session-info");
+  assert.equal(slashTokenAt("/session-info", 0), "/session-info");
+  assert.equal(stripLeadingSlashToken("/session-info", 0), "");
 });
 
 test("filterSkillCommands matches name or vouched description", () => {
@@ -219,4 +263,14 @@ test("locked copy and banned Started / before-it-thinks strings", () => {
   assert.equal(SKILLS_UNAVAILABLE, "Skill no longer available.");
   assert.equal(copyBlob.includes("Started ·"), false);
   assert.equal(/before it thinks/i.test(copyBlob), false);
+});
+
+test("Skills copy has no skip-count / partially-loaded / malformed-ignored trophy", () => {
+  assert.equal(/partially loaded/i.test(copyBlob), false);
+  assert.equal(/skip-count|skipped \d+/i.test(copyBlob), false);
+  assert.equal(/malformed ignored/i.test(copyBlob), false);
+  assert.equal(SKILLS_FAILED, "Couldn't load skills.");
+  assert.equal(SKILLS_EMPTY, "No skills from Grok Code");
+  assert.equal(SKILLS_CHECKING, "Checking skills…");
+  assert.equal(SKILLS_UNAVAILABLE, "Skill no longer available.");
 });

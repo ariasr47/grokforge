@@ -6,6 +6,7 @@ export type CodeRunProvenanceProjection =
   | { state: "absent" }
   | { state: "hydrating" }
   | { state: "vendor" }
+  | { state: "house" }
   | { state: "fallback"; reason: "cli_missing" | "spawn_failed" | null }
   | { state: "confirm_error" };
 
@@ -13,9 +14,12 @@ export type CodeRunProvenanceInput = {
   mode?: ProductMode | string | null;
   run?: Pick<RunProjectionRun, "state" | "codeAgentProvenance"> | null;
   catchUp?: CatchUpSignal;
+  /** Session Code fact. House-only inherit: never invent vendor from this. */
+  sessionIdentity?: "vendor" | "fallback" | "house" | "hard_fail" | null;
 };
 
 export const CODE_RUN_VENDOR = "Grok Code";
+export const CODE_RUN_HOUSE = "Grok";
 export const CODE_RUN_FALLBACK = "Mini-Grok · fallback";
 export const CODE_RUN_HYDRATING = "Confirming which agent ran…";
 export const CODE_RUN_CONFIRM_ERROR = "Couldn't confirm which agent ran this turn.";
@@ -24,13 +28,15 @@ export const CODE_RUN_FALLBACK_SPAWN = "Mini-Grok · fallback · Couldn't start 
 
 function fromStamp(stamp: CodeRunAgentProvenance): CodeRunProvenanceProjection {
   if (stamp.identity === "vendor") return { state: "vendor" };
+  if (stamp.identity === "house") return { state: "house" };
   return { state: "fallback", reason: stamp.fallbackReason ?? null };
 }
 
 /**
  * Quiet per-Code-run provenance. Never invents vendor from agentName / PATH.
- * Catch-up open → hydrating. Missing stamp on a live run → hydrating.
- * Terminal / catch-up failed without a stamp → confirm_error.
+ * Catch-up open → hydrating. Missing stamp on a live run with session house → house
+ * (Code is grok-acp; do not say “Confirming which agent ran…”). Other missing
+ * live stamps stay hydrating. Terminal / catch-up failed without a stamp → confirm_error.
  */
 export function projectCodeRunProvenance(
   input: CodeRunProvenanceInput,
@@ -44,12 +50,19 @@ export function projectCodeRunProvenance(
 
   if (catchUp === "open") return { state: "hydrating" };
 
-  if (stamp?.identity === "vendor" || stamp?.identity === "fallback") {
+  if (
+    stamp?.identity === "vendor" ||
+    stamp?.identity === "fallback" ||
+    stamp?.identity === "house"
+  ) {
     return fromStamp(stamp);
   }
 
   if (catchUp === "failed") return { state: "confirm_error" };
-  if (run.state !== "terminal") return { state: "hydrating" };
+  if (run.state !== "terminal") {
+    if (input.sessionIdentity === "house") return { state: "house" };
+    return { state: "hydrating" };
+  }
   // Old journals / no post-live stamp: invent nothing (not a voucher failure).
   return { state: "absent" };
 }
@@ -60,6 +73,8 @@ export function codeRunProvenanceCopy(p: CodeRunProvenanceProjection): string {
       return CODE_RUN_HYDRATING;
     case "vendor":
       return CODE_RUN_VENDOR;
+    case "house":
+      return CODE_RUN_HOUSE;
     case "fallback":
       if (p.reason === "cli_missing") return CODE_RUN_FALLBACK_CLI;
       if (p.reason === "spawn_failed") return CODE_RUN_FALLBACK_SPAWN;

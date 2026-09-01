@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { HOME_NAME_PLACEHOLDER, HOME_NAME_SAVE_FAILED } from "./chatPackComposer";
+import { chatListTitle } from "./sessions";
 import { Button } from "./ui/Button";
 
 export { HOME_NAME_PLACEHOLDER, HOME_NAME_SAVE_FAILED };
@@ -79,18 +80,28 @@ export const ChatHomeName = memo(function ChatHomeName({
     );
   }
 
+  const heading = chatListTitle({
+    committedName,
+    title,
+    workspace: "chat:__sandbox__",
+  });
   if (!committedName) {
+    const placeholder = heading === HOME_NAME_PLACEHOLDER;
     return (
-      <div className="chat-home-name is-placeholder" data-chat-home="placeholder">
+      <div
+        className={`chat-home-name${placeholder ? " is-placeholder" : " is-auto"}`}
+        data-chat-home={placeholder ? "placeholder" : "auto-title"}
+      >
         <button
           type="button"
           className="chat-home-name-trigger"
+          title={placeholder ? undefined : "Rename home"}
           onClick={() => {
-            setDraft("");
+            setDraft(placeholder ? "" : title);
             setEditing(true);
           }}
         >
-          {HOME_NAME_PLACEHOLDER}
+          {heading}
         </button>
       </div>
     );

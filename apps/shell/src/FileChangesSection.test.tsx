@@ -149,7 +149,11 @@ test("View diff shows the stored member.diff and Hide diff collapses it", () => 
       openEditId="e1"
     />,
   );
-  assert.ok(screen.getByLabelText("Stored diff").textContent?.includes("+hello"));
+  const shown = screen.getByLabelText("Stored diff").textContent ?? "";
+  assert.ok(shown.includes("+hello"));
+  assert.equal(shown.includes("@@"), false);
+  assert.equal(shown.includes("--- a/"), false);
+  assert.equal(shown.includes("+++ b/"), false);
   fireEvent.click(screen.getByRole("button", { name: "Hide diff" }));
 });
 
@@ -176,6 +180,21 @@ test("mixed list keeps the missing body listed as Diff unavailable", () => {
   assert.ok(screen.getByText("missing.ts"));
   assert.ok(screen.getByText(FILE_CHANGES_DIFF_UNAVAILABLE));
   assert.ok(screen.getByRole("button", { name: "View diff" }));
+});
+
+test("flash reverted on editId turns Accepted into Reverted", () => {
+  render(
+    <FileChangesSection
+      projection={{
+        state: "ready",
+        members: [member({ settlement: "accepted", recoveryAvailable: false, editId: "edit-r1", activityId: "a-other" })],
+      }}
+      recoveryFlash={{ "edit-r1": "reverted" }}
+    />,
+  );
+  assert.ok(screen.getByText("Reverted"));
+  assert.equal(screen.queryByText("Accepted"), null);
+  assert.equal(screen.queryByRole("button", { name: "Revert edit" }), null);
 });
 
 test("reverted chip and no Revert edit even when flash is absent", () => {

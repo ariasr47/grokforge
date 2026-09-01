@@ -46,7 +46,7 @@ export const ProjectInstructionsStatus = memo(function ProjectInstructionsStatus
     if (projection.state === "empty") {
       setAnnounce(PI_COMPOSER_EMPTY);
     }
-  }, [projection]);
+  }, [projection.state]);
 
   if (projection.state === "absent_chat" || projection.state === "disabled_no_workspace") {
     return null;

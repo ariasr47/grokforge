@@ -10,6 +10,7 @@ import {
   CODE_AGENT_HARD_FAIL,
   CODE_AGENT_OFFLINE,
   CODE_AGENT_VENDOR,
+  CODE_AGENT_HOUSE,
   codeAgentPrimaryCopy,
   projectCodeAgentComposer,
 } from "./codeAgentComposer";
@@ -87,6 +88,23 @@ test("resolving never flashes vendor even if identity leaked", () => {
   });
   assert.equal(projection.state, "checking");
   assert.equal(codeAgentPrimaryCopy(projection), CODE_AGENT_CHECKING);
+});
+
+test("A0 Code house identity is Grok, not Mini-Grok or Grok Code", () => {
+  const projection = projectCodeAgentComposer({
+    mode: "code",
+    codeAgent: {
+      resolveStatus: "ready",
+      identity: "house",
+      fallbackReason: null,
+    },
+    transportOk: true,
+  });
+  assert.equal(projection.state, "house");
+  assert.equal(codeAgentPrimaryCopy(projection), CODE_AGENT_HOUSE);
+  assert.equal(codeAgentPrimaryCopy(projection), "Grok");
+  assert.equal(codeAgentPrimaryCopy(projection).includes("Mini-Grok"), false);
+  assert.notEqual(codeAgentPrimaryCopy(projection), CODE_AGENT_VENDOR);
 });
 
 test("vouched vendor", () => {

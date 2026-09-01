@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "dev-vite",
+  "description": "Allow the Vite desktop:dev origins (localhost and 127.0.0.1) to invoke ensure_host. Packaged builds do not load this file.",
+  "windows": ["main"],
+  "remote": {
+    "urls": [
+      "http://localhost:5174/*",
+      "http://127.0.0.1:5174/*",
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*"
+    ]
+  },
+  "permissions": ["core:default"]
+}

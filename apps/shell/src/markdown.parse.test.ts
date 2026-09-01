@@ -34,6 +34,18 @@ describe("parseMarkdownBlocks", () => {
     }
   });
 
+  it("loose ordered lists with blank lines stay one list", () => {
+    const src = `1. Change directory to apps/shell.\n\n1. Run the typecheck.\n\n1. Read the result.`;
+    const blocks = parseMarkdownBlocks(src);
+    const ols = blocks.filter((b) => b.type === "ol");
+    assert.equal(ols.length, 1);
+    if (ols[0]?.type === "ol") {
+      assert.equal(ols[0].items.length, 3);
+      assert.equal(ols[0].items[0], "Change directory to apps/shell.");
+      assert.equal(ols[0].items[2], "Read the result.");
+    }
+  });
+
   it("parses grok-ui fences as rich", () => {
     const src =
       "Intro\n\n```grok-ui\n" +

@@ -13,7 +13,7 @@ const SKIP = new Set([
 
 export async function listWorkspaceFiles(
   workspaceRoot: string,
-  maxFiles = 800,
+  maxFiles = 20_000,
 ): Promise<string[]> {
   const root = path.resolve(workspaceRoot);
   const out: string[] = [];

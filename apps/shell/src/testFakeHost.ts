@@ -143,6 +143,8 @@ export interface FakeHost {
   trustedClasses: Map<string, TrustedCommandClassesView>;
   runJournals: Map<string, FakeRunJournal>;
   nextClassSaveError: { status: number; code: string } | null;
+  nextPermissionError: { status: number; error: string; code: string } | null;
+  nextPlanError: { status: number; error: string; code: string } | null;
   pendingPlanDecision: boolean;
   nextChatPackRefuse: {
     status?: number;
@@ -248,6 +250,8 @@ export function createFakeHost(
   }
   const runJournals = new Map<string, FakeRunJournal>(Object.entries(opts.runJournals ?? {}));
   let nextClassSaveError = opts.classSaveError ?? null;
+  let nextPermissionError: { status: number; error: string; code: string } | null = null;
+  let nextPlanError: { status: number; error: string; code: string } | null = null;
   let nextPromptRefuse = opts.promptRefuse ?? null;
   let pendingPlanDecision = false;
   let nextChatPackRefuse = opts.chatPackRefuse ?? null;
@@ -474,6 +478,11 @@ export function createFakeHost(
       return mutatingSnapshot();
     }
     if (path === "/api/plan" && method === "POST") {
+      if (nextPlanError) {
+        const err = nextPlanError;
+        nextPlanError = null;
+        return { __error: true, ...err, retryable: false, runId: null };
+      }
       const action = body?.action;
       if (action !== "accept" && action !== "keep_planning") {
         return {
@@ -768,7 +777,14 @@ export function createFakeHost(
         code: "invalid_request",
       };
     }
-    if (path === "/api/permission" && method === "POST") return { ok: true };
+    if (path === "/api/permission" && method === "POST") {
+      if (nextPermissionError) {
+        const err = nextPermissionError;
+        nextPermissionError = null;
+        return { __error: true, status: err.status, error: err.error, code: err.code };
+      }
+      return { ok: true };
+    }
     if (path === "/api/diff" && method === "POST") return { ok: true };
     if (path.startsWith("/api/runs/") && method === "GET") {
       const runId = decodeURIComponent(path.slice("/api/runs/".length));
@@ -836,6 +852,18 @@ export function createFakeHost(
     },
     set nextClassSaveError(value) {
       nextClassSaveError = value;
+    },
+    get nextPermissionError() {
+      return nextPermissionError;
+    },
+    set nextPermissionError(value) {
+      nextPermissionError = value;
+    },
+    get nextPlanError() {
+      return nextPlanError;
+    },
+    set nextPlanError(value) {
+      nextPlanError = value;
     },
     get pendingPlanDecision() {
       return pendingPlanDecision;

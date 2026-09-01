@@ -97,7 +97,9 @@ test("vendor initialize permissionMode default, session/update remap, ACP result
       (e) => e.type === "tool_run" && e.lifecycle === "terminal" && e.toolCallId === "t1",
       "tool terminal",
     );
-    await waitFor(events, (e) => e.type === "permission_request" && e.id === "7", "permission request");
+    const perm = await waitFor(events, (e) => e.type === "permission_request" && e.id === "7", "permission request");
+    assert.equal(perm.type, "permission_request");
+    assert.equal(perm.toolCallId, "t1");
 
     assert.equal(events.some((e) => (e as { type: string }).type === "session/update"), false);
     assert.equal(events.some((e) => (e as { type: string }).type === "answer_delta"), false);
@@ -211,6 +213,13 @@ test("session/new always sends mcpServers array (vendor grok agent requires the 
     assert.deepEqual(params.mcpServers, []);
     assert.equal(typeof params.cwd, "string");
     assert.ok(params.executionProfile);
+    const meta = params._meta as { rules?: unknown } | undefined;
+    assert.equal(typeof meta?.rules, "string");
+    assert.match(String(meta?.rules), /workingDirectory/);
+    assert.match(String(meta?.rules), /workspace root/i);
+    assert.match(String(meta?.rules), /Set-Location/);
+    assert.match(String(meta?.rules), /FIRST shell command/i);
+    assert.doesNotMatch(String(meta?.rules), /cd \/d/);
   } finally {
     await client.dispose();
   }
@@ -238,6 +247,100 @@ test("grok-acp initialize omits permissionMode when not requested", async () => 
     const initParams = JSON.parse(initLog.message.slice("INIT_PARAMS ".length)) as Record<string, unknown>;
     assert.equal("permissionMode" in initParams, false);
     await client.newSession();
+  } finally {
+    await client.dispose();
+  }
+});
+
+test("vendor completed with non-zero exit output is a failed tool_run", async () => {
+  const script = [
+    "const r=require('readline').createInterface({input:process.stdin});",
+    "r.on('line',l=>{",
+    "  const m=JSON.parse(l);",
+    "  if(m.method==='initialize') process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:1}})+'\\n');",
+    "  if(m.method==='session/new'){",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{sessionId:'v1'}})+'\\n');",
+    "    const pending={sessionUpdate:'tool_call',toolCallId:'sh1',title:'run shell',kind:'execute',status:'pending'};",
+    "    const done={sessionUpdate:'tool_call_update',toolCallId:'sh1',status:'completed',content:{type:'text',text:'exit: 1\\n\\nBackground task completed (exit code: 1).'}};",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'v1',update:pending}})+'\\n');",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'v1',update:done}})+'\\n');",
+    "  }",
+    "});",
+  ].join("");
+  const client = new StdioAcpClient({
+    workspaceRoot: process.cwd(),
+    command: process.execPath,
+    args: ["-e", script],
+    env: Object.freeze({}),
+    executionProfile: profile,
+    initializePermissionMode: "default",
+  });
+  const events: AcpUiEvent[] = [];
+  client.onEvent((e) => events.push(e));
+  try {
+    await client.initialize();
+    await client.newSession();
+    const terminal = await waitFor(
+      events,
+      (e) => e.type === "tool_run" && e.lifecycle === "terminal" && e.toolCallId === "sh1",
+      "failed shell terminal",
+    );
+    assert.equal(terminal.type, "tool_run");
+    assert.equal(terminal.status, "failed");
+    assert.equal(terminal.execution, "executed");
+  } finally {
+    await client.dispose();
+  }
+});
+
+test("vendor _x.ai/exit_plan_mode is held then answered, not unmapped", async () => {
+  const script = [
+    "const r=require('readline').createInterface({input:process.stdin});",
+    "r.on('line',l=>{",
+    "  const m=JSON.parse(l);",
+    "  if(m.method==='initialize') process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:1}})+'\\n');",
+    "  if(m.method==='session/new'){",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{sessionId:'v1'}})+'\\n');",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:9,method:'_x.ai/exit_plan_mode',params:{sessionId:'v1',planContent:'- Update `src/a.ts`'}})+'\\n');",
+    "  }",
+    "  if(m.id===9 && !m.method && ('result' in m || 'error' in m)){",
+    "    process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'agent_log',params:{level:'info',message:'ACP_PLAN_RESULT '+JSON.stringify(m.result)}})+'\\n');",
+    "  }",
+    "});",
+  ].join("");
+  const client = new StdioAcpClient({
+    workspaceRoot: process.cwd(),
+    command: process.execPath,
+    args: ["-e", script],
+    env: Object.freeze({}),
+    executionProfile: profile,
+    initializePermissionMode: "default",
+  });
+  const events: AcpUiEvent[] = [];
+  client.onEvent((e) => events.push(e));
+  try {
+    await client.initialize();
+    await client.newSession();
+    const exitEv = await waitFor(
+      events,
+      (e) => e.type === "vendor_plan_exit",
+      "vendor_plan_exit",
+    );
+    assert.equal(exitEv.type, "vendor_plan_exit");
+    assert.equal(exitEv.planContent, "- Update `src/a.ts`");
+    assert.equal(
+      events.some((e) => e.type === "agent_log" && e.message.startsWith("Unmapped child ACP request")),
+      false,
+    );
+    const wrote = await client.respondPlanExit(exitEv.id, "approved");
+    assert.equal(wrote, true);
+    const resultLog = await waitFor(
+      events,
+      (e) => e.type === "agent_log" && e.message.startsWith("ACP_PLAN_RESULT "),
+      "plan exit result",
+    );
+    assert.equal(resultLog.type, "agent_log");
+    assert.match(resultLog.message, /"outcome":"approved"/);
   } finally {
     await client.dispose();
   }

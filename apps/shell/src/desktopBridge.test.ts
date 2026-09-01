@@ -8,6 +8,7 @@ import {
   ensureDesktopHost,
   hostBase,
   hostPort,
+  isViteDevOrigin,
   localBuildIdentity,
   restartDesktopHost,
   setAppVersionResolver,
@@ -121,6 +122,27 @@ describe("N-3 — hostPort()/hostBase()/wsUrl() never fabricate a port in a pack
     setRuntimePort(null); // this launch's status.port, per ensureDesktopHost()
     assert.equal(hostPort(), null);
     assert.equal(hostBase(), null);
+    restoreTauri();
+  });
+
+  it("Tauri on the Vite desktop:dev origin uses the same-origin proxy instead of refusing", () => {
+    assert.equal(isViteDevOrigin("http://127.0.0.1:5174/"), true);
+    assert.equal(isViteDevOrigin("http://localhost:5174/"), true);
+    assert.equal(isViteDevOrigin("http://localhost:5173/foo"), true);
+    assert.equal(isViteDevOrigin("http://tauri.localhost/"), false);
+    assert.equal(isViteDevOrigin("http://localhost/"), false);
+    const restoreTauri = installTauriGlobal();
+    setRuntimePort(null);
+    assert.equal(hostPort(), null);
+    try {
+      window.location.href = "http://127.0.0.1:5174/";
+    } catch {
+      /* jsdom may freeze location */
+    }
+    if (isViteDevOrigin()) {
+      assert.equal(hostBase(), "");
+      assert.equal(wsUrl()?.startsWith("ws://"), true);
+    }
     restoreTauri();
   });
 

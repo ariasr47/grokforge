@@ -81,11 +81,11 @@ export function PlanSection({ projection, preserved = null, offline = false }: P
   const [announce, setAnnounce] = useState("");
   const prevReady = useRef(false);
 
+  const ready = projection.state === "ready" && !projection.empty;
   useEffect(() => {
-    const ready = projection.state === "ready" && !projection.empty;
     if (ready && !prevReady.current) setAnnounce(PLAN_READY_ANNOUNCE);
     prevReady.current = ready;
-  }, [projection]);
+  }, [ready]);
 
   if (projection.state === "absent") return null;
 
@@ -177,6 +177,7 @@ export function PlanSection({ projection, preserved = null, offline = false }: P
           <strong>{PLAN_ACCEPTED_TITLE}</strong>
           <span>{acceptedHelper(projection.policyLabel, projection.bypassActive)}</span>
         </p>
+        {projection.body ? <p className="plan-body">{projection.body}</p> : null}
       </section>
     );
   }

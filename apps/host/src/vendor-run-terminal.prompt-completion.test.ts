@@ -177,9 +177,10 @@ test("plan exemption: empty plan finish CAS-answers without missing_final", asyn
     );
     assert.equal(replay.run.terminalKind, "answered");
     assert.equal(replay.run.answerVouched, true);
+    const failCode = replay.run.failure?.code;
     assert.equal(replay.run.failure, null);
     assert.equal((replay.run.finalAnswer ?? "").trim(), "");
-    assert.notEqual(replay.run.failure?.code, "missing_final_answer");
+    assert.notEqual(failCode, "missing_final_answer");
     assert.ok(replay.events.some((e) => e.type === "plan_record"));
   } finally {
     await ctx.session.shutdown().catch(() => undefined);

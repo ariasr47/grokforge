@@ -15,7 +15,9 @@
  * mcp-server | mcp-server-incomplete | mcp-server-multi | mcp-server-first-error |
  * mcp-server-late-idle | mcp-server-unmapped | mcp-server-late-error |
  * hooks | hooks-incomplete | hooks-multi | hooks-first-done |
- * hooks-late-idle | hooks-late-failed | hooks-unmapped
+ * hooks-late-idle | hooks-late-failed | hooks-unmapped |
+ * skills-mixed-interior | skills-mixed-nonobject | skills-all-skipped |
+ * skills-replace-shrink
  */
 import { createInterface } from "node:readline";
 import fs from "node:fs";
@@ -145,7 +147,91 @@ function emitAvailableCommands() {
       method: "session/update",
       params: {
         sessionId: "vendor-session",
-        update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "no-slash" }] },
+        update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "has space" }] },
+      },
+    });
+    return;
+  }
+  if (FIXTURE === "skills-mixed-interior") {
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            { name: "/a", description: null },
+            { name: "has space" },
+            { name: "/b", description: "bee" },
+          ],
+        },
+      },
+    });
+    return;
+  }
+  if (FIXTURE === "skills-mixed-nonobject") {
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            { name: "/a" },
+            1,
+            null,
+            "raw",
+            { name: "/b", description: "bee" },
+          ],
+        },
+      },
+    });
+    return;
+  }
+  if (FIXTURE === "skills-all-skipped") {
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "has space" }, 1, null],
+        },
+      },
+    });
+    return;
+  }
+  if (FIXTURE === "skills-replace-shrink") {
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            { name: "/keep", description: null },
+            { name: "/stale", description: null },
+          ],
+        },
+      },
+    });
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "vendor-session",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            { name: "/keep", description: null },
+            { name: "has space" },
+            { name: "/new", description: "n" },
+          ],
+        },
       },
     });
     return;

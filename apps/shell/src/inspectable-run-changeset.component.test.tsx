@@ -1,13 +1,15 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ActionDock } from "./ActionDock";
+import { api } from "./api";
 import {
   FILE_CHANGES_DIFF_UNAVAILABLE,
   FILE_CHANGES_HEADER,
   FILE_CHANGES_LOAD_FAILURE,
   FILE_CHANGES_LOADING,
   FILE_CHANGES_PENDING_HELPER,
+  FILE_CHANGES_REVERT_SUCCESS_TITLE,
 } from "./FileChangesSection";
 import { mergePendingDiffs, pendingDiffsFromRun } from "./runChangeList";
 import type { ActivityRecord, DecisionRequest, RunProjectionRun, RunSnapshot } from "./runReducer";
@@ -108,6 +110,76 @@ test("ready list names three Trusted paths, Applied chips, no Pending (AC-01/02)
   assert.equal(within(section).getAllByText("Applied").length, 3);
   assert.equal(within(section).queryByText("Pending"), null);
   assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
+});
+
+test("vendor session plan.md write does not mint Activity View diff", () => {
+  render(
+    <RunSurface
+      run={run({
+        policy: { effectiveMode: "review" },
+        activities: {
+          p1: reviewActivity({
+            activityId: "p1",
+            invocationId: "ip1",
+            name: "write",
+            path: "C:\\Users\\rodri\\.grok\\sessions\\CK3A%5CDev%5Cgrokforge\\sid\\plan.md",
+            diff: "--- /dev/null\n+++ b/plan.md\n+# Plan\n",
+          }),
+        },
+      })}
+    />,
+  );
+  assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+});
+
+test("read/grep activities with a leftover diff do not mint View diff pills", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: {
+          r1: writeActivity({
+            activityId: "r1",
+            invocationId: "ir1",
+            name: "read_file",
+            editId: null,
+            kind: null,
+            autoApplied: false,
+            recovery: null,
+            path: "apps/shell/src/styles/chrome.css",
+            diff: "--- a/chrome.css\n+++ b/chrome.css\n+nope",
+          }),
+        },
+      })}
+    />,
+  );
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+});
+
+test("read file with a vendor editId still does not mint View diff", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: {
+          r1: writeActivity({
+            activityId: "r1",
+            invocationId: "ir1",
+            name: "read file",
+            editId: "e-read",
+            kind: null,
+            autoApplied: false,
+            recovery: null,
+            path: "apps/shell/src/styles/chrome.css",
+            diff: "--- /dev/null\n+++ b/chrome.css\n+whole file",
+          }),
+        },
+      })}
+    />,
+  );
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
 });
 
 test("View diff matches activity.diff for the same editId (AC-03/17)", () => {
@@ -422,4 +494,192 @@ test("live-growing Trusted list adds the second path without a second activity h
   assert.ok(within(section).getByText("a.txt"));
   assert.ok(within(section).getByText("b.txt"));
   assert.ok(within(section).getByText("Updating as edits land…"));
+});
+
+test("settled Write file decision is not a duplicate transcript card", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: {
+          a1: reviewActivity({
+            path: "docs/dogfood/DIFF.md",
+            summary: "Write `C:\\\\Dev\\\\grokforge\\\\docs\\\\dogfood\\\\DIFF.md`",
+            title: "Write `C:\\\\Dev\\\\grokforge\\\\docs\\\\dogfood\\\\DIFF.md`",
+          }),
+        },
+        decisions: {
+          perm: {
+            requestId: "perm",
+            invocationId: "i1",
+            kind: "permission",
+            status: "accepted",
+            title: "Write file",
+            detail: "Write `C:\\\\Dev\\\\grokforge\\\\docs\\\\dogfood\\\\DIFF.md`",
+            expiresAt: null,
+            policy: {},
+          },
+        },
+      })}
+    />,
+  );
+  assert.equal(screen.queryByRole("group", { name: "Write file" }), null);
+  assert.ok(screen.getByRole("region", { name: FILE_CHANGES_HEADER }));
+  assert.ok(screen.getAllByText("docs/dogfood/DIFF.md").length >= 1);
+});
+
+test("Review File changes path covers a second search-replace activity — no extra View diff", () => {
+  render(
+    <RunSurface
+      run={run({
+        policy: { effectiveMode: "review" },
+        activities: {
+          member: reviewActivity({
+            activityId: "perm-row",
+            invocationId: "perm-inv",
+            editId: "perm-row",
+            path: "docs/dogfood/NEXT.md",
+            diff: "--- a/docs/dogfood/NEXT.md\n+++ b/docs/dogfood/NEXT.md\n-NEXT-OK\n+NEXT-TWO\n",
+          }),
+          extra: reviewActivity({
+            activityId: "sr-extra",
+            invocationId: "sr-extra",
+            editId: "sr-extra",
+            name: "search_replace",
+            path: "docs/dogfood/NEXT.md",
+            diff: "--- a/docs/dogfood/NEXT.md\n+++ b/docs/dogfood/NEXT.md\n-NEXT-OK\n+NEXT-TWO\n",
+          }),
+        },
+        decisions: {
+          perm: {
+            requestId: "perm",
+            invocationId: "perm-inv",
+            kind: "permission",
+            status: "accepted",
+            title: "Write file",
+            detail: "docs/dogfood/NEXT.md",
+            expiresAt: null,
+            policy: {},
+          },
+        },
+      })}
+    />,
+  );
+  const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+  assert.ok(within(section).getByRole("button", { name: "View diff" }));
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+});
+
+test("Review File changes member does not duplicate View diff in Activity", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: {
+          a1: reviewActivity({
+            path: "docs/dogfood/CLEAN.md",
+            editId: "tc-write",
+            invocationId: "tc-write",
+            diff: "--- /dev/null\n+++ b/docs/dogfood/CLEAN.md\n+CLEAN-OK\n",
+          }),
+        },
+        decisions: {
+          perm: {
+            requestId: "perm",
+            invocationId: "tc-write",
+            kind: "permission",
+            status: "accepted",
+            title: "Write file",
+            detail: "docs/dogfood/CLEAN.md",
+            expiresAt: null,
+            policy: {},
+          },
+        },
+      })}
+    />,
+  );
+  const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+  assert.ok(within(section).getByRole("button", { name: "View diff" }));
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+});
+
+test("Review File changes member does not duplicate Revert edit in Activity", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: {
+          a1: reviewActivity({
+            path: "docs/dogfood/acp-code/revert-probe.md",
+            editId: "rev-write",
+            invocationId: "rev-write",
+            recovery: { kind: "guarded_revert", available: true, status: "available" },
+          }),
+        },
+        decisions: {
+          perm: {
+            requestId: "perm",
+            invocationId: "rev-write",
+            kind: "permission",
+            status: "accepted",
+            title: "Write file",
+            detail: "docs/dogfood/acp-code/revert-probe.md",
+            expiresAt: null,
+            policy: {},
+          },
+        },
+      })}
+    />,
+  );
+  const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+  assert.ok(within(section).getByRole("button", { name: "Revert edit" }));
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByRole("button", { name: "Revert edit" }), null);
+});
+
+test("Review File changes revert success is not repeated in Activity", async () => {
+  const original = api.editRecovery;
+  api.editRecovery = (async () => ({ ok: true, activity: {} })) as typeof api.editRecovery;
+  try {
+    render(
+      <RunSurface
+        run={run({
+          activities: {
+            a1: reviewActivity({
+              path: "docs/dogfood/acp-code/revert-probe.md",
+              editId: "rev-write",
+              invocationId: "rev-write",
+              recovery: { kind: "guarded_revert", available: true, status: "available" },
+            }),
+            a2: reviewActivity({
+              activityId: "a2",
+              path: "docs/dogfood/acp-code/revert-probe.md",
+              editId: "rev-write",
+              invocationId: "rev-write",
+              recovery: { kind: "guarded_revert", available: true, status: "available" },
+            }),
+          },
+          decisions: {
+            perm: {
+              requestId: "perm",
+              invocationId: "rev-write",
+              kind: "permission",
+              status: "accepted",
+              title: "Write file",
+              detail: "docs/dogfood/acp-code/revert-probe.md",
+              expiresAt: null,
+              policy: {},
+            },
+          },
+        })}
+      />,
+    );
+    const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+    fireEvent.click(within(section).getByRole("button", { name: "Revert edit" }));
+    await waitFor(() => assert.ok(within(section).getByText(FILE_CHANGES_REVERT_SUCCESS_TITLE)));
+    assert.equal(screen.getAllByText(FILE_CHANGES_REVERT_SUCCESS_TITLE).length, 1);
+    const activity = screen.getByLabelText("Activity");
+    assert.equal(within(activity).queryByText(FILE_CHANGES_REVERT_SUCCESS_TITLE), null);
+  } finally {
+    api.editRecovery = original;
+  }
 });

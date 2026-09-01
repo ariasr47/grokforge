@@ -108,6 +108,30 @@ test("GET /api/state always includes planEngagement; Chat cannot arm", async () 
   }
 });
 
+test("E1 composer Plan POST without sessionId still plans the shell-session prompt", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "plan-int-e1-"));
+  const host = await startHost({
+    port: await freePort(),
+    env: { GROKFORGE_AGENT_ENTRY: fakeAgent, XAI_API_KEY: "fixture" },
+  });
+  try {
+    await openWorkspace(host.baseUrl, root);
+    const composer = await fetch(host.baseUrl + "/api/plan-engagement", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ engaged: true }),
+    });
+    assert.equal(composer.status, 200, await composer.text());
+    const singleton = await (await fetch(host.baseUrl + "/api/state")).json() as { planEngagement: { engaged: boolean } };
+    assert.equal(singleton.planEngagement.engaged, true);
+    const admitted = await admit(host.baseUrl, "shellplan1", "plan this");
+    assert.equal(admitted.run.executionPhase, "plan");
+  } finally {
+    await host.stop();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("plan-phase write is not_executed and creates no File changes members", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "plan-int-write-"));
   const host = await startHost({
@@ -169,6 +193,44 @@ test("empty ready zero-member plan and Accept clears engagement", async () => {
     assert.equal(accepted.status, 200, await accepted.text());
     const state = await (await fetch(`${host.baseUrl}/api/state?sessionId=${sessionId}`)).json() as any;
     assert.deepEqual(state.planEngagement, { engaged: false, vouched: true });
+  } finally {
+    await host.stop();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("E1 Accept plan does not keep composer Plan on for a later shell session", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "plan-int-e1-next-"));
+  const host = await startHost({
+    port: await freePort(),
+    env: { GROKFORGE_AGENT_ENTRY: fakeAgent, GROKFORGE_FIXTURE: "plan-empty", XAI_API_KEY: "fixture" },
+  });
+  try {
+    await openWorkspace(host.baseUrl, root);
+    const sessionId = "planfirst1";
+    await engagePlan(host.baseUrl, sessionId);
+    const admitted = await admit(host.baseUrl, sessionId, "plan empty");
+    assert.equal(admitted.run.executionPhase, "plan");
+    const replay = await replayUntil(host.baseUrl, sessionId, admitted.run.runId, (body) => {
+      const plan = latestPlan(body);
+      return plan?.status === "ready" && latestPlanDecision(body)?.status === "pending";
+    });
+    const decision = latestPlanDecision(replay);
+    const accepted = await fetch(host.baseUrl + "/api/plan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        runId: admitted.run.runId,
+        requestId: decision.requestId,
+        invocationId: decision.invocationId,
+        connectionGeneration: replay.run.connectionGeneration,
+        action: "accept",
+      }),
+    });
+    assert.equal(accepted.status, 200, await accepted.text());
+    const later = await admit(host.baseUrl, "planlater1", "execute now");
+    assert.equal(later.run.executionPhase, "execute");
   } finally {
     await host.stop();
     await fs.rm(root, { recursive: true, force: true });

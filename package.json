@@ -8,10 +8,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n host,ui -c cyan,magenta \"npm run start --workspace @grokforge/host\" \"npm run dev --workspace @grokforge/shell\"",
-    "start": "npm run start --workspace @grokforge/host",
+    "dev": "node scripts/dev-web.mjs",
+    "start": "node scripts/run-host.mjs --channel=dev",
     "dev:ui": "npm run dev --workspace @grokforge/shell",
-    "dev:host": "npm run start --workspace @grokforge/host",
+    "dev:host": "node scripts/run-host.mjs --channel=dev",
     "desktop": "npm run desktop:dev",
     "desktop:dev": "node scripts/tauri-dev.mjs --channel=dev",
     "desktop:prod": "node scripts/tauri-dev.mjs --channel=prod",

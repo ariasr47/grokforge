@@ -243,6 +243,21 @@ test("hydrating with no prior ready → loading + null members (not false empty)
   assert.equal(p.sectionCopy, BROWSER_LOADING);
 });
 
+test("hydrating with no members on a terminal run is absent, not Loading", () => {
+  const empty = base({
+    browserWork: { disposition: "hydrating", members: null },
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(empty.state, "absent");
+  const zero = base({
+    browserWork: { disposition: "hydrating", members: [] },
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(zero.state, "absent");
+});
+
 test("hydrating ∩ offline still uses Loading as section lead (not offline string)", () => {
   const p = base({
     browserWork: { disposition: "hydrating", members: [runningFetch] },

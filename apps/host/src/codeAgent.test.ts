@@ -29,6 +29,15 @@ describe("resolveVendorCliPath", () => {
       null,
     );
   });
+  it("falls back to grok.cmd on win32 when grok.exe is absent", () => {
+    const hit = resolveVendorCliPath({
+      platform: "win32",
+      pathEnv: "C:\\fake-bin",
+      pathExt: ".EXE;.CMD",
+      isFile: (p) => /grok\.cmd$/i.test(p),
+    });
+    assert.ok(hit && /grok\.cmd$/i.test(hit));
+  });
 });
 
 describe("stampCodeAgentFact", () => {
@@ -43,6 +52,13 @@ describe("stampCodeAgentFact", () => {
     assert.deepEqual(stampCodeAgentFact({ kind: "vendor" }), {
       resolveStatus: "ready",
       identity: "vendor",
+      fallbackReason: null,
+    });
+  });
+  it("A0 house grok-acp → ready/house, not fallback Mini-Grok", () => {
+    assert.deepEqual(stampCodeAgentFact({ kind: "house" }), {
+      resolveStatus: "ready",
+      identity: "house",
       fallbackReason: null,
     });
   });

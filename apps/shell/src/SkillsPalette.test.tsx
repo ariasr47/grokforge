@@ -62,6 +62,7 @@ describe("SkillsPalette", () => {
     );
     assert.ok(screen.getByText(SKILLS_TITLE));
     assert.ok(screen.getByText(SKILLS_CHECKING));
+    assert.ok(document.querySelector(".skills-palette.is-compact"));
     assert.equal(screen.queryByRole("option"), null);
     assert.equal(screen.queryByText(SKILLS_EMPTY), null);
     assert.equal(screen.queryByText(SKILLS_RECONNECT), null);
@@ -129,12 +130,36 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.ok(screen.getByRole("listbox", { name: SKILLS_TITLE }));
+    assert.ok(document.querySelector(".skills-palette-list"));
     const fixture = screen.getByRole("option", { name: "/forge-skill-fixture" });
     assert.ok(fixture.textContent?.includes("Forge skill fixture"));
     const other = screen.getByRole("option", { name: "/other" });
     assert.equal(other.textContent?.includes("null"), false);
     fireEvent.click(fixture);
     assert.equal(selected, "/forge-skill-fixture");
+  });
+
+  it("ready mixed voucher paints every /name option", () => {
+    render(
+      <SkillsPalette
+        open
+        projection={{
+          state: "ready",
+          commands: [
+            { name: "/a", description: null },
+            { name: "/b", description: "bee" },
+          ],
+        }}
+        filter=""
+        activeIndex={0}
+        onSelect={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    assert.ok(screen.getByRole("option", { name: "/a" }));
+    assert.ok(screen.getByRole("option", { name: /\/b/ }));
+    assert.equal(screen.queryByRole("option", { name: "no-slash" }), null);
+    assert.equal(screen.queryByText(SKILLS_FAILED), null);
   });
 
   it("filter miss shows No matches — not invented rows", () => {

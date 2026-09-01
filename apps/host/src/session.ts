@@ -31,8 +31,8 @@ import {
   resolveEffort,
   type Effort,
 } from "./effort.js";
-import { getAgent, listAgents, resolveAgentSpawn, resolveVendorCodeSpawn } from "./agents.js";
-import { resolveVendorCliPath, stampCodeAgentFact, vendorSpawnEnv, type CodeAgentFact, type CodeRunAgentProvenance } from "./codeAgent.js";
+import { getAgent, listAgents, resolveAgentSpawn } from "./agents.js";
+import { stampCodeAgentFact, vendorSpawnEnv, type CodeAgentFact, type CodeRunAgentProvenance } from "./codeAgent.js";
 import {
   ABSENT_NON_VENDOR,
   applyValidCommands,
@@ -101,7 +101,7 @@ import { RunJournal } from "./run-journal.js";
 import { RunCoordinator } from "./run-coordinator.js";
 import { randomUUID } from "node:crypto";
 import type { ActivityRecord, ChatPackTurnVoucher, DecisionKind, FailureView, MutationKind, PlanRecord, PolicySnapshot, RunEventEnvelope, RunSnapshot, RunState, TerminalKind } from "./run-types.js";
-import { exploringPlanRecord, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
+import { exploringPlanRecord, planBodyFromVendorExit, planDecisionTitle, terminalPlanRecord } from "./plan-record.js";
 import { dataDir } from "./channel.js";
 import { WorkspacePolicyStore, type WorkspacePolicyView } from "./workspace-policy.js";
 import {
@@ -237,7 +237,7 @@ export function activityRecordFromProposedEdit(input: {
 }): ActivityRecord {
   const kind = input.kind ?? (typeof input.diff === "string" && input.diff.length > 0 ? "content" : null);
   return {
-    activityId: input.editId,
+    activityId: input.invocationId,
     invocationId: input.invocationId,
     name: input.name ?? (kind === "delete" ? "delete_file" : kind === "rename" ? "rename_file" : "write_file"),
     lifecycle: "pending",
@@ -294,7 +294,10 @@ export function retainActivityAfterDiff(
     autoApplied: false,
     command: null,
     editId: input.editId,
-    recovery: null,
+    recovery:
+      input.action === "accept"
+        ? { kind: "guarded_revert", available: true, status: "available" }
+        : null,
     summary: prior?.summary ?? null,
     title: prior?.title ?? null,
     acpToolKind: prior?.acpToolKind ?? null,
@@ -1597,6 +1600,14 @@ export class AgentSession {
     return false;
   }
 
+  /** Plan arm is for the next send. A finished turn with no plan dock must not leak it. */
+  private releasePlanArmIfIdle(): boolean {
+    if (!this.planEngaged) return false;
+    if (this.hasPendingPlanDecision()) return false;
+    this.planEngaged = false;
+    return true;
+  }
+
   private isDecisionExpired(_pending: { kind: DecisionKind; expiresAt: number } | undefined): boolean {
     return false;
   }
@@ -1781,24 +1792,11 @@ export class AgentSession {
     return this.getState();
   }
 
-  private probeVendorCli(): string | null {
-    return resolveVendorCliPath({
-      platform: process.platform,
-      pathEnv: process.env.Path ?? process.env.PATH ?? "",
-      pathExt: process.env.PATHEXT,
-      isFile: (p) => {
-        try { return fs.statSync(p).isFile(); } catch { return false; }
-      },
-    });
-  }
-
   private eagerResolveCodeAgent(): void {
     this.codeAgent = stampCodeAgentFact({ kind: "resolving" });
     this.broadcastState();
-    const cli = this.probeVendorCli();
-    this.codeAgent = cli
-      ? stampCodeAgentFact({ kind: "vendor" })
-      : stampCodeAgentFact({ kind: "cli_missing" });
+    this.codeAgent = stampCodeAgentFact({ kind: "house" });
+    this.clearSkillsCatalogToAbsent();
     this.syncChildAgentsEligibility();
     this.syncBrowserWorkEligibility();
     this.syncMcpServersEligibility();
@@ -1847,9 +1845,17 @@ export class AgentSession {
   }
 
   private applyAvailableCommandsEvent(ev: Extract<AcpUiEvent, { type: "available_commands" }>): void {
-    if (this.codeAgent?.identity !== "vendor") return;
+    if (this.cfg.mode !== "code") return;
+    if (this.codeAgent?.identity === "fallback" || this.codeAgent?.identity === "hard_fail") return;
     if (ev.valid && Array.isArray(ev.commands)) {
+      const firstReady = this.skillsCatalog.disposition !== "ready";
       this.replaceSkillsCatalog(applyValidCommands(this.skillsCatalog, ev.commands), "off");
+      if (firstReady) {
+        log("info", "skills catalog ready", {
+          count: ev.commands.length,
+          sessionId: this.sessionId,
+        });
+      }
       return;
     }
     log("warn", "malformed available_commands ignored", { sessionId: this.sessionId });
@@ -1935,6 +1941,27 @@ export class AgentSession {
           await this.applyLiveMcpServerEvent(ev);
           return;
         }
+        if (ev.type === "vendor_plan_exit") {
+          const run = this.activeRunId ? this.runCoordinator.get(this.activeRunId) : undefined;
+          if (!run || !this.activeRunId) {
+            await this.client?.respondPlanExit?.(ev.id, "abandoned");
+            return;
+          }
+          const body = planBodyFromVendorExit(
+            ev.planContent,
+            this.runCoordinator.getAccumulatedAnswer(this.activeRunId),
+            await this.vendorPlanFileBody(run.runId, run.sessionId),
+          );
+          if (body) {
+            await this.settlePlanPhase(run, "answered", body, String(ev.id));
+          } else {
+            // Empty `Plan: Exit` — let the vendor finish the plan text, then
+            // stamp the dock from the accumulated answer at prompt done.
+            await this.client?.respondPlanExit?.(ev.id, "approved");
+          }
+          await this.appendPostToolRunState(this.activeRunId, "terminal");
+          return;
+        }
         if (ev.type === "hook") {
           await this.applyLiveHookEvent(ev);
           return;
@@ -1994,11 +2021,13 @@ export class AgentSession {
             const run = this.runCoordinator.get(this.activeRunId);
             if (run) {
               const replyDialect = this.codeAgent?.identity === "vendor" ? "acp_result" as const : "grok_permission_respond" as const;
+              const invocationId =
+                typeof ev.toolCallId === "string" && ev.toolCallId ? ev.toolCallId : ev.id;
               this.pendingDecisions.set(ev.id, {
                 sessionId: run.sessionId,
                 runId: run.runId,
                 generation: run.connectionGeneration,
-                invocationId: ev.id,
+                invocationId,
                 kind: "permission",
                 permissionKind: ev.kind,
                 status: "pending",
@@ -2009,7 +2038,7 @@ export class AgentSession {
                 kind: "decision_request",
                 request: {
                   requestId: ev.id,
-                  invocationId: ev.id,
+                  invocationId,
                   kind: "permission",
                   status: "pending",
                   title: ev.kind === "shell" ? "Run shell" : "Write file",
@@ -2192,6 +2221,13 @@ export class AgentSession {
             const terminal: TerminalKind = cancelled
               ? "cancelled"
               : (ev.type === "error" || ev.reason === "error" || exited ? "failed" : "answered");
+            // Plan Accept/Keep already queued an answered end and cancelled the
+            // vendor TUI wait — don't CAS-finalize that cancel as cancelled.
+            if (this.queuedTurnEnd.has(this.activeRunId) && !this.hasUnansweredAskForRun(this.activeRunId)) {
+              await this.drainQueuedTurnEnd(this.activeRunId);
+              this.emit(ev);
+              return;
+            }
             // Asks already open at RPC return win: queue completion; do not CAS-finalize yet.
             // Asks this completion itself will mint (plan settlePlanPhase) are not a hold —
             // only pre-existing pendingDecisions count here.
@@ -2218,7 +2254,7 @@ export class AgentSession {
                     agent_exited: "agent_exited",
                   } as Record<string, "missing_final_answer" | "provider_liveness_exhausted" | "authentication_required" | "configuration_required" | "execution_owner_lost" | "agent_exited">)[ev.code] ?? "provider_unavailable"
                 : null;
-            if (active?.executionPhase === "plan") {
+            if (active && (active.executionPhase === "plan" || this.planEngaged)) {
               await this.settlePlanPhase(active, terminal, this.runCoordinator.getAccumulatedAnswer(this.activeRunId) || null);
             }
             await this.runCoordinator.finalize(
@@ -2230,7 +2266,7 @@ export class AgentSession {
                     code: failureCode ?? "provider_unavailable",
                     message: exited
                       ? "The agent process exited."
-                      : ev.code === "missing_final_answer"
+                      : ev.type === "error" && ev.code === "missing_final_answer"
                         ? "No final answer was produced."
                         : "The run ended before a final answer. Your prompt and received output are preserved.",
                     retryable: true,
@@ -2253,6 +2289,7 @@ export class AgentSession {
           }
           this.pendingFallback = null;
           this.setBusy(false);
+          this.releasePlanArmIfIdle();
           if (ev.type === "error" && ev.code === "agent_exited") {
             if (this.client === gen) {
               this.client = null;
@@ -2336,69 +2373,22 @@ export class AgentSession {
       this.client &&
       this.sessionId &&
       this.spawnLive &&
-      this.codeAgent?.identity === "vendor"
+      this.codeAgent?.identity === "house"
     ) {
-      await this.stampLiveProvenance(ownedRunId, { identity: "vendor", fallbackReason: null });
+      await this.stampLiveProvenance(ownedRunId, { identity: "house", fallbackReason: null });
       this.broadcastState();
       return;
     }
     await this.disposeAgentClient();
-    const cli = this.probeVendorCli();
-    let fallbackReason: "cli_missing" | "spawn_failed" | null = cli ? null : "cli_missing";
-    if (cli) {
-      const spec = resolveVendorCodeSpawn({
-        command: cli,
-        cwd: this.workspace,
-        baseEnv: this.vendorBaseEnv(),
-      });
-      log("info", "starting agent", {
-        source: "vendor",
-        workspace: this.workspace,
-        mode: "code",
-        command: spec.command,
-        args: spec.args,
-      });
-      const client = new StdioAcpClient({
-        workspaceRoot: spec.cwd ?? this.workspace,
-        command: spec.command,
-        args: spec.args,
-        executionProfile: this.executionEnvironment.profile,
-        env: Object.freeze(spec.env ?? {}),
-        initializePermissionMode: "default",
-        authenticateMethod: "cached_token",
-      });
-      this.attachCurrentClientHandlers(client);
-      this.replaceSkillsCatalog(enterAwaiting(this.skillsCatalog), "obtain");
-      const ok = await this.handshakeLive(client, false);
-      if (ok) {
-        this.codeAgent = stampCodeAgentFact({ kind: "vendor" });
-        if (this.skillsCatalog.disposition !== "ready") {
-          this.replaceSkillsCatalog(enterAwaiting(this.skillsCatalog), "obtain");
-        }
-        await this.stampLiveProvenance(ownedRunId, { identity: "vendor", fallbackReason: null });
-        this.syncChildAgentsEligibility();
-        this.syncBrowserWorkEligibility();
-        this.syncMcpServersEligibility();
-        this.syncHooksEligibility();
-        if (this.vendorChildAgentsEligible()) await this.restoreChildAgentsFromJournal();
-        if (this.vendorBrowserWorkEligible()) await this.restoreBrowserWorkFromJournal();
-        if (this.vendorMcpEligible()) await this.restoreMcpServersFromJournal();
-        if (this.vendorHooksEligible()) await this.restoreHooksFromJournal();
-        this.broadcastState();
-        return;
-      }
-      fallbackReason = "spawn_failed";
-    }
     const grokOk = await this.startGrokAcpChild(false);
     if (grokOk) {
-      const kind = fallbackReason === "spawn_failed" ? "spawn_failed" as const : "cli_missing" as const;
-      this.codeAgent = stampCodeAgentFact({ kind });
+      this.codeAgent = stampCodeAgentFact({ kind: "house" });
       this.clearSkillsCatalogToAbsent();
       this.replaceChildAgents(clearChildAgentsToAbsent(this.childAgents));
       this.replaceBrowserWork(clearBrowserWorkToAbsent(this.browserWork));
       this.replaceMcpServers(clearMcpServersToAbsent(this.mcpServers));
       this.replaceHooks(clearHooksToAbsent(this.hooks));
-      await this.stampLiveProvenance(ownedRunId, { identity: "fallback", fallbackReason: kind });
+      await this.stampLiveProvenance(ownedRunId, { identity: "house", fallbackReason: null });
       this.broadcastState();
       return;
     }
@@ -2423,7 +2413,7 @@ export class AgentSession {
       command,
       args,
       executionProfile: this.executionEnvironment.profile,
-      env: Object.freeze(this.grokAcpEnv(mode, token)),
+      env: Object.freeze(this.grokAcpEnv(mode, token ?? null)),
     });
     this.attachCurrentClientHandlers(client);
     return this.handshakeLive(client, emitStartFailed);
@@ -2545,11 +2535,13 @@ export class AgentSession {
       skillHandoff?: { name: string } | null;
     },
   ): Promise<RunSnapshot> {
-    await this.runHydration;
     if (this.activeRunId && this.runCoordinator.get(this.activeRunId)?.state === "terminal") { this.activeRunId = null; this.pendingFallback = null; this.setBusy(false); }
     if (this.busy) {
-      throw new Error("Agent is busy — wait or Cancel before sending again");
+      throw Object.assign(new Error("Agent is busy — wait or Cancel before sending again"), { code: "run_active" });
     }
+    this.setBusy(true);
+    try {
+    await this.runHydration;
     this.cfg = loadConfig();
     this.stableClientSessionId = opts?.clientSessionId ?? this.stableClientSessionId;
     const mode = this.cfg.mode === "code" ? "code" : "chat";
@@ -2609,7 +2601,6 @@ export class AgentSession {
       suppressNextDone: false,
     };
 
-    this.setBusy(true);
     const admitted = await this.runCoordinator.admit({
       sessionId: opts?.clientSessionId || this.sessionId,
       prompt: text,
@@ -2707,6 +2698,7 @@ export class AgentSession {
       sessionId: this.sessionId,
       workspace: this.workspace,
       mode,
+      executionPhase,
       effort: selected,
       model: modelsChain[0],
       fallbackModels: modelsChain.slice(1),
@@ -2769,7 +2761,15 @@ export class AgentSession {
       if (mode === "code" && this.activeRunId) {
         await this.runCoordinator.stampSkillHandoffProvenance(this.activeRunId, { kind: "none", name: null }).catch(() => undefined);
       }
-      if (this.activeRunId) { await this.runCoordinator.finalize(this.activeRunId, "failed", null, { code: "provider_unavailable", message: "Prompt failed.", retryable: true, recoveryAction: "retry_prompt" }); this.activeRunId = null; }
+      if (this.activeRunId) {
+        const queued = this.queuedTurnEnd.get(this.activeRunId);
+        if (queued) {
+          await this.drainQueuedTurnEnd(this.activeRunId);
+        } else {
+          await this.runCoordinator.finalize(this.activeRunId, "failed", null, { code: "provider_unavailable", message: "Prompt failed.", retryable: true, recoveryAction: "retry_prompt" });
+          this.activeRunId = null;
+        }
+      }
       this.setBusy(false);
       this.broadcastState();
       const message = e instanceof Error ? e.message : String(e);
@@ -2782,6 +2782,10 @@ export class AgentSession {
       throw e;
     }
     return admitted;
+    } catch (e) {
+      if (!this.activeRunId) this.setBusy(false);
+      throw e;
+    }
   }
   async shutdown(): Promise<void> {
     this.clearSkillsObtainTimer();
@@ -2979,7 +2983,7 @@ export class AgentSession {
     }
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
     if (pending) this.pendingDecisions.delete(id);
-    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:"Permission",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:pending?.permissionKind==="shell"?"Run shell":"Write file",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     if (ownership) await this.drainQueuedTurnEnd(ownership.runId);
     return decision === "deny" ? "declined" : "accepted";
   }
@@ -3043,15 +3047,60 @@ export class AgentSession {
       invocationId: pending.invocationId,
       kind: "plan",
       status,
-      title: planDecisionTitle(nextPlan.proposedMembers),
+      title: planDecisionTitle(nextPlan.proposedMembers, nextPlan.body),
       detail: "",
       expiresAt: null,
       policy: run.policy,
     });
     this.pendingDecisions.delete(requestId);
+    const vendorReplied = this.client?.respondPlanExit
+      ? await this.client.respondPlanExit(requestId, action === "accept" ? "approved" : "cancelled")
+      : false;
+    if (vendorReplied) {
+      await this.appendPostToolRunState(ownership.runId, "terminal");
+      this.broadcastState();
+      return status;
+    }
+    const live = this.runCoordinator.get(ownership.runId);
+    if (live && live.state !== "terminal") {
+      this.queuedTurnEnd.set(ownership.runId, { terminalKind: "answered", failure: null });
+    }
     await this.drainQueuedTurnEnd(ownership.runId);
     this.broadcastState();
     return status;
+  }
+
+  private async vendorPlanFileBody(runId: string, sessionId: string): Promise<string | null> {
+    let lastPath: string | null = null;
+    let lastContent: string | null = null;
+    try {
+      const replayed = await this.replayRun(runId, sessionId, 0);
+      for (const event of replayed.events) {
+        if (event.type !== "activity_update" || event.payload.kind !== "activity_update") continue;
+        const activity = event.payload.activity;
+        const rawPath = typeof activity.path === "string" ? activity.path : "";
+        if (!/plan\.md$/i.test(rawPath.replace(/\\/g, "/"))) continue;
+        lastPath = rawPath;
+        const input = activity.input;
+        if (input && typeof input === "object") {
+          const rec = input as Record<string, unknown>;
+          const content = rec.content ?? rec.new_string ?? rec.body;
+          if (typeof content === "string" && content.trim()) lastContent = content;
+        }
+      }
+    } catch {
+      /* fall through to disk */
+    }
+    if (lastContent?.trim()) return lastContent;
+    if (lastPath) {
+      try {
+        const text = await fsPromises.readFile(lastPath, "utf8");
+        if (text.trim()) return text;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
   }
 
   private async latestPlanRecord(runId: string, sessionId: string): Promise<PlanRecord | null> {
@@ -3082,7 +3131,7 @@ export class AgentSession {
     await this.runCoordinator.appendAfterTerminalEvent(runId, { kind: "decision_request", request }, "decision_request").catch(() => undefined);
   }
 
-  private async settlePlanPhase(run: RunSnapshot, terminalKind: TerminalKind, body: string | null): Promise<void> {
+  private async settlePlanPhase(run: RunSnapshot, terminalKind: TerminalKind, body: string | null, requestId: string = randomUUID()): Promise<void> {
     const record = terminalPlanRecord({
       runId: run.runId,
       sessionId: run.sessionId,
@@ -3103,7 +3152,6 @@ export class AgentSession {
     await this.runCoordinator.appendOwnedEvent(run.runId, { kind: "plan_record", plan: record }, "plan_record").catch(() => undefined);
     if (record.status !== "ready") return;
     this.lastReadyPlanRunId = run.runId;
-    const requestId = randomUUID();
     this.pendingDecisions.set(requestId, {
       sessionId: run.sessionId,
       runId: run.runId,
@@ -3120,7 +3168,7 @@ export class AgentSession {
         invocationId: requestId,
         kind: "plan",
         status: "pending",
-        title: planDecisionTitle(record.proposedMembers),
+        title: planDecisionTitle(record.proposedMembers, record.body),
         detail: record.body ?? "",
         expiresAt: null,
         policy: run.policy,
@@ -3170,12 +3218,16 @@ export class AgentSession {
       return;
     }
     this.queuedTurnEnd.delete(runId);
-    if (run.executionPhase === "plan") {
-      await this.settlePlanPhase(run, queued.terminalKind, this.runCoordinator.getAccumulatedAnswer(runId) || null);
+    if (run.executionPhase === "plan" || this.planEngaged) {
+      const plan = await this.latestPlanRecord(runId, run.sessionId);
+      if (plan?.status !== "accepted" && plan?.status !== "kept_planning" && plan?.status !== "cancelled") {
+        await this.settlePlanPhase(run, queued.terminalKind, this.runCoordinator.getAccumulatedAnswer(runId) || null);
+      }
     }
     await this.runCoordinator.finalize(runId, queued.terminalKind, null, queued.failure);
     if (this.activeRunId === runId) this.activeRunId = null;
     this.setBusy(false);
+    this.releasePlanArmIfIdle();
     this.broadcastState();
   }
 

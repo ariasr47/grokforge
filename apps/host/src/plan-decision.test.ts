@@ -20,7 +20,7 @@ const policy: PolicySnapshot = {
 const model = { requestedModel: "grok-4.6", appliedModel: "grok-4.6", selectionProvenance: "inherited" as const };
 
 describe("plan decisions", { concurrency: 1 }, () => {
-  async function readyPlan(body: string) {
+  async function inFlightPlan(body: string) {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "plan-dec-"));
     const coordinator = new RunCoordinator(new RunJournal(dir));
     const run = await coordinator.admit({
@@ -34,6 +34,7 @@ describe("plan decisions", { concurrency: 1 }, () => {
     const s = Object.create(AgentSession.prototype) as AgentSession;
     Object.assign(s, {
       pendingDecisions: new Map(),
+      queuedTurnEnd: new Map(),
       planEngaged: true,
       planEngagementVouched: true,
       lastReadyPlanRunId: null,
@@ -53,8 +54,13 @@ describe("plan decisions", { concurrency: 1 }, () => {
       bypassActive: false,
     });
     await (s as unknown as { settlePlanPhase: (next: unknown, kind: "answered", text: string) => Promise<void> }).settlePlanPhase(run, "answered", body);
-    await coordinator.finalize(run.runId, "answered", body);
     return { s, run, coordinator, dir };
+  }
+
+  async function readyPlan(body: string) {
+    const h = await inFlightPlan(body);
+    await h.coordinator.finalize(h.run.runId, "answered", body);
+    return h;
   }
 
   function pendingId(s: AgentSession): string {
@@ -71,6 +77,27 @@ describe("plan decisions", { concurrency: 1 }, () => {
     }
     return latest;
   }
+
+  test("accept on in-flight plan finalizes answered and does not mint a second pending", async () => {
+    const h = await inFlightPlan("- Update `src/a.ts`\n- Create apps/shell/src/b.tsx");
+    try {
+      const requestId = pendingId(h.s);
+      const settled = await h.s.planAction(requestId, "accept", {
+        sessionId: "stable-plan-01",
+        runId: h.run.runId,
+        connectionGeneration: 1,
+      }, requestId);
+      assert.equal(settled, "accepted");
+      const live = h.coordinator.get(h.run.runId);
+      assert.equal(live?.state, "terminal");
+      assert.equal(live?.terminalKind, "answered");
+      const map = (h.s as unknown as { pendingDecisions: Map<string, { kind: string; status: string }> }).pendingDecisions;
+      assert.equal([...map.values()].filter((p) => p.kind === "plan" && p.status === "pending").length, 0);
+      assert.equal(h.s.getState().planEngagement.engaged, false);
+    } finally {
+      await fs.rm(h.dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
 
   test("accept clears engagement, applies no edits, settles accepted", async () => {
     const h = await readyPlan("- Update `src/a.ts`\n- Create apps/shell/src/b.tsx");
@@ -206,6 +233,7 @@ describe("plan decisions", { concurrency: 1 }, () => {
     const s = Object.create(AgentSession.prototype) as AgentSession;
     Object.assign(s, {
       pendingDecisions: new Map(),
+      queuedTurnEnd: new Map(),
       planEngaged: true,
       planEngagementVouched: true,
       lastReadyPlanRunId: null,

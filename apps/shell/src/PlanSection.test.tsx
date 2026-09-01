@@ -54,7 +54,7 @@ test("empty ready shows No changes proposed. and zero members", () => {
 test("accepted helper with Policy label", () => {
   render(
     <PlanSection
-      projection={{ state: "accepted", policyLabel: "Review", bypassActive: false }}
+      projection={{ state: "accepted", policyLabel: "Review", bypassActive: false, body: null }}
     />,
   );
   assert.ok(screen.getByText(PLAN_ACCEPTED_TITLE));
@@ -64,10 +64,23 @@ test("accepted helper with Policy label", () => {
 test("accepted helper appends Bypass only when vouched", () => {
   render(
     <PlanSection
-      projection={{ state: "accepted", policyLabel: "Trusted workspace", bypassActive: true }}
+      projection={{ state: "accepted", policyLabel: "Trusted workspace", bypassActive: true, body: null }}
     />,
   );
   assert.ok(screen.getByText(acceptedHelper("Trusted workspace", true)));
+});
+
+test("accepted plan keeps the three-step body visible", () => {
+  const body =
+    "Three-step plan for apps/shell typecheck.\n\n1. Set-Location apps/shell\n2. npx tsc --noEmit\n3. Read the result.";
+  render(
+    <PlanSection
+      projection={{ state: "accepted", policyLabel: "Review", bypassActive: false, body }}
+    />,
+  );
+  assert.ok(screen.getByText(PLAN_ACCEPTED_TITLE));
+  assert.ok(document.querySelector(".plan-body"));
+  assert.match(document.querySelector(".plan-body")?.textContent ?? "", /1\.\s*Set-Location/);
 });
 
 test("cancelled / failed / superseded / load failure exact copy", () => {

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { expandAtMentions } from "./expandMentions.js";
+import {
+  MENTION_ATTACH_MARKER,
+  expandAtMentions,
+  splitUserPromptMentions,
+  visibleUserPrompt,
+} from "./expandMentions.js";
 
 describe("expandAtMentions", () => {
   it("injects file bodies for @paths", async () => {
@@ -17,5 +22,25 @@ describe("expandAtMentions", () => {
       throw new Error("should not read");
     });
     assert.equal(out, "plain");
+  });
+
+  it("visibleUserPrompt hides the attached dump", async () => {
+    const typed = "@AGENTS.md Quote the first heading.";
+    const out = await expandAtMentions(typed, async () => ({
+      content: "# Spire OS — multi-provider workspace\nrest",
+    }));
+    assert.match(out, new RegExp(MENTION_ATTACH_MARKER.replace(/[[\]]/g, "\\$&")));
+    assert.equal(visibleUserPrompt(out), typed);
+    assert.equal(visibleUserPrompt("plain"), "plain");
+  });
+});
+
+describe("splitUserPromptMentions", () => {
+  it("keeps @path as its own mention token", () => {
+    const parts = splitUserPromptMentions("@AGENTS.md Quote the first heading.");
+    assert.deepEqual(parts, [
+      { kind: "mention", value: "@AGENTS.md" },
+      { kind: "text", value: " Quote the first heading." },
+    ]);
   });
 });

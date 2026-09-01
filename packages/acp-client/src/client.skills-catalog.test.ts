@@ -101,16 +101,83 @@ test("available_commands_update empty list is valid ready-empty", async () => {
   assert.deepEqual(hit.commands, []);
 });
 
-test("malformed member emits valid:false", async () => {
+/** Same shape on both twin sites. Junk-last-only is insufficient. */
+const INTERIOR_JUNK_CASES: Array<{ label: string; junk: unknown }> = [
+  { label: "whitespace-name", junk: { name: "has space" } },
+  { label: "number", junk: 1 },
+  { label: "null", junk: null },
+  { label: "raw-string", junk: "raw" },
+];
+
+function interiorJunkPayload(junk: unknown) {
+  return [
+    { name: "/a", description: null },
+    junk,
+    { name: "/b", description: "bee" },
+  ];
+}
+
+const EXPECTED_AFTER_SKIP = [
+  { name: "/a", description: null },
+  { name: "/b", description: "bee" },
+];
+
+for (const { label, junk } of INTERIOR_JUNK_CASES) {
+  test(`interior-junk (${label}) emits valid with /a and /b`, async () => {
+    const events = await collectFromUpdate({
+      sessionUpdate: "available_commands_update",
+      availableCommands: interiorJunkPayload(junk),
+    });
+    const hit = events.find((e) => e.type === "available_commands");
+    assert.equal(hit?.type, "available_commands");
+    if (hit?.type !== "available_commands") return;
+    assert.equal(hit.valid, true);
+    assert.deepEqual(hit.commands, EXPECTED_AFTER_SKIP);
+  });
+}
+
+test("non-empty all-skipped emits valid:false (not ready-empty)", async () => {
   const events = await collectFromUpdate({
     sessionUpdate: "available_commands_update",
-    availableCommands: [{ name: "/ok" }, { name: "no-slash" }],
+    availableCommands: [{ name: "has space" }, 1, null],
   });
   const hit = events.find((e) => e.type === "available_commands");
   assert.equal(hit?.type, "available_commands");
   if (hit?.type !== "available_commands") return;
   assert.equal(hit.valid, false);
   assert.equal(hit.commands, null);
+});
+
+test("ACP names without slash normalize to /name", async () => {
+  const events = await collectFromUpdate({
+    sessionUpdate: "available_commands_update",
+    availableCommands: [
+      { name: "web", description: "Search the web" },
+      { name: "/ok" },
+      { name: "plan", description: "Create a plan" },
+    ],
+  });
+  const hit = events.find((e) => e.type === "available_commands");
+  assert.equal(hit?.type, "available_commands");
+  if (hit?.type !== "available_commands") return;
+  assert.equal(hit.valid, true);
+  assert.deepEqual(hit.commands, [
+    { name: "/web", description: "Search the web" },
+    { name: "/ok", description: null },
+    { name: "/plan", description: "Create a plan" },
+  ]);
+});
+
+test("mixed junk-last still valid with accepted /ok", async () => {
+  const events = await collectFromUpdate({
+    sessionUpdate: "available_commands_update",
+    availableCommands: [{ name: "/ok" }, { name: "has space" }],
+  });
+  const hit = events.find((e) => e.type === "available_commands");
+  assert.equal(hit?.type, "available_commands");
+  if (hit?.type !== "available_commands") return;
+  assert.equal(hit.valid, true);
+  assert.deepEqual(hit.commands, [{ name: "/ok", description: null }]);
 });
 
 test("unknown sessionUpdate kind still logs Unmapped vendor sessionUpdate kind", async () => {
@@ -122,4 +189,46 @@ test("unknown sessionUpdate kind still logs Unmapped vendor sessionUpdate kind",
     true,
   );
   assert.equal(events.some((e) => e.type === "available_commands"), false);
+});
+
+test("session_info_update and user_message_chunk are known no-ops, not unmapped", async () => {
+  for (const kind of ["session_info_update", "user_message_chunk", "current_mode_update"]) {
+    const client = new StdioAcpClient({
+      workspaceRoot: process.cwd(),
+      command: process.execPath,
+      args: ["-e", childScript({ sessionUpdate: kind })],
+      env: Object.freeze({}),
+      executionProfile: profile,
+      initializePermissionMode: "default",
+    });
+    const events: AcpUiEvent[] = [];
+    client.onEvent((e) => events.push(e));
+    try {
+      await client.initialize();
+      await client.newSession();
+      await new Promise((r) => setTimeout(r, 80));
+      assert.equal(
+        events.some((e) => e.type === "agent_log" && e.message.startsWith("Unmapped vendor sessionUpdate kind")),
+        false,
+        kind,
+      );
+    } finally {
+      await client.dispose();
+    }
+  }
+});
+
+test("mixed invalid available_commands members skip as one summary warn", async () => {
+  const events = await collectFromUpdate({
+    sessionUpdate: "available_commands_update",
+    availableCommands: [
+      { name: "/ok", description: "ok" },
+      { name: "has space" },
+      1,
+      null,
+    ],
+  });
+  const skips = events.filter((e) => e.type === "agent_log" && /Skipped \d+ unusable available_commands members/.test(e.message));
+  assert.equal(skips.length, 1);
+  assert.equal(skips[0]?.type === "agent_log" && skips[0].message, "Skipped 3 unusable available_commands members.");
 });

@@ -23,13 +23,17 @@ afterEach(() => {
 
 async function installSpawnableGrok(binDir: string, workspace: string): Promise<void> {
   await fs.mkdir(binDir, { recursive: true });
-  const grokPath = path.join(binDir, process.platform === "win32" ? "grok.exe" : "grok");
+  await fs.writeFile(path.join(workspace, "package.json"), JSON.stringify({ type: "module" }));
+  await fs.copyFile(vendorFixture, path.join(workspace, "agent.js"));
+  const agentJs = path.join(workspace, "agent.js");
   if (process.platform === "win32") {
-    try { await fs.link(process.execPath, grokPath); }
-    catch { await fs.copyFile(process.execPath, grokPath); }
-    await fs.writeFile(path.join(workspace, "package.json"), JSON.stringify({ type: "module" }));
-    await fs.copyFile(vendorFixture, path.join(workspace, "agent.js"));
+    const cmd = path.join(binDir, "grok.cmd");
+    await fs.writeFile(
+      cmd,
+      `@echo off\r\n"${process.execPath}" "${agentJs}" %*\r\n`,
+    );
   } else {
+    const grokPath = path.join(binDir, "grok");
     await fs.writeFile(grokPath, `#!/usr/bin/env node\nimport ${JSON.stringify(pathToFileURL(vendorFixture).href)};\n`);
     await fs.chmod(grokPath, 0o755);
   }
@@ -69,6 +73,11 @@ it("Review vendor session/request_permission docks and Allow replies ACP result"
       await new Promise((r) => setTimeout(r, 40));
     }
     assert.ok(decision, "Review must mint decision_request for vendor permission ask");
+    assert.equal(
+      decision.invocationId,
+      "write-1",
+      "File changes joins on vendor toolCallId, not the permission RPC id",
+    );
     const settled = await session.permission(
       decision.requestId,
       "allow_once",

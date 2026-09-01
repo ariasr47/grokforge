@@ -53,8 +53,9 @@ export function mergePendingPermissions(prev: PermissionReq[], run: RunProjectio
       .filter((d) => d.kind === "permission" && d.status === "pending" && run.state !== "terminal")
       .map((d) => d.requestId),
   );
-  const kept = prev.filter((p) => pendingIds.has(p.id) && !durableIds.has(p.id));
-  return [...rebuilt, ...kept];
+  const keptSame = prev.filter((p) => p.runId === run.runId && pendingIds.has(p.id) && !durableIds.has(p.id));
+  const keptOther = prev.filter((p) => p.runId !== run.runId);
+  return [...rebuilt, ...keptSame, ...keptOther];
 }
 
 export function hasDockOwnedPending(run: RunProjectionRun): boolean {
@@ -62,6 +63,47 @@ export function hasDockOwnedPending(run: RunProjectionRun): boolean {
 }
 
 export type RailEvidence = { identity: string; content: string };
+
+/** Identities of permission/diff rail chips that should not stay after settlement. */
+export function settledRailIdentities(run: RunProjectionRun): Set<string> {
+  const out = new Set<string>();
+  const terminal = run.state === "terminal";
+  for (const d of Object.values(run.decisions)) {
+    if (d.kind !== "permission" && d.kind !== "diff") continue;
+    if (!terminal && d.status === "pending") continue;
+    const kind = d.kind === "diff" ? "diff" : "permission";
+    out.add(`${kind}:${d.requestId}`);
+    if (d.invocationId && d.invocationId !== d.requestId) {
+      out.add(`${kind}:${d.invocationId}`);
+    }
+  }
+  return out;
+}
+
+export function isStaleRailChip(
+  message: { role: string; content: string; id?: string; activityIdentity?: string | null },
+  settled: Set<string>,
+): boolean {
+  if (message.role !== "system") return false;
+  if (
+    !message.content.startsWith("Permission requested:") &&
+    !message.content.startsWith("Diff proposed:")
+  ) {
+    return false;
+  }
+  for (const c of [message.activityIdentity, message.id]) {
+    if (!c) continue;
+    if (settled.has(c)) return true;
+    if (c.startsWith("rail-") && settled.has(c.slice(5))) return true;
+    if (c.startsWith("perm-sys-") && settled.has(`permission:${c.slice("perm-sys-".length)}`)) {
+      return true;
+    }
+    if (c.startsWith("diff-sys-") && settled.has(`diff:${c.slice("diff-sys-".length)}`)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export function railEvidenceFromRun(run: RunProjectionRun): RailEvidence[] {
   const out: RailEvidence[] = [];
@@ -139,6 +181,21 @@ function nonemptyRelPath(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** File changes already owns this edit — Activity must not duplicate View diff. */
+export function changeListCoversActivity(
+  changeList: RunChangeListProjection,
+  activity: Pick<ActivityRecord, "activityId" | "editId" | "path">,
+): boolean {
+  if (changeList.state !== "ready") return false;
+  const path = nonemptyRelPath(activity.path);
+  return changeList.members.some(
+    (m) =>
+      m.activityId === activity.activityId ||
+      (activity.editId != null && m.editId === activity.editId) ||
+      (path != null && m.path === path),
+  );
+}
+
 /** Vouched kind only. Legacy content when kind is omitted; never invent delete/rename. */
 function resolvedKind(activity: ActivityRecord): MutationKind | null {
   if (activity.kind === "delete" || activity.kind === "rename" || activity.kind === "content") {
@@ -162,8 +219,15 @@ function isChangeListMember(
     return false;
   }
   const trusted = activity.autoApplied === true && activity.automaticEligibility === "text_edit";
-  const review = Boolean(linkedDiffDecision(activity, decisions));
-  return trusted || review;
+  const reviewDiff = Boolean(linkedDiffDecision(activity, decisions));
+  const reviewWrite = Object.values(decisions).some(
+    (d) =>
+      d.kind === "permission" &&
+      d.title === "Write file" &&
+      d.invocationId === activity.invocationId &&
+      (d.status === "pending" || d.status === "accepted"),
+  );
+  return trusted || reviewDiff || reviewWrite;
 }
 
 function displayPathFor(
@@ -189,11 +253,26 @@ function settlementFor(
   if (rec?.status === "conflict") return { settlement: "conflict", recoveryAvailable: false, requestId: null };
   const pending = linkedDiffDecision(activity, decisions, "pending");
   if (pending) return { settlement: "pending", recoveryAvailable: false, requestId: pending.requestId };
+  const recoveryAvailable = rec != null && rec.status === "available" && rec.available === true;
   const accepted = linkedDiffDecision(activity, decisions, "accepted");
-  if (accepted) return { settlement: "accepted", recoveryAvailable: false, requestId: null };
+  if (accepted) return { settlement: "accepted", recoveryAvailable, requestId: null };
   const rejected = linkedDiffDecision(activity, decisions, "declined");
   if (rejected) return { settlement: "rejected", recoveryAvailable: false, requestId: null };
-  const recoveryAvailable = rec != null && rec.status === "available" && rec.available === true;
+  const writePerm = Object.values(decisions).find(
+    (d) =>
+      d.kind === "permission" &&
+      d.title === "Write file" &&
+      d.invocationId === activity.invocationId,
+  );
+  if (writePerm?.status === "pending") {
+    return { settlement: "pending", recoveryAvailable: false, requestId: writePerm.requestId };
+  }
+  if (writePerm?.status === "accepted") {
+    return { settlement: "accepted", recoveryAvailable, requestId: null };
+  }
+  if (writePerm?.status === "declined") {
+    return { settlement: "rejected", recoveryAvailable: false, requestId: null };
+  }
   return { settlement: "applied", recoveryAvailable, requestId: null };
 }
 
@@ -252,6 +331,7 @@ export function pendingDiffsFromRun(run: RunProjectionRun): PendingDiff[] {
       id: d.requestId,
       path,
       diff: activity.diff ?? "",
+      runId: run.runId,
     });
   }
   return out;
@@ -265,6 +345,7 @@ export function mergePendingDiffs(prev: PendingDiff[], run: RunProjectionRun): P
       .filter((d) => d.kind === "diff" && d.status === "pending" && run.state !== "terminal")
       .map((d) => d.requestId),
   );
-  const kept = prev.filter((d) => pendingIds.has(d.id) && !durableIds.has(d.id));
-  return [...rebuilt, ...kept];
+  const keptSame = prev.filter((d) => (!d.runId || d.runId === run.runId) && pendingIds.has(d.id) && !durableIds.has(d.id));
+  const keptOther = prev.filter((d) => d.runId != null && d.runId !== run.runId);
+  return [...rebuilt, ...keptSame, ...keptOther];
 }

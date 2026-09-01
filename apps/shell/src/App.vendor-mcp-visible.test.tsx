@@ -33,7 +33,7 @@ import { FILE_CHANGES_HEADER } from "./FileChangesSection";
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "vendor-mcp-visible-session";
 const RUN_ID = "vendor-mcp-visible-run";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 
 const vendorFact: CodeAgentFact = {
   resolveStatus: "ready",

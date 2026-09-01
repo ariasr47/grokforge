@@ -30,7 +30,7 @@ const WORKSPACE = "C:\\repo";
 const SESSION_ID = "slash-skills-session";
 const RUN_ID = "slash-skills-run";
 const FIXTURE = "/forge-skill-fixture";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 
 const vendorFact: CodeAgentFact = {
   resolveStatus: "ready",
@@ -120,8 +120,30 @@ async function mountApp(opts: {
   codeAgent?: CodeAgentFact | null;
   skillsCatalog?: SkillsCatalogFact;
   promptRefuse?: { status: number; code: string; error: string } | null;
+  priorConversations?: boolean;
+  emptyHistory?: boolean;
 } = {}) {
   const mode = opts.mode ?? "code";
+  if (opts.emptyHistory) {
+    const partition = mode === "code" ? WORKSPACE : "chat:__sandbox__";
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        [partition]: [{
+          id: SESSION_ID,
+          workspace: partition,
+          title: "New chat",
+          messages: [],
+          updatedAt: Date.now(),
+          status: "live",
+          subagents: [],
+          open: true,
+        }],
+      },
+      activeId: { [partition]: SESSION_ID },
+      pinned: mode === "code" ? [WORKSPACE] : [],
+      expanded: mode === "code" ? [WORKSPACE] : [],
+    });
+  }
   const host = createFakeHost(
     {
       mode,
@@ -130,6 +152,7 @@ async function mountApp(opts: {
       busy: false,
       connected: true,
       hasApiKey: true,
+      priorConversations: opts.priorConversations ?? false,
       codeAgent: mode === "code" ? (opts.codeAgent === undefined ? vendorFact : opts.codeAgent) : null,
       skillsCatalog: opts.skillsCatalog ?? (
         mode === "code"
@@ -186,6 +209,110 @@ describe("slash-skills journeys", () => {
     assert.ok(screen.getByRole("option", { name: FIXTURE }));
     assert.equal(screen.queryByRole("option", { name: "/invented" }), null);
     assert.equal(screen.queryByPlaceholderText("Type a command…"), null);
+    assert.equal(screen.queryByText("Code continuum"), null);
+    assert.equal(
+      screen.queryByText("Summarize this repo structure and the main entrypoints."),
+      null,
+    );
+  });
+
+  it("conversations-not-found unmounts while Skills is open", async () => {
+    const NOT_FOUND = "Forge didn't find your earlier conversations.";
+    await mountApp({ emptyHistory: true, priorConversations: true });
+    const user = userEvent.setup({ delay: null });
+    await waitFor(() => {
+      assert.equal(Boolean(screen.queryByText(NOT_FOUND)), true);
+    });
+    await user.type(screen.getByLabelText("Message to agent"), "/");
+    await waitFor(() => {
+      assert.equal(Boolean(screen.queryByRole("listbox", { name: SKILLS_TITLE })), true);
+    });
+    assert.equal(Boolean(screen.queryByText(NOT_FOUND)), false);
+    assert.equal(Boolean(screen.queryByRole("button", { name: "Start a new conversation" })), false);
+    assert.equal(Boolean(screen.queryByRole("button", { name: "Save troubleshooting file" })), false);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      assert.equal(Boolean(screen.queryByRole("listbox", { name: SKILLS_TITLE })), false);
+    });
+    await waitFor(() => {
+      assert.equal(Boolean(screen.queryByText(NOT_FOUND)), true);
+    });
+  });
+
+  it("mixed ready catalog lists every usable /name and not Couldn't load skills.", async () => {
+    await mountApp({
+      skillsCatalog: {
+        disposition: "ready",
+        commands: [
+          { name: "/a", description: null },
+          { name: "/b", description: "bee" },
+        ],
+      },
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByLabelText("Message to agent"), "/");
+    await waitFor(() => assert.ok(screen.getByRole("listbox", { name: SKILLS_TITLE })));
+    assert.ok(screen.getByRole("option", { name: "/a" }));
+    assert.ok(screen.getByRole("option", { name: /\/b/ }));
+    assert.equal(screen.queryByText(SKILLS_FAILED), null);
+    assert.equal(screen.queryByText(SKILLS_CHECKING), null);
+    assert.equal(screen.queryByRole("option", { name: "no-slash" }), null);
+  });
+
+  it("WS replace-shrink paints this payload only (stale name gone)", async () => {
+    const { host, ws } = await mountApp({
+      skillsCatalog: {
+        disposition: "ready",
+        commands: [
+          { name: "/keep", description: null },
+          { name: "/stale", description: null },
+        ],
+      },
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByLabelText("Message to agent"), "/");
+    await waitFor(() => assert.ok(screen.getByRole("option", { name: "/stale" })));
+    const live = FakeWebSocket.latest() ?? ws;
+    live.emit({
+      type: "state",
+      state: {
+        ...host.state,
+        skillsCatalog: {
+          disposition: "ready",
+          commands: [
+            { name: "/keep", description: null },
+            { name: "/new", description: "n" },
+          ],
+        },
+      },
+    });
+    await waitFor(() => {
+      assert.ok(screen.getByRole("option", { name: "/keep" }));
+      assert.ok(screen.getByRole("option", { name: /\/new/ }));
+    });
+    assert.equal(screen.queryByRole("option", { name: "/stale" }), null);
+    assert.equal(screen.queryByText(SKILLS_FAILED), null);
+  });
+
+  it("select surviving /name after mixed voucher still posts skillHandoff", async () => {
+    const { host } = await mountApp({
+      skillsCatalog: {
+        disposition: "ready",
+        commands: [
+          { name: FIXTURE, description: "Forge skill fixture" },
+          { name: "/b", description: "bee" },
+        ],
+      },
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByLabelText("Message to agent"), "/");
+    await waitFor(() => assert.ok(screen.getByRole("option", { name: FIXTURE })));
+    await user.click(screen.getByRole("option", { name: FIXTURE }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
+    const body = host.callsTo("/api/prompt").at(-1)?.body ?? {};
+    assert.deepEqual(body.skillHandoff, { name: FIXTURE });
+    assert.equal(firstToken(String(body.text ?? "")), FIXTURE);
   });
 
   it("select + Send posts skillHandoff and first-token /name", async () => {
@@ -351,12 +478,9 @@ describe("slash-skills journeys", () => {
     });
     await user.clear(composer);
     await user.type(composer, "/not-a-listed-skill");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => {
-      assert.ok(host.callsTo("/api/prompt").length >= 1);
-    });
-    const body = host.callsTo("/api/prompt").at(-1)?.body ?? {};
-    assert.equal(body.skillHandoff == null, true);
+    const send = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+    assert.equal(send.disabled, true);
+    assert.equal(host.callsTo("/api/prompt").length, 0);
   });
 });
 

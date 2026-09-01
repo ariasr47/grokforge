@@ -115,6 +115,41 @@ export function terminalPlanRecord(input: {
   return { ...base, status: settled.status, proposedMembers: settled.proposedMembers };
 }
 
-export function planDecisionTitle(members: PlanProposedMember[]): string {
-  return members.length === 0 ? "Plan complete · no changes" : "Review plan";
+/** Empty dock is nothing-to-change / blank — not “no file tokens in a real plan”. */
+export function planReadyIsEmpty(body: string | null | undefined, memberCount: number): boolean {
+  if (memberCount > 0) return false;
+  const text = typeof body === "string" ? body.trim() : "";
+  if (!text) return true;
+  return NOTHING_TO_CHANGE.test(text);
+}
+
+export function planDecisionTitle(members: PlanProposedMember[], body?: string | null): string {
+  return planReadyIsEmpty(body ?? null, members.length) ? "Plan complete · no changes" : "Review plan";
+}
+
+/** Vendor Grok TUI plan tools. Forge maps exit onto the existing plan dock. */
+export function isVendorPlanExitTool(name: string | null | undefined): boolean {
+  const n = typeof name === "string" ? name.trim().toLowerCase().replace(/_/g, " ") : "";
+  return n === "exit plan mode";
+}
+
+const VENDOR_PLAN_STATUS_OUTPUT = /^(?:plan:\s*)?(?:enter|exit|entered|exited)$/i;
+
+/**
+ * Vendor `exit_plan_mode` output is often `Plan: Exit`. The plan text lives in
+ * the accumulated answer (same body grok-acp stamps at prompt done).
+ */
+function usablePlanText(value: string | null | undefined): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return null;
+  if (VENDOR_PLAN_STATUS_OUTPUT.test(text.replace(/_/g, " "))) return null;
+  return text;
+}
+
+export function planBodyFromVendorExit(
+  toolOutput: string | null | undefined,
+  accumulated: string | null | undefined,
+  planFile?: string | null,
+): string | null {
+  return usablePlanText(toolOutput) ?? usablePlanText(planFile) ?? usablePlanText(accumulated);
 }

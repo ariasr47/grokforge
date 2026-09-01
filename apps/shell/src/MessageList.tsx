@@ -16,7 +16,7 @@ interface Props {
   windowSize?: number;
   onOpenPath?: (path: string) => void;
   forceOpenFailedTools?: boolean;
-  /** Show “your turn” delimiter after a finished run */
+  /** Show idle delimiter after a finished run */
   showTurnDelimiter?: boolean;
   onRetryUser?: (messageId: string, content: string) => void;
   onRegenerate?: (userContent: string) => void;
@@ -32,6 +32,19 @@ interface Props {
 
 function copyText(text: string): Promise<void> {
   return writeClipboard(text);
+}
+
+/** Idle cue after a finished run. Short — the composer is the instruction. */
+export const TURN_IDLE_COPY = "Your turn";
+/** Chat wait chrome — same locked phrase as the live phase bar, not retired “Thinking field”. */
+export const WAITING_PLACEHOLDER_HEAD = "Waiting for model…";
+
+/** F1: never shout WAITING FOR GROK (HEAVY EFFORT) — locked sentence-case wait. */
+export function waitHeading(detail?: string | null): string {
+  const raw = detail?.trim() || "";
+  if (!raw) return WAITING_PLACEHOLDER_HEAD;
+  if (/waiting for grok/i.test(raw) || /\(.*effort\)/i.test(raw)) return WAITING_PLACEHOLDER_HEAD;
+  return raw;
 }
 
 /** Compact system noise (perm/diff notices) instead of full bubbles. */
@@ -73,11 +86,13 @@ const ThinkingPlaceholder = memo(function ThinkingPlaceholder({
     <div className="thinking-placeholder" role="status" aria-live="polite">
       <div className="thinking-placeholder-head">
         <span className="run-dot" />
-        <span>Thinking field</span>
+        <span>{waitHeading(detail)}</span>
       </div>
-      <p className="thinking-placeholder-detail">
-        {detail || "Waiting for the model — this can take a while on Expert/Heavy."}
-      </p>
+      {waitHeading(detail) === WAITING_PLACEHOLDER_HEAD ? (
+        <p className="thinking-placeholder-detail">
+          Waiting for the model — this can take a while on Expert/Heavy.
+        </p>
+      ) : null}
       <div className="thinking-skeleton" aria-hidden>
         <span />
         <span />
@@ -399,7 +414,7 @@ export const MessageList = memo(function MessageList({
         <div className="turn-delimiter" role="status">
           <span className="turn-delimiter-line" aria-hidden />
           <span className="turn-delimiter-label">
-            Your turn — type the next message below
+            {TURN_IDLE_COPY}
           </span>
           <span className="turn-delimiter-line" aria-hidden />
         </div>

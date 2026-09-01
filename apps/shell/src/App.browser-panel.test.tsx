@@ -27,7 +27,7 @@ import { FILE_CHANGES_HEADER } from "./FileChangesSection";
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "browser-panel-session";
 const RUN_ID = "browser-panel-run";
-const TURN_COPY = "Your turn — type the next message below";
+const TURN_COPY = "Your turn";
 
 const vendorFact: CodeAgentFact = {
   resolveStatus: "ready",

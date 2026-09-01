@@ -152,6 +152,21 @@ export function hostPort(): number | null {
   return appChannel() === "dev" ? 8788 : 8787;
 }
 
+/** True when this document is the Vite `desktop:dev` / `npm run dev` origin.
+ *  Packaged `http://tauri.localhost` is not this. Used so a Tauri webview that
+ *  lost IPC (127.0.0.1 vs localhost:5174) can still use the same-origin proxy. */
+export function isViteDevOrigin(href?: string): boolean {
+  const raw =
+    href ?? (typeof window !== "undefined" ? window.location?.href ?? "" : "");
+  try {
+    const u = new URL(raw);
+    if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") return false;
+    return u.port === "5173" || u.port === "5174";
+  } catch {
+    return false;
+  }
+}
+
 /** API base: always absolute in Tauri; Vite proxy in browser dev. `null`
  *  when packaged/Tauri and `hostPort()` has nothing to offer — see
  *  `hostPort()`'s N-3 note. Callers must not fetch when this is `null`. */
@@ -160,8 +175,12 @@ export function hostBase(): string | null {
   if (env) return env.replace(/\/$/, "");
   const port = hostPort();
   if (isTauri()) {
-    if (port == null) return null;
-    return `http://127.0.0.1:${port}`;
+    if (port != null) return `http://127.0.0.1:${port}`;
+    // desktop:dev: Vite already proxies /api. Do not paint "couldn't reach
+    // its engine" when the proxy is 200 but ensure_host IPC is denied
+    // (localhost vs 127.0.0.1). Packaged tauri.localhost is not this path.
+    if (isViteDevOrigin()) return "";
+    return null;
   }
   // Browser dev: Vite proxies /api and /ws to the channel host
   if (viteEnv().DEV) return "";
@@ -202,7 +221,7 @@ export type ProjectInstructionsPresenceView = {
  */
 export type CodeAgentFact = {
   resolveStatus: "resolving" | "ready" | "hard_fail";
-  identity: "vendor" | "fallback" | "hard_fail" | null;
+  identity: "vendor" | "fallback" | "house" | "hard_fail" | null;
   fallbackReason: "cli_missing" | "spawn_failed" | null;
 };
 
@@ -869,10 +888,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ effort }),
     }),
-  setPlanEngagement: (engaged: boolean) =>
+  setPlanEngagement: (engaged: boolean, sessionId?: string | null) =>
     json<PublicState>("/api/plan-engagement", {
       method: "POST",
-      body: JSON.stringify({ engaged }),
+      body: JSON.stringify(sessionId ? { engaged, sessionId } : { engaged }),
     }),
   runPlan: (body: {
     sessionId: string;

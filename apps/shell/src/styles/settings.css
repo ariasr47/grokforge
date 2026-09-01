@@ -445,10 +445,11 @@ html[data-density="compact"] .run-footer {
   white-space: nowrap;
 }
 .project-instructions-status.is-loaded .project-instructions-chip {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: rgba(92, 225, 255, 0.1);
-  box-shadow: 0 0 12px rgba(92, 225, 255, 0.12);
+  color: var(--muted);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 3px 0;
 }
 .project-instructions-status.is-empty .project-instructions-chip {
   color: var(--muted);
@@ -1788,8 +1789,8 @@ html[data-theme="light"] .btn.primary {
 }
 .think-aloud summary {
   font-size: var(--text-xs);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--mind);
   font-weight: var(--weight-semibold);
   cursor: pointer;

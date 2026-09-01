@@ -18,6 +18,16 @@ export interface ToastItem {
   kind: ToastKind;
 }
 
+/** Pause outcome supersedes the in-flight cancel toast so Export is not covered. */
+export function pauseToastSupersedes(existing: string, incoming: string): boolean {
+  return existing === "Cancel requested" && incoming === "Stopped by you";
+}
+
+export function nextToastsAfterPush(prev: ToastItem[], incoming: ToastItem): ToastItem[] {
+  const kept = prev.filter((t) => !pauseToastSupersedes(t.message, incoming.message));
+  return [...kept.slice(-4), incoming];
+}
+
 /** Stable API — consumers of push() do not re-render when toasts change. */
 interface ToastApi {
   push: (message: string, kind?: ToastKind) => void;
@@ -44,7 +54,7 @@ function getSnapshot() {
 
 function pushToast(message: string, kind: ToastKind = "info") {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  toasts = [...toasts.slice(-4), { id, message, kind }];
+  toasts = nextToastsAfterPush(toasts, { id, message, kind });
   emit();
   window.setTimeout(() => dismissToast(id), 4200);
 }

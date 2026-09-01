@@ -229,6 +229,21 @@ test("hydrating with no prior ready → loading + null members (not false empty)
   assert.equal(p.sectionCopy, MCP_LOADING);
 });
 
+test("hydrating with no members on a terminal run is absent, not Loading MCP", () => {
+  const empty = base({
+    mcpServers: { disposition: "hydrating", members: null },
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(empty.state, "absent");
+  const zero = base({
+    mcpServers: { disposition: "hydrating", members: [] },
+    parentTerminal: true,
+    runNonTerminal: false,
+  });
+  assert.equal(zero.state, "absent");
+});
+
 test("hydrating ∩ offline still uses Loading as section lead (not offline string)", () => {
   const p = base({
     mcpServers: { disposition: "hydrating", members: [connectedDocs] },

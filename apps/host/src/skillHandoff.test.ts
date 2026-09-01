@@ -76,4 +76,26 @@ describe("decideSkillHandoff", () => {
       "refuse",
     );
   });
+
+  it("after replace-shrink, missing prior name refuses skill_handoff_unavailable", () => {
+    const prior = applyValidCommands(enterAwaiting(ABSENT_NON_VENDOR), [
+      { name: "/keep", description: null },
+      { name: "/gone", description: null },
+    ]);
+    const shrunk = applyValidCommands(prior, [{ name: "/keep", description: null }]);
+    assert.equal(shrunk.disposition, "ready");
+    assert.deepEqual(
+      decideSkillHandoff({ name: "/gone" }, shrunk, "/gone"),
+      {
+        action: "refuse",
+        code: "skill_handoff_unavailable",
+        error: "Skill no longer available.",
+        status: 409,
+      },
+    );
+    assert.deepEqual(
+      decideSkillHandoff({ name: "/keep" }, shrunk, "/keep"),
+      { action: "accept", name: "/keep" },
+    );
+  });
 });

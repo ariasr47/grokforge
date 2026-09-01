@@ -1,8 +1,8 @@
 # Grok Code Shell — Implementation Spec
 
-**Status:** Draft v0.2  
+**Status:** Draft v0.2 — **stale as architecture.** Living product truth is `PROJECT_CONTEXT.md` + `docs/PRODUCT_ROADMAP.md` (2026-08-27). Code’s engine is vendor `grok agent stdio`; this file still describes grok-acp-only v1.  
 **Priority:** Grok-first (Codex / Claude Code later)  
-**Related:** `docs/design.html`
+**Related:** `docs/design.html` · `docs/PRODUCT_ROADMAP.md`
 
 ---
 

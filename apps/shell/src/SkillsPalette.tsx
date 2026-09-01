@@ -18,7 +18,7 @@ export function SkillsPalette(props: {
 
   return (
     <div
-      className="skills-palette"
+      className={`skills-palette${projection.state === "ready" ? "" : " is-compact"}`}
       data-skills-palette={projection.state}
       role={projection.state === "ready" ? "listbox" : "status"}
       aria-label={SKILLS_TITLE}
@@ -47,24 +47,28 @@ export function SkillsPalette(props: {
       {projection.state === "ready" && rows.length === 0 ? (
         <div className="skills-palette-status">{SKILLS_NO_MATCHES}</div>
       ) : null}
-      {rows.map((cmd, i) => (
-        <button
-          key={cmd.name}
-          type="button"
-          role="option"
-          id={`skills-option-${i}`}
-          className="skills-palette-option"
-          aria-label={cmd.name}
-          aria-selected={i === activeIndex}
-          data-active={i === activeIndex ? "true" : undefined}
-          onClick={() => onSelect(cmd.name)}
-        >
-          <span className="skills-palette-name">{cmd.name}</span>
-          {cmd.description ? (
-            <span className="skills-palette-desc">{cmd.description}</span>
-          ) : null}
-        </button>
-      ))}
+      {rows.length > 0 ? (
+        <div className="skills-palette-list">
+          {rows.map((cmd, i) => (
+            <button
+              key={cmd.name}
+              type="button"
+              role="option"
+              id={`skills-option-${i}`}
+              className="skills-palette-option"
+              aria-label={cmd.name}
+              aria-selected={i === activeIndex}
+              data-active={i === activeIndex ? "true" : undefined}
+              onClick={() => onSelect(cmd.name)}
+            >
+              <span className="skills-palette-name">{cmd.name}</span>
+              {cmd.description ? (
+                <span className="skills-palette-desc">{cmd.description}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -180,6 +180,8 @@ export function projectHooks(input: {
 
   if (fact.disposition === "hydrating") {
     const prior = fact.members == null ? null : sortByFirstEventSeq(completeList(fact.members));
+    // Settled turn with no advertised hooks: don't leave a Loading hooks… band.
+    if (input.parentTerminal && (prior == null || prior.length === 0)) return ABSENT;
     return {
       state: "loading",
       members: prior == null ? null : mapRows(prior, voucher),

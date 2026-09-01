@@ -64,10 +64,18 @@ export function composeArmedPromptText(armedName: string, draft: string): string
   return withoutFilter ? `${armedName} ${withoutFilter}` : armedName;
 }
 
-export function slashTokenFilter(draft: string, selectionStart: number): string {
+/** Slash token even when caret is 0 after a programmatic fill. */
+export function slashTokenAt(draft: string, selectionStart: number): string | null {
   const before = draft.slice(0, selectionStart);
-  const token = before.match(/(?:^|\s)(\/[^\s]*)$/);
-  return token ? token[1]!.slice(1) : "";
+  const fromCaret = before.match(/(?:^|\s)(\/[^\s]*)$/);
+  if (fromCaret) return fromCaret[1]!;
+  const whole = draft.match(/^\s*(\/[^\s]*)\s*$/);
+  return whole ? whole[1]! : null;
+}
+
+export function slashTokenFilter(draft: string, selectionStart: number): string {
+  const token = slashTokenAt(draft, selectionStart);
+  return token ? token.slice(1) : "";
 }
 
 export function mayOpenSkillsPalette(
@@ -76,13 +84,14 @@ export function mayOpenSkillsPalette(
   selectionStart: number,
 ): boolean {
   if (projection.state === "absent") return false;
-  const before = draft.slice(0, selectionStart);
-  const token = before.match(/(?:^|\s)(\/[^\s]*)$/);
-  return Boolean(token);
+  return Boolean(slashTokenAt(draft, selectionStart));
 }
 
 export function stripLeadingSlashToken(draft: string, selectionStart: number): string {
   const before = draft.slice(0, selectionStart);
   const after = draft.slice(selectionStart);
-  return `${before.replace(/(^|\s)\/[^\s]*$/, "$1")}${after}`;
+  const strippedBefore = before.replace(/(^|\s)\/[^\s]*$/, "$1");
+  if (strippedBefore !== before) return `${strippedBefore}${after}`;
+  if (/^\s*\/[^\s]*\s*$/.test(draft)) return "";
+  return `${before}${after}`;
 }

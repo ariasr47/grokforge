@@ -5,9 +5,10 @@
 import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
-import { createSession, saveSessionMessages, reloadSessionsFromDisk } from "./sessions";
+import { commitHomeName, createSession, saveSessionMessages, reloadSessionsFromDisk } from "./sessions";
 
 let originalFetch: typeof fetch;
 let originalWebSocket: typeof WebSocket;
@@ -44,6 +45,26 @@ function resetBrowserState(): void {
 }
 
 describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
+  it("priorConversations:true + a named empty Chat session -> Chat with Grok, not the not-found alarm", async () => {
+    resetBrowserState();
+    const partition = "chat:__sandbox__";
+    const s = createSession(partition, "New chat");
+    commitHomeName(partition, s.id, "C6-HOME");
+    const host = createFakeHost({
+      mode: "chat",
+      hasApiKey: true,
+      workspace: null,
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByRole("heading", { name: /^Chat with Grok$/ }));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+  });
+
   it("priorConversations:true + empty partition -> the not-found state, never the welcome", async () => {
     resetBrowserState();
     const host = createFakeHost({
@@ -257,5 +278,27 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
     assert.equal(screen.queryByText("Welcome to Forge"), null);
     assert.equal(screen.queryByText("Open a project"), null);
+  });
+
+  it("Start a new conversation dismisses the not-found alarm so Code's ordinary empty state can show", async () => {
+    resetBrowserState();
+    const host = createFakeHost({
+      mode: "code",
+      hasApiKey: true,
+      workspace: "C:\\qa-start-new",
+      workspaceName: "qa-start-new",
+      priorConversations: true,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+    assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
+    await userEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.ok(screen.getByText("Code continuum"));
+    assert.equal(screen.getAllByText("New session").length >= 1, true);
+    assert.equal(screen.queryByText("New chat"), null);
   });
 });

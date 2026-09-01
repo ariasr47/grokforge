@@ -133,6 +133,51 @@ test("Code renders no Chat pack chrome", async () => {
   assert.equal(screen.queryByText("Pack ·"), null);
 });
 
+test("Code with a pinned workspace keeps Open folder compact, not the side-top hero", async () => {
+  reloadSessionsFromDisk({
+    byWorkspace: {
+      [WORKSPACE]: [{
+        id: "code-1",
+        workspace: WORKSPACE,
+        title: "Code home",
+        messages: [],
+        updatedAt: Date.now(),
+        status: "live",
+        subagents: [],
+        open: true,
+      }],
+    },
+    activeId: { [WORKSPACE]: "code-1" },
+    pinned: [WORKSPACE],
+    expanded: [WORKSPACE],
+  });
+  const host = createFakeHost({
+    mode: "code",
+    workspace: WORKSPACE,
+    workspaceName: "repo",
+    busy: false,
+  });
+  globalThis.fetch = host.fetchImpl;
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  render(<App />);
+  await screen.findByLabelText("Message to agent");
+  const btn = screen
+    .getAllByRole("button", { name: "Open folder…" })
+    .find((b) => b.className.includes("open-folder-btn"));
+  assert.ok(btn);
+  assert.ok(btn!.className.includes("open-folder-btn-compact"));
+  assert.ok(btn!.className.includes("icon-only"));
+  assert.equal(/Open folder/.test(btn!.textContent ?? ""), false);
+  assert.equal(
+    document.querySelector(".side-top .open-folder-btn:not(.open-folder-btn-compact)"),
+    null,
+  );
+  const newSession = screen.getByRole("button", { name: "New session" });
+  assert.ok(newSession.className.includes("ghost"));
+  assert.ok(newSession.className.includes("new-session-btn"));
+  assert.equal(newSession.className.includes("primary"), false);
+});
+
 test("armed chip is not Included; hydrate drop is not empty", async () => {
   updatePackMembers(CHAT_PART, HOME_A, {
     files: [{ path: "notes/ok.md" }, { path: "notes/gone.md" }],

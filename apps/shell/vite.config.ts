@@ -39,6 +39,9 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_GROKFORGE_PORT": JSON.stringify(String(hostPort)),
     },
     server: {
+      // Windows `localhost` is often IPv6-only (::1). Bind IPv4 too so
+      // 127.0.0.1, Playwright, and the host proxy all reach the shell.
+      host: true,
       port: uiPort,
       strictPort: true,
       watch: {

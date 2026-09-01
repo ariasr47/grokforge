@@ -131,15 +131,16 @@ describe("CodeBlock partition states", () => {
     assert.ok(screen.getByRole("button", { name: "Copy" }));
   });
 
-  it("unlabeled bar shows code and uses tokenizer until rich", async () => {
+  it("unlabeled multi-line uses tokenizer until rich and does not invent CODE", async () => {
     __setHighlighterLoaderForTests(
       () =>
         new Promise(() => {
           /* pending */
         }),
     );
-    render(createElement(CodeBlock, { code: "hello world", lang: "" }));
-    assert.equal(screen.getByText("code").textContent, "code");
+    render(createElement(CodeBlock, { code: "hello world\nsecond", lang: "" }));
+    assert.equal(document.querySelector(".md-code-bar"), null);
+    assert.ok(document.querySelector(".md-code-wrap.is-plain"));
     assert.ok(document.querySelector(".tok-plain"));
     assert.equal(document.querySelector(".shiki"), null);
   });

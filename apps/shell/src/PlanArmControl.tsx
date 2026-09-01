@@ -36,7 +36,7 @@ export const PlanArmControl = memo(function PlanArmControl({
 
   return (
     <div className="plan-arm" data-plan-arm={projection.state}>
-      <span className="plan-arm-label" id="plan-arm-label">
+      <span className="plan-arm-label sr-only" id="plan-arm-label">
         Plan
       </span>
       <button

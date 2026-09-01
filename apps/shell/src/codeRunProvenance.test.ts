@@ -12,6 +12,7 @@ import {
   CODE_RUN_FALLBACK,
   CODE_RUN_HYDRATING,
   CODE_RUN_VENDOR,
+  CODE_RUN_HOUSE,
   codeRunProvenanceCopy,
   projectCodeRunProvenance,
 } from "./codeRunProvenance";
@@ -86,6 +87,26 @@ test("hydrating while catch-up open or missing stamp on live Code run", () => {
   assert.equal(codeRunProvenanceCopy(missing), CODE_RUN_HYDRATING);
 });
 
+test("E0 live house session without per-run stamp is Grok, not Confirming which agent", () => {
+  const house = projectCodeRunProvenance({
+    mode: "code",
+    run: { state: "running", codeAgentProvenance: null },
+    catchUp: { phase: "closed" },
+    sessionIdentity: "house",
+  });
+  assert.equal(house.state, "house");
+  assert.equal(codeRunProvenanceCopy(house), CODE_RUN_HOUSE);
+  assert.notEqual(codeRunProvenanceCopy(house), CODE_RUN_HYDRATING);
+  const vendorSession = projectCodeRunProvenance({
+    mode: "code",
+    run: { state: "running", codeAgentProvenance: null },
+    catchUp: { phase: "closed" },
+    sessionIdentity: "vendor",
+  });
+  assert.equal(vendorSession.state, "hydrating");
+  assert.equal(codeRunProvenanceCopy(vendorSession), CODE_RUN_HYDRATING);
+});
+
 test("vouched vendor / fallback (+ reason) never invent vendor from null", () => {
   const vendor = projectCodeRunProvenance({
     mode: "code",
@@ -114,6 +135,18 @@ test("vouched vendor / fallback (+ reason) never invent vendor from null", () =>
     catchUp: { phase: "closed" },
   });
   assert.equal(codeRunProvenanceCopy(generic), CODE_RUN_FALLBACK);
+});
+
+test("A0 house stamp is Grok, not Mini-Grok or Grok Code", () => {
+  const house = projectCodeRunProvenance({
+    mode: "code",
+    run: { state: "terminal", codeAgentProvenance: { identity: "house", fallbackReason: null } },
+    catchUp: { phase: "closed" },
+  });
+  assert.equal(house.state, "house");
+  assert.equal(codeRunProvenanceCopy(house), CODE_RUN_HOUSE);
+  assert.equal(codeRunProvenanceCopy(house).includes("Mini-Grok"), false);
+  assert.notEqual(codeRunProvenanceCopy(house), CODE_RUN_VENDOR);
 });
 
 test("catch-up failed without stamp → confirm error", () => {
@@ -157,6 +190,48 @@ test("reload fixture keeps stamped provenance; later run id does not rewrite pri
   assert.equal(replayed.runsById.r1?.codeAgentProvenance?.identity, "vendor");
   const missing = mergeRunSnapshot(initialRunProjection(), snap({ runId: "r3" }));
   assert.equal(missing.runsById.r3?.codeAgentProvenance ?? null, null);
+});
+
+test("late POST snapshot stamps provenance on an already-terminal run", () => {
+  let state = reduceRunEvent(initialRunProjection(), started(snap({ codeAgentProvenance: null })));
+  state = reduceRunEvent(state, {
+    schemaVersion: 1,
+    type: "run_terminal",
+    sessionId: "s1",
+    runId: "r1",
+    eventSeq: 2,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload: {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "ok",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    },
+  });
+  assert.equal(state.runsById.r1?.state, "terminal");
+  assert.equal(state.runsById.r1?.codeAgentProvenance ?? null, null);
+  const late = mergeRunSnapshot(
+    state,
+    snap({
+      state: "terminal",
+      terminalKind: "answered",
+      codeAgentProvenance: { identity: "vendor", fallbackReason: null },
+    }),
+  );
+  assert.equal(late.runsById.r1?.state, "terminal");
+  assert.equal(late.runsById.r1?.codeAgentProvenance?.identity, "vendor");
+  assert.equal(late.runsById.r1?.finalAnswer, "ok");
+  const keep = mergeRunSnapshot(
+    late,
+    snap({
+      state: "terminal",
+      codeAgentProvenance: { identity: "fallback", fallbackReason: "spawn_failed" },
+    }),
+  );
+  assert.equal(keep.runsById.r1?.codeAgentProvenance?.identity, "vendor");
 });
 
 test("missing snapshot field is null — never invented from agentName", () => {

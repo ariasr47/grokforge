@@ -8,7 +8,7 @@ import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { FolderOpen, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import type { ChatSession, SubagentRecord } from "./sessions";
-import { workspaceDisplayName } from "./sessions";
+import { chatListTitle, defaultSessionTitle, workspaceDisplayName } from "./sessions";
 import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 import { timeAgo } from "./timeAgo";
 import type { ProductMode } from "./api";
@@ -50,7 +50,8 @@ const SessionRow = memo(function SessionRow({
   onDelete,
 }: SessionRowProps) {
   const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(sess.title || "New chat");
+  const untitled = defaultSessionTitle(sess.workspace);
+  const [draft, setDraft] = useState(sess.title || untitled);
 
   if (renaming) {
     return (
@@ -87,7 +88,7 @@ const SessionRow = memo(function SessionRow({
         onClick={onSelect}
         onDoubleClick={() => {
           if (onRename) {
-            setDraft(sess.title || "New chat");
+            setDraft(sess.title || untitled);
             setRenaming(true);
           }
         }}
@@ -99,12 +100,10 @@ const SessionRow = memo(function SessionRow({
         <span className="session-body">
           <span
             className={`session-title${
-              !showBranch && sess.committedName !== true ? " is-placeholder" : ""
+              !showBranch && chatListTitle(sess) === HOME_NAME_PLACEHOLDER ? " is-placeholder" : ""
             }`}
           >
-            {!showBranch && sess.committedName !== true
-              ? HOME_NAME_PLACEHOLDER
-              : sess.title || "New chat"}
+            {!showBranch ? chatListTitle(sess) : sess.title || untitled}
           </span>
           <span className="session-sub">
             {showBranch ? (
@@ -127,7 +126,7 @@ const SessionRow = memo(function SessionRow({
             className="sess-op icon-only"
             title="Rename"
             onClick={() => {
-              setDraft(sess.title || "New chat");
+              setDraft(sess.title || untitled);
               setRenaming(true);
             }}
           >
@@ -141,7 +140,7 @@ const SessionRow = memo(function SessionRow({
             title="Delete"
             onClick={() => {
               if (
-                window.confirm(`Delete “${sess.title || "New chat"}”?`)
+                window.confirm(`Delete “${sess.title || untitled}”?`)
               ) {
                 onDelete();
               }
@@ -260,7 +259,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             <Icon icon={MessageSquarePlus} size={15} />
             New chat
           </Button>
-        ) : (
+        ) : props.workspaces.length === 0 ? (
           <Button
             variant="primary"
             className="open-folder-btn"
@@ -269,16 +268,29 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             <Icon icon={FolderOpen} size={15} />
             Open folder…
           </Button>
-        )}
-        <input
-          className="session-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={
-            mode === "chat" ? "Search chats…" : "Search projects & sessions…"
-          }
-          aria-label={mode === "chat" ? "Search chats" : "Search sessions"}
-        />
+        ) : null}
+        <div className="side-top-search-row">
+          <input
+            className="session-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              mode === "chat" ? "Search chats…" : "Search projects & sessions…"
+            }
+            aria-label={mode === "chat" ? "Search chats" : "Search sessions"}
+          />
+          {mode === "code" && props.workspaces.length > 0 ? (
+            <Button
+              variant="ghost"
+              className="open-folder-btn open-folder-btn-compact icon-only"
+              onClick={props.onOpenFolder}
+              title="Open folder…"
+              aria-label="Open folder…"
+            >
+              <Icon icon={FolderOpen} size={15} />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {mode === "chat" ? (
@@ -397,9 +409,11 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                 {ws.expanded && (
                   <div className="folder-body">
                     <Button
+                      variant="ghost"
                       className="new-session-btn"
                       onClick={() => props.onNewCodeSession(ws.path)}
                     >
+                      <Icon icon={MessageSquarePlus} size={14} />
                       New session
                     </Button>
                     {ws.sessions.map((sess) => {
@@ -495,18 +509,36 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             ))}
           </div>
 
-          <div className="sidebar-path-row">
-            <input
-              id="workspace-path"
-              value={props.pathInput ?? ""}
-              onChange={(e) => props.onPathInputChange?.(e.target.value)}
-              placeholder="Paste project path…"
-              aria-label="Workspace path"
-            />
-            <Button onClick={() => props.onPathOpen?.()}>
-              Open
-            </Button>
-          </div>
+          {props.workspaces.length > 0 ? (
+            <details className="sidebar-path-row sidebar-path-more">
+              <summary>Paste a path</summary>
+              <div className="sidebar-path-fields">
+                <input
+                  id="workspace-path"
+                  value={props.pathInput ?? ""}
+                  onChange={(e) => props.onPathInputChange?.(e.target.value)}
+                  placeholder="Paste project path…"
+                  aria-label="Workspace path"
+                />
+                <Button onClick={() => props.onPathOpen?.()}>
+                  Open
+                </Button>
+              </div>
+            </details>
+          ) : (
+            <div className="sidebar-path-row">
+              <input
+                id="workspace-path"
+                value={props.pathInput ?? ""}
+                onChange={(e) => props.onPathInputChange?.(e.target.value)}
+                placeholder="Paste project path…"
+                aria-label="Workspace path"
+              />
+              <Button onClick={() => props.onPathOpen?.()}>
+                Open
+              </Button>
+            </div>
+          )}
         </>
       )}
 

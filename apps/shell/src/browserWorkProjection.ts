@@ -189,6 +189,7 @@ export function projectBrowserWork(input: {
 
   if (fact.disposition === "hydrating") {
     const prior = fact.members == null ? null : sortByFirstEventSeq(completeList(fact.members));
+    if (input.parentTerminal && (prior == null || prior.length === 0)) return ABSENT;
     return {
       state: "loading",
       members: prior == null ? null : mapRows(prior, voucher),

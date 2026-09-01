@@ -15,6 +15,8 @@ export type AcpUiEvent =
       id: string;
       kind: "write" | "shell";
       detail: string;
+      /** Vendor toolCallId when present — File changes membership joins on this, not the RPC id. */
+      toolCallId?: string | null;
     }
   | {
       type: "file_edit";
@@ -68,6 +70,11 @@ export type AcpUiEvent =
       hookId: string;
       name: string | null;
       status: "running" | "idle" | "done" | "failed";
+    }
+  | {
+      type: "vendor_plan_exit";
+      id: string;
+      planContent: string | null;
     };
 
 export type AuthMode = "signed_out" | "api_key" | "sub_pool";
@@ -170,4 +177,5 @@ export interface AcpClient {
     sessionId?: string,
     ownership?: AcpOwnership,
   ): Promise<void>;
+  respondPlanExit?(id: string, outcome: "approved" | "cancelled" | "abandoned"): Promise<boolean>;
 }

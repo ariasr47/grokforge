@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { VENDOR_ACP_SHELL_CWD_RULE } from "@grokforge/acp-client";
 import { vendorSpawnEnv } from "./codeAgent.js";
 
 export type AgentStatus = "ready" | "planned" | "disabled";
@@ -26,15 +27,31 @@ export interface AgentSpawnSpec {
   cwd?: string;
 }
 
+/** Forge policy → vendor CLI flags. CLI overrides ~/.grok/config.toml permission_mode. */
+export type VendorCliPermission = "review" | "trusted_workspace" | "bypass_permissions";
+
+export function vendorCliArgs(mode: VendorCliPermission = "review", cwd?: string): string[] {
+  // `--cwd` / `--rules` / `--permission-mode` are grok global flags (before `agent`).
+  // `--always-approve` is accepted on `grok agent`. CLI overrides ~/.grok/config.toml.
+  // `--rules` is omitted without cwd so unit cases stay flag-only; live spawn always has cwd.
+  const prefix = cwd ? ["--cwd", cwd, "--rules", VENDOR_ACP_SHELL_CWD_RULE] : [];
+  if (mode === "bypass_permissions") return [...prefix, "agent", "--always-approve", "stdio"];
+  if (mode === "trusted_workspace") {
+    return [...prefix, "--permission-mode", "acceptEdits", "agent", "stdio"];
+  }
+  return [...prefix, "--permission-mode", "default", "agent", "stdio"];
+}
+
 export function resolveVendorCodeSpawn(input: {
   command: string;
   cwd: string;
   baseEnv: Record<string, string>;
+  permissionMode?: VendorCliPermission;
 }): AgentSpawnSpec {
   return {
     id: "grok-agent-stdio",
     command: input.command,
-    args: ["agent", "stdio"],
+    args: vendorCliArgs(input.permissionMode ?? "review", input.cwd),
     cwd: input.cwd,
     env: vendorSpawnEnv(input.baseEnv),
   };
@@ -101,8 +118,10 @@ function resolveGrokAcp(repoRoot: string): AgentSpawnSpec {
     // Packaged resources (desktop-self-host)
     process.env.GROKFORGE_AGENT_ENTRY,
     path.join(repoRoot, "resources", "agents", "grok-acp", "index.js"),
-    path.join(repoRoot, "packages", "grok-acp", "dist", "index.js"),
+    // From-source DEV: tsx src, not dist/index.js. dist imports @grokforge/pdf-extract
+    // which exports TypeScript; plain `node dist` then dies with extract.js ENOENT.
     path.join(repoRoot, "packages", "grok-acp", "src", "index.ts"),
+    path.join(repoRoot, "packages", "grok-acp", "dist", "index.js"),
   ].filter(Boolean) as string[];
 
   const tsxCli = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");

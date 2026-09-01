@@ -109,7 +109,7 @@ export const TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "run_shell",
-      description: "Run a shell command with cwd set to the workspace root.",
+      description: "Run a shell command with cwd set to the workspace root. To test one package, cd into it first (or npm test -w name).",
       parameters: {
         type: "object",
         properties: {
@@ -150,7 +150,7 @@ export const TOOL_DEFINITIONS = [
 ];
 export function toolDefinitionsFor(capability: { status: string; displayName?: string | null; dialect?: string | null }) {
   if (!capability) return TOOL_DEFINITIONS;
-  return TOOL_DEFINITIONS.map((tool) => tool.function.name === "run_shell" ? { ...tool, function: { ...tool.function, description: capability.status === "available" ? `Run a command using ${capability.displayName} (${capability.dialect}) after approval; cwd is the workspace start. Prefer list_dir, read_file, and grep for ordinary repository work.` : "Shell unavailable. Use list_dir, read_file, and grep for repository work." } } : tool);
+  return TOOL_DEFINITIONS.map((tool) => tool.function.name === "run_shell" ? { ...tool, function: { ...tool.function, description: capability.status === "available" ? `Run a command using ${capability.displayName} (${capability.dialect}) after approval; cwd is the workspace start. To test one package, cd into it first (or npm test -w name). Prefer list_dir, read_file, and grep for ordinary repository work.` : "Shell unavailable. Use list_dir, read_file, and grep for repository work." } } : tool);
 }
 
 export type ToolName =
@@ -360,14 +360,23 @@ export async function executeReadTool(
     }
     case "list_dir": {
       const abs = resolveReadPath(String(args.path ?? "."));
-      const entries = await fs.readdir(abs, { withFileTypes: true });
-      return JSON.stringify({
-        path: relativeToWorkspace(workspaceRoot, abs) || ".",
-        entries: entries.map((e) => ({
-          name: e.name,
-          type: e.isDirectory() ? "dir" : e.isFile() ? "file" : "other",
-        })),
-      });
+      const rel = relativeToWorkspace(workspaceRoot, abs) || ".";
+      try {
+        const entries = await fs.readdir(abs, { withFileTypes: true });
+        return JSON.stringify({
+          path: rel,
+          entries: entries.map((e) => ({
+            name: e.name,
+            type: e.isDirectory() ? "dir" : e.isFile() ? "file" : "other",
+          })),
+        });
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ENOTDIR") {
+          return JSON.stringify({ path: rel, entries: [], missing: true });
+        }
+        throw error;
+      }
     }
     case "grep": {
       const pattern = String(args.pattern ?? "");

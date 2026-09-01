@@ -120,6 +120,10 @@ export const CodeBlock = memo(function CodeBlock({
 
   useEffect(() => {
     const gen = ++genRef.current;
+    if (!gate.token && gate.lineCount === 1 && code.trim() !== "") {
+      setRichHtml(null);
+      return;
+    }
     if (!gate.gatePassed) {
       // AC12 / exclusions: immediate plain — drop any last-rich hold.
       setRichHtml(null);
@@ -138,25 +142,45 @@ export const CodeBlock = memo(function CodeBlock({
       },
     );
     // Cleanup does not clear richHtml (streaming hold + pending warm hold).
-  }, [code, lang, appearanceKey, gate.gatePassed, gate.class, gate.resolvedLang]);
+  }, [code, lang, appearanceKey, gate.gatePassed, gate.class, gate.resolvedLang, gate.lineCount]);
 
   const lines = useMemo(
     () => code.replace(/\r\n/g, "\n").split("\n"),
     [code],
   );
+  const unlabeled = !gate.token;
+  const compact = unlabeled && gate.lineCount === 1 && code.trim() !== "";
+  const plain = unlabeled && !compact;
   // Gate exclusions (incl. oversize crossing) drop last-rich immediately (AC12).
-  const bodyHtml = gate.gatePassed ? richHtml : null;
+  const bodyHtml = !compact && gate.gatePassed ? richHtml : null;
+
+  const copyBtn = (
+    <Button variant="ghost" className="md-copy-btn" onClick={onCopy}>
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
 
   return (
-    <div className="md-code-wrap">
-      <div className="md-code-bar">
-        <span className="md-code-lang">{label}</span>
-        <span className="md-code-meta">{gate.lineCount} lines</span>
-        <Button variant="ghost" className="md-copy-btn" onClick={onCopy}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-      {bodyHtml ? (
+    <div
+      className={`md-code-wrap${compact ? " is-oneline" : ""}${plain ? " is-plain" : ""}`}
+    >
+      {compact ? null : plain ? (
+        <div className="md-code-plain-actions">{copyBtn}</div>
+      ) : (
+        <div className="md-code-bar">
+          <span className="md-code-lang">{label}</span>
+          <span className="md-code-meta">{gate.lineCount} lines</span>
+          {copyBtn}
+        </div>
+      )}
+      {compact ? (
+        <>
+          <pre className="md-code md-code-hl">
+            <code>{code}</code>
+          </pre>
+          {copyBtn}
+        </>
+      ) : bodyHtml ? (
         <div
           className="md-code md-code-hl"
           dangerouslySetInnerHTML={{ __html: bodyHtml }}
@@ -166,9 +190,11 @@ export const CodeBlock = memo(function CodeBlock({
           <code>
             {lines.map((line, li) => (
               <span key={li} className="md-code-line">
-                <span className="md-code-ln" aria-hidden>
-                  {li + 1}
-                </span>
+                {plain ? null : (
+                  <span className="md-code-ln" aria-hidden>
+                    {li + 1}
+                  </span>
+                )}
                 <span className="md-code-tx">
                   {gate.gatePassed
                     ? tokenizeLine(line).map((tok, ti) => (

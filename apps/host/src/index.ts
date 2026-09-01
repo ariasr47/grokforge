@@ -61,6 +61,14 @@ function sessionFor(id: string | null | undefined, create = true): AgentSession 
   if (!value && create) { value = new AgentSession(id); sessionRegistry.set(id, value); for (const ws of wsBindings.keys()) bindSocketSession(ws, id); }
   return value ?? null;
 }
+/** Composer Plan arms the legacy singleton (POST without sessionId). Prompts are owned by the shell session. */
+function mirrorComposerPlanOnto(owner: AgentSession): void {
+  if (owner === session) return;
+  const composer = session.getState().planEngagement;
+  const owned = owner.getState().planEngagement;
+  if (!composer.engaged || owned.engaged || !composer.vouched || !owned.vouched) return;
+  try { owner.setPlanEngagement(true); } catch { /* plan_not_applicable / unvouched */ }
+}
 hydrateConnectorEnv();
 
 /**
@@ -700,6 +708,9 @@ const server = http.createServer(async (req, res) => {
       try {
         if (typeof body.engaged !== "boolean") throw Object.assign(new Error("engaged required"), { code: "invalid_request" });
         const state = owner.setPlanEngagement(body.engaged);
+        if (owner !== session) {
+          try { session.setPlanEngagement(body.engaged); } catch { /* singleton not Code */ }
+        }
         sendState(res, origin, state);
       } catch (e) {
         const code = (e as { code?: string })?.code ?? "invalid_request";
@@ -758,6 +769,7 @@ const server = http.createServer(async (req, res) => {
       const legacyPrompt = !body.sessionId;
       const ownedSession = sessionFor(body.sessionId) || session;
       if (body.sessionId && !ownedSession) { sendContractError(res,400,"invalid_request","invalid sessionId"); return; }
+      mirrorComposerPlanOnto(ownedSession);
       const trimmedText = body.text.trim();
       const catalog = ownedSession.getSkillsCatalog();
       const decision = decideSkillHandoff(body.skillHandoff, catalog, trimmedText);
@@ -873,6 +885,9 @@ const server = http.createServer(async (req, res) => {
           runId: body.runId,
           connectionGeneration: body.connectionGeneration!,
         }, body.invocationId);
+        if (body.action === "accept" && owner !== session) {
+          try { session.setPlanEngagement(false); } catch { /* singleton not Code */ }
+        }
         const run = owner.getRun(body.runId, body.sessionId);
         sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"plan",status:settled,title:"Plan",detail:"",expiresAt:null,policy:run?.policy??null} });
       } catch (e) {
@@ -1092,7 +1107,7 @@ wss.on("connection", (ws, req) => {
             break;
           case "prompt":
             if (!msg.text) throw new Error("text required");
-            { const owned = sessionFor(msg.sessionId) || session; subscribe(msg.sessionId); await owned.prompt(msg.text, undefined, { originKey: wsOrigin, clientSessionId: msg.sessionId }); }
+            { const owned = sessionFor(msg.sessionId) || session; subscribe(msg.sessionId); mirrorComposerPlanOnto(owned); await owned.prompt(msg.text, undefined, { originKey: wsOrigin, clientSessionId: msg.sessionId }); }
             break;
           case "cancel":
             if (msg.sessionId && msg.runId) { const owned = sessionFor(msg.sessionId, false); if (!owned) throw new Error("run not found"); await owned.cancelRun(msg.runId, msg.sessionId); }

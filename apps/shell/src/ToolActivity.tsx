@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import type { ChatMessage } from "./messageBlocks";
 import { toolRunStats } from "./messageBlocks";
 import { displayToolName, formatPdfReadFileFailureLabel } from "./toolFormat";
-import { activityHumanLabel } from "./activityLabel";
+import { isForgeUnavailableVendorTool, isGenericToolName, toolRowCaption } from "./activityLabel";
+import { quietActivityPath, VENDOR_SESSION_PLAN_CAPTION } from "./activityWriteLike";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { Button } from "./ui/Button";
 
@@ -13,6 +14,17 @@ function looksLikePath(s: string): boolean {
   if (!s || s.length > 260) return false;
   if (s.includes("\n") || s.includes(" ")) return false;
   return /[/\\.]/.test(s) || /^[A-Za-z]:\\/.test(s);
+}
+
+/** Path (or session plan.md) from a single-tool caption — not the generic tool name. */
+function captionPathHint(summary: string): string | null {
+  if (looksLikePath(summary) || summary === VENDOR_SESSION_PLAN_CAPTION) return summary;
+  const tick = summary.trim().match(/^Write\s+`([^`]+)`\s*$/i);
+  if (!tick?.[1]) return null;
+  const p = quietActivityPath(tick[1]) ?? tick[1];
+  if (typeof p !== "string") return null;
+  if (p === VENDOR_SESSION_PLAN_CAPTION || looksLikePath(p)) return p;
+  return null;
 }
 
 interface RowProps {
@@ -31,19 +43,21 @@ const ToolRow = memo(function ToolRow({
     if (defaultOpen) setOpen(true);
   }, [defaultOpen]);
   const panelId = useId();
-  const name = displayToolName(tool.toolMeta?.name);
-  const human = activityHumanLabel({
+  const caption = toolRowCaption({
+    name: tool.toolMeta?.name,
     title: tool.toolMeta?.title,
     summary: tool.toolMeta?.summary,
-    name: null,
+    command: tool.toolMeta?.command ?? tool.toolMeta?.activityEvent?.command,
   });
-  const summary = human && human !== name ? human : "";
+  const name = caption.name;
+  const summary = caption.summary;
   const ok = tool.toolMeta?.ok;
   const execution = tool.toolMeta?.execution;
   const eventStatus = tool.toolMeta?.status;
   const done = tool.toolMeta?.done !== false && eventStatus !== "running";
+  const unavailable = isForgeUnavailableVendorTool(tool.toolMeta?.name);
   const status =
-    eventStatus === "rejected" || execution === "not_executed"
+    unavailable || eventStatus === "rejected" || execution === "not_executed"
       ? "not-run"
       : eventStatus === "failed" || (execution === "executed" && ok === false) || ok === false
         ? "fail"
@@ -52,12 +66,14 @@ const ToolRow = memo(function ToolRow({
           : "ok";
   const statusLabel =
     status === "pending"
-      ? "running"
+      ? "Running"
       : status === "fail"
-        ? "failed"
-        : status === "not-run"
-          ? "Not run"
-          : "Completed";
+        ? "Failed"
+        : unavailable
+          ? "Not in Forge"
+          : status === "not-run"
+            ? "Not run"
+            : "Completed";
 
   const inputPath =
     tool.toolMeta?.activityEvent?.input &&
@@ -96,11 +112,19 @@ const ToolRow = memo(function ToolRow({
     const authoritative = tool.toolMeta?.execution === "not_executed"
       ? tool.toolMeta.activityEvent?.reason
       : tool.toolMeta?.activityEvent?.error;
-    const body = authoritative || tool.content || "(no output yet)";
+    if (unavailable) return "Not available in Forge Code.";
+    const genericStatus = (value: string | null | undefined) =>
+      Boolean(value && /^(completed|failed|error)$/i.test(value.trim()));
+    const body = (!genericStatus(authoritative) && authoritative)
+      || tool.content
+      || "(no output yet)";
+    if (status === "fail" && genericStatus(body)) {
+      return "Non-zero exit";
+    }
     const lines = body.split("\n");
     if (lines.length <= 48) return body;
     return `${lines.slice(0, 48).join("\n")}\n… (${lines.length - 48} more lines)`;
-  }, [tool.content, tool.toolMeta]);
+  }, [tool.content, tool.toolMeta, unavailable, status]);
 
   return (
     <div
@@ -110,13 +134,15 @@ const ToolRow = memo(function ToolRow({
     >
       <button
         type="button"
-        className="tool-row-head"
+        className={`tool-row-head${caption.plain || !summary ? " is-command" : ""}`}
         onClick={toggle}
         aria-expanded={open}
         aria-controls={panelId}
       >
         <span className={`tool-row-dot ${status}`} aria-hidden />
-        <span className="tool-row-name">{name}</span>
+        <span className={`tool-row-name${caption.plain ? " tool-row-name-plain" : ""}`}>
+          {name}
+        </span>
         {summary ? (
           <span className="tool-row-summary" title={summary}>
             {summary}
@@ -177,7 +203,7 @@ interface GroupProps {
 
 export const ToolActivityGroup = memo(function ToolActivityGroup({
   tools,
-  live: _live = false,
+  live = false,
   onOpenPath,
   forceOpen,
   groupKey,
@@ -185,15 +211,25 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
   const stats = useMemo(() => toolRunStats(tools), [tools]);
   const hasFail = stats.failed > 0 || tools.some((t) => t.toolMeta?.execution === "not_executed");
   const hasPending = stats.pending > 0;
+  const isRunSurface = Boolean(groupKey?.startsWith("run-tools:"));
 
   const [intent, setIntent] = useState<"automatic_open" | "explicit_open" | "explicit_closed">(
-    groupKey?.startsWith("tools-")
-      ? hasFail
-        ? "automatic_open"
-        : "explicit_closed"
-      : "automatic_open",
+    () => {
+      if (groupKey?.startsWith("tools-")) {
+        return hasFail ? "automatic_open" : "explicit_closed";
+      }
+      if (isRunSurface && !live && !hasFail && !hasPending) {
+        return "explicit_closed";
+      }
+      return "automatic_open";
+    },
   );
   const open = forceOpen === true || intent !== "explicit_closed";
+
+  useEffect(() => {
+    if (!isRunSurface || live || hasFail || hasPending) return;
+    setIntent((cur) => (cur === "automatic_open" ? "explicit_closed" : cur));
+  }, [isRunSurface, live, hasFail, hasPending]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{ identity: string | null; offset: number; atEnd: boolean } | null>(null);
   const prevToolsRef = useRef(tools);
@@ -240,14 +276,35 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
     if (stats.failed) bits.push(`${stats.failed} failed`);
     if (stats.notRun) bits.push(`${stats.notRun} not run`);
     if (stats.pending) bits.push(`${stats.pending} running`);
-    if (!bits.length && stats.ok) bits.push("Completed");
+    const executable = stats.total - stats.unavailable;
+    if (!bits.length && stats.ok && executable > 1) bits.push("Completed");
+    const named = stats.names
+      .filter((n) => !isForgeUnavailableVendorTool(n))
+      .map(displayToolName)
+      .filter((n) => !isGenericToolName(n));
     const nameHint =
-      stats.names.length > 3
-        ? `${stats.names.slice(0, 3).map(displayToolName).join(", ")}…`
-        : stats.names.map(displayToolName).join(", ");
-    if (nameHint && stats.total > 1) bits.push(nameHint);
+      named.length > 3 ? `${named.slice(0, 3).join(", ")}…` : named.join(", ");
+    if (stats.total === 1) {
+      const only = tools[0];
+      const cap = toolRowCaption({
+        name: only?.toolMeta?.name,
+        title: only?.toolMeta?.title,
+        summary: only?.toolMeta?.summary,
+        command: only?.toolMeta?.command,
+      });
+      if (cap.plain && cap.name) bits.push(cap.name);
+      else {
+        const pathHint = cap.summary ? captionPathHint(cap.summary) : null;
+        if (pathHint) bits.push(pathHint);
+        else if (nameHint) bits.push(nameHint);
+        else {
+          const n = stats.names[0];
+          if (n && !isForgeUnavailableVendorTool(n)) bits.push(displayToolName(n));
+        }
+      }
+    } else if (nameHint) bits.push(nameHint);
     return bits.join(" · ");
-  }, [stats]);
+  }, [stats, tools]);
 
   const groupStatus = hasFail ? "fail" : hasPending ? "pending" : "ok";
   const panelId = useId();
@@ -278,7 +335,7 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
           <span className="tool-activity-sub">{subtitle}</span>
         ) : null}
         {intent === "automatic_open" && hasPending ? (
-          <span className="tool-activity-hint">Stays open when complete</span>
+          <span className="tool-activity-hint">Open while tools run</span>
         ) : null}
       </button>
       {open ? (

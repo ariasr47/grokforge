@@ -33,21 +33,21 @@ async function exists(p: string): Promise<boolean> {
 
 async function installSpawnableGrok(binDir: string, workspace: string): Promise<string> {
   await fs.mkdir(binDir, { recursive: true });
-  const grokName = process.platform === "win32" ? "grok.exe" : "grok";
-  const grokPath = path.join(binDir, grokName);
+  await fs.writeFile(path.join(workspace, "package.json"), JSON.stringify({ type: "module" }));
+  await fs.copyFile(vendorFixture, path.join(workspace, "agent.js"));
+  const agentJs = path.join(workspace, "agent.js");
   if (process.platform === "win32") {
-    try {
-      await fs.link(process.execPath, grokPath);
-    } catch {
-      await fs.copyFile(process.execPath, grokPath);
-    }
-    await fs.writeFile(path.join(workspace, "package.json"), JSON.stringify({ type: "module" }));
-    await fs.copyFile(vendorFixture, path.join(workspace, "agent.js"));
-  } else {
-    const href = pathToFileURL(vendorFixture).href;
-    await fs.writeFile(grokPath, `#!/usr/bin/env node\nimport ${JSON.stringify(href)};\n`);
-    await fs.chmod(grokPath, 0o755);
+    const grokPath = path.join(binDir, "grok.cmd");
+    await fs.writeFile(
+      grokPath,
+      `@echo off\r\n"${process.execPath}" "${agentJs}" %*\r\n`,
+    );
+    return grokPath;
   }
+  const grokPath = path.join(binDir, "grok");
+  const href = pathToFileURL(vendorFixture).href;
+  await fs.writeFile(grokPath, `#!/usr/bin/env node\nimport ${JSON.stringify(href)};\n`);
+  await fs.chmod(grokPath, 0o755);
   return grokPath;
 }
 
@@ -127,12 +127,26 @@ describe("Code acquire vendor / fallback / hard_fail", () => {
       const spawn = await readVendorSpawn(ctx.dataDir);
       assert.ok(spawn, "vendor child must record spawn");
       assert.equal(spawn.hasXai, false);
-      assert.match(String(spawn.argv[0]), /grok(\.exe)?$/i);
+      const argv: string[] = (spawn.argv ?? []).map((a: unknown) => String(a));
+      // grok.exe (copy of node) records argv[0]=grok.exe. A Windows grok.cmd
+      // shim records node + agent.js. Either proves vendor, not grok-acp.
       assert.ok(
-        spawn.argv.some((a: string) => a === "agent" || /(^|[\\/])agent(\.js)?$/i.test(String(a))),
-        `expected agent in argv, got ${JSON.stringify(spawn.argv)}`,
+        argv.some((a) => /(?:^|[\\/])grok(\.exe|\.cmd)?$/i.test(a)) ||
+          argv.some((a) => /(?:^|[\\/])agent\.js$/i.test(a)),
+        `expected vendor grok/agent in argv, got ${JSON.stringify(argv)}`,
       );
-      assert.ok(spawn.argv.includes("stdio"), `expected stdio in argv, got ${JSON.stringify(spawn.argv)}`);
+      assert.ok(
+        argv.some((a) => a === "agent" || /(^|[\\/])agent(\.js)?$/i.test(a)),
+        `expected agent in argv, got ${JSON.stringify(argv)}`,
+      );
+      assert.ok(argv.includes("stdio"), `expected stdio in argv, got ${JSON.stringify(argv)}`);
+      assert.ok(argv.includes("--cwd"), `expected --cwd in argv, got ${JSON.stringify(argv)}`);
+      assert.ok(argv.includes(ctx.workspace), `expected workspace cwd in argv, got ${JSON.stringify(argv)}`);
+      assert.ok(argv.includes("--rules"), `expected --rules in argv, got ${JSON.stringify(argv)}`);
+      assert.ok(
+        argv.some((a) => /workingDirectory/.test(a)),
+        `expected workingDirectory rule in argv, got ${JSON.stringify(argv)}`,
+      );
       assert.equal(spawn.cwd, ctx.workspace);
       assert.equal(spawn.initialize?.permissionMode, "default");
       assert.notEqual(spawn.initialize?.permissionMode, "always-approve");

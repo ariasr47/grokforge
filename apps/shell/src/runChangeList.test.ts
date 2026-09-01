@@ -229,6 +229,60 @@ test("after accept → settlement accepted, diff present when body stored", () =
   assert.equal(projection.members[0].diff, proposed);
 });
 
+test("accepted Review write still offers recovery when the activity says available", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "a1",
+        invocationId: "inv-r1",
+        path: "r1.txt",
+        editId: "edit-r1",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- a/r1.txt\n+++ b/r1.txt\n+one",
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({ requestId: "req-r1", invocationId: "inv-r1", status: "accepted" }),
+    }, 3),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].settlement, "accepted");
+  assert.equal(projection.members[0].recoveryAvailable, true);
+});
+
+test("recovery.status reverted wins over an accepted diff decision", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "a1",
+        invocationId: "inv-r1",
+        path: "r1.txt",
+        editId: "edit-r1",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: { kind: "guarded_revert", available: true, status: "reverted" },
+        diff: "--- a/r1.txt\n+++ b/r1.txt\n+one",
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({ requestId: "req-r1", invocationId: "inv-r1", status: "accepted" }),
+    }, 3),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members[0].settlement, "reverted");
+  assert.equal(projection.members[0].recoveryAvailable, false);
+});
+
 test("missing diff on one of two members → ready mixed list, one diffUnavailable, not error", () => {
   const run = runFrom([
     event({
@@ -533,7 +587,15 @@ test("mergePendingDiffs prefers durable pending and drops settled live items", (
     ],
     run,
   );
-  assert.deepEqual(merged, [{ id: "req-r1", path: "r1.txt", diff: "--- a/r1.txt\n+++ b/r1.txt\n+one" }]);
+  assert.deepEqual(merged, [{ id: "req-r1", path: "r1.txt", diff: "--- a/r1.txt\n+++ b/r1.txt\n+one", runId: "r1" }]);
+});
+
+test("mergePendingDiffs does not wipe another run's pending diffs", () => {
+  const executeDiff = { id: "exec-1", path: "ACP-A3.md", diff: "+comment", runId: "execute" };
+  const plan = runFrom([]);
+  assert.equal(plan.state === "terminal" || plan.runId === "r1", true);
+  const merged = mergePendingDiffs([executeDiff], { ...plan, state: "terminal", terminalKind: "answered" });
+  assert.equal(merged.some((d) => d.id === "exec-1" && d.runId === "execute"), true);
 });
 
 test("membership is identity not Boolean(diff) — empty-string body stays listed", () => {
@@ -859,4 +921,41 @@ test("delete-only run with null diff is ready, not absent", () => {
   assert.equal(projection.members.length, 1);
   assert.equal(projection.members[0].kind, "delete");
   assert.equal(projection.members[0].diffUnavailable, true);
+});
+
+test("Review Allow once on vendor Write file becomes a File changes member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "w1",
+        invocationId: "tc-write",
+        name: "Write file",
+        path: "C:\\\\Dev\\\\grokforge\\\\docs\\\\dogfood\\\\LOOP.md",
+        editId: "tc-write",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        diff: null,
+        recovery: null,
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({
+        requestId: "perm-w",
+        invocationId: "tc-write",
+        kind: "permission",
+        status: "accepted",
+        title: "Write file",
+        detail: "docs/dogfood/LOOP.md",
+      }),
+    }, 3),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(projection.members.length, 1);
+  assert.equal(projection.members[0].settlement, "accepted");
+  assert.match(projection.members[0].path, /LOOP\.md$/);
 });

@@ -27,7 +27,16 @@ import { LaunchFailureCard, canRetryEngine } from "./LaunchFailureCard";
 import { BootScreen } from "./BootScreen";
 import { AppTopbar } from "./AppTopbar";
 import { EngineStoppedBanner, ErrorBanner } from "./AppBanners";
-import { ComposerPane } from "./ComposerPane";
+import {
+  ComposerPane,
+  EMPTY_DRAFT_SEND,
+  composerBlockReasonVisible,
+  draftIsSendReady,
+} from "./ComposerPane";
+import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend } from "./composerSend";
+import { isStalePermissionDecision } from "./stalePermissionDecision";
+import { activityIsVendorSessionPlan, activityLooksLikeWrite } from "./activityWriteLike";
+import { atFileSuggestions } from "./atFileQuery";
 import { recentCrashes } from "./crashSink";
 
 import { EffortControl } from "./EffortControl";
@@ -44,8 +53,6 @@ import { projectChatPackComposer } from "./chatPackComposer";
 import { ChatPackStatus } from "./ChatPackStatus";
 import { CODE_AGENT_HARD_FAIL, projectCodeAgentComposer } from "./codeAgentComposer";
 import { CodeAgentStatus } from "./CodeAgentStatus";
-import { projectCodeRunProvenance } from "./codeRunProvenance";
-import { CodeRunProvenanceChip } from "./CodeRunProvenanceChip";
 import {
   composeArmedPromptText,
   filterSkillCommands,
@@ -58,10 +65,9 @@ import {
 } from "./skillsCatalogComposer";
 import { SkillsPalette } from "./SkillsPalette";
 import { SkillArmedChip } from "./SkillArmedChip";
-import { SkillHandoffProvenanceChip } from "./SkillHandoffProvenanceChip";
 import { ChatPackInventory } from "./ChatPackInventory";
 import { ChatHomeName } from "./ChatHomeName";
-import { isLivePlanning } from "./runPlanSection";
+import { isLivePlanning, planReadyIsEmpty } from "./runPlanSection";
 import {
   isOnboardingDone,
   loadFirstRun,
@@ -85,7 +91,7 @@ import { checkForAppUpdate, installAppUpdate, type UpdateStatus } from "./deskto
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
 import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "./copyDock";
 import { RefreshCw } from "lucide-react";
-import { MessageList, type ChatMessage } from "./MessageList";
+import { MessageList, WAITING_PLACEHOLDER_HEAD, type ChatMessage } from "./MessageList";
 import { RunStatusBar, type RunPhase } from "./RunStatusBar";
 import {
   formatToolInput,
@@ -96,9 +102,17 @@ import { type PermissionReq } from "./PermissionCard";
 import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
+  cancelledDoneShouldPaint,
+  foldRunAnswersIntoHistory,
+  RETRY_PROMPT_SEND_OPTS,
+  stopChipBelongsOnTranscript,
+  stripTrailingStopAndAssistant,
+} from "./promptSendHistory";
+import {
   clearPackMembers,
   commitHomeName,
   createSession,
+  defaultSessionTitle,
   deleteSession,
   ensureActiveSession,
   flushSessions,
@@ -120,7 +134,7 @@ import {
   type ChatSession,
 } from "./sessions";
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
-import { computeOverview, OverviewStrip } from "./OverviewStrip";
+import { computeOverview, filesJumpNeedsStart, OverviewStrip, pickToolsJumpEl, scrollDeltaBelowYou, shouldKeepEndAfterToolsJump, toolsJumpNeedsStart } from "./OverviewStrip";
 import { EmptyStates } from "./EmptyStates";
 import { Sidebar, type WorkspaceNode } from "./Sidebar";
 import {
@@ -167,6 +181,7 @@ import { readFilesForAttach } from "./contextAttach";
 import { scheduleExtractingCue } from "./attachBusy";
 import {
   downloadMarkdown,
+  mergeLiveRunsForExport,
   suggestChatFilename,
   transcriptToMarkdown,
 } from "./exportChat";
@@ -183,7 +198,9 @@ import {
   hasDockOwnedPending,
   mergePendingDiffs,
   mergePendingPermissions,
+  isStaleRailChip,
   railEvidenceFromRun,
+  settledRailIdentities,
 } from "./runChangeList";
 import {
   appliedThroughLastEventSeq,
@@ -207,7 +224,7 @@ import {
   type ArtifactContentKind,
   type ArtifactOpenBinding,
 } from "./artifactOpenBinding";
-import { PermissionPolicyControl } from "./PermissionPolicyControl";
+import { PermissionPolicyControl, savedPolicyUnusable } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -320,6 +337,7 @@ export function App() {
   const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
   const [shellAllowlist, setShellAllowlist] = useState(true);
   const [permissions, setPermissions] = useState<PermissionReq[]>([]);
+  const permissionInFlightRef = useRef<string | null>(null);
   const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
   const [planArmError, setPlanArmError] = useState<string | null>(null);
   const [planSettling, setPlanSettling] = useState(false);
@@ -336,6 +354,7 @@ export function App() {
     "api_key" | "reconnect" | "tools" | "workspace" | null
   >(null);
   const [firstRun, setFirstRun] = useState<FirstRunState>(() => loadFirstRun());
+  const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const paletteOpen = useChromeStore((s) => s.paletteOpen);
   const setPaletteOpen = useChromeStore((s) => s.setPaletteOpen);
@@ -350,6 +369,7 @@ export function App() {
   const setSessionShell = useSessionFlagsStore((s) => s.setSessionShell);
   const [fileIndex, setFileIndex] = useState<string[]>([]);
   const [atSuggestions, setAtSuggestions] = useState<string[]>([]);
+  const [atActiveIndex, setAtActiveIndex] = useState(0);
   const [armedSkillName, setArmedSkillName] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillsActiveIndex, setSkillsActiveIndex] = useState(0);
@@ -385,6 +405,7 @@ export function App() {
   const [awaitingNextTurn, setAwaitingNextTurn] = useState(false);
   const thinkingIdRef = useRef<string | null>(null);
   const cancelInFlightRef = useRef(false);
+  const cancelGenerationRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -398,6 +419,7 @@ export function App() {
   const lastOpenAtRef = useRef(0);
   const stateRef = useRef(state);
   const busyRef = useRef(false);
+  const sendInFlightRef = useRef(false);
   const toolFailCountRef = useRef(0);
   const streamBufRef = useRef<StreamBuffer | null>(null);
   /** Bumped on session/mode switch so late agent events cannot paint the wrong transcript. */
@@ -644,7 +666,8 @@ export function App() {
     if (scrollRafRef.current != null) return;
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = null;
-      bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      const el = transcriptRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
     });
     return () => {
       if (scrollRafRef.current != null) {
@@ -652,7 +675,7 @@ export function App() {
         scrollRafRef.current = null;
       }
     };
-  }, [messages, permissions.length, diffQueue.length, oauth]);
+  }, [messages, permissions.length, diffQueue.length, oauth, runProjection]);
 
   // First-sight of a tool group: stay at the live end if the operator is
   // already there. Only jump the first header into view when they scrolled away.
@@ -664,7 +687,8 @@ export function App() {
     );
     const plan = planLiveActivityReveal(stickToBottomRef.current, Boolean(header));
     if (plan === "keep-end") {
-      bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      const el = transcriptRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
       activityRevealRef.current = null;
       return;
     }
@@ -837,11 +861,15 @@ export function App() {
     );
     if (!isOwnedMembership(owned, { sessionId: nextRun.sessionId, runId: nextRun.runId })) return;
     const evidence = railEvidenceFromRun(nextRun);
-    if (evidence.length === 0) return;
+    const settled = settledRailIdentities(nextRun);
     setMessages((prev) => {
       let changed = false;
-      const next = prev.slice();
-      const identities = new Set(prev.map((m) => m.activityIdentity).filter((id): id is string => Boolean(id)));
+      const next = prev.filter((m) => {
+        if (!isStaleRailChip(m, settled)) return true;
+        changed = true;
+        return false;
+      });
+      const identities = new Set(next.map((m) => m.activityIdentity).filter((id): id is string => Boolean(id)));
       for (const item of evidence) {
         if (identities.has(item.identity)) continue;
         if (next.some((m) => m.role === "system" && m.content === item.content)) continue;
@@ -975,8 +1003,9 @@ export function App() {
         if (nextRun) {
           setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
           setPermissions((prev) => mergePendingPermissions(prev, nextRun));
+          applyRailEvidenceRef.current(nextRun);
         }
-        setRunStartedAt(null);
+        endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
         setRunPhase(null);
         setRunPhaseDetail(null);
         setAwaitingNextTurn(true);
@@ -1303,7 +1332,8 @@ export function App() {
       if (ev.status === "proposed") {
         setDiffQueue((q) => {
           if (q.some((d) => d.id === ev.id)) return q;
-          return [...q, { id: ev.id!, path: ev.path, diff: ev.diff }];
+          const owner = Object.values(runProjectionRef.current.runsById).find((r) => r.state !== "terminal");
+          return [...q, { id: ev.id!, path: ev.path, diff: ev.diff, runId: owner?.runId }];
         });
         setActiveDiffId((cur) => cur ?? ev.id!);
         setMessages((prev) => prev.some((m) => m.activityIdentity === stamp.activityIdentity)
@@ -1349,32 +1379,34 @@ export function App() {
       }
       const reason = ev.reason || "stop";
       if (reason === "cancelled") {
-        setMessages((prev) => {
-          const settled = prev.map((m) =>
-            m.streaming ? { ...m, streaming: false } : m,
-          );
-          const cleaned = settled.filter(
-            (m) =>
-              !(
-                m.role === "assistant" &&
-                !m.content?.trim() &&
-                !m.thinking?.trim()
-              ),
-          );
-          const last = cleaned[cleaned.length - 1];
-          if (
-            last?.role === "system" &&
-            last.content.startsWith("Stopped by you")
-          ) {
-            return cleaned;
-          }
-          return [
-            ...cleaned,
-            { id: uid(), role: "system", content: "Stopped by you." },
-          ];
+        const settled = messagesRef.current.map((m) =>
+          m.streaming ? { ...m, streaming: false } : m,
+        );
+        const cleaned = settled.filter(
+          (m) =>
+            !(
+              m.role === "assistant" &&
+              !m.content?.trim() &&
+              !m.thinking?.trim()
+            ),
+        );
+        const last = cleaned[cleaned.length - 1];
+        const paintStop = cancelledDoneShouldPaint({
+          promptGeneration: streamEpochRef.current,
+          cancelGeneration: cancelGenerationRef.current,
+          lastRole: last?.role ?? null,
+          lastContent: last?.content ?? "",
+          userCount: cleaned.filter((m) => m.role === "user").length,
         });
-        setRunFooter("Stopped by you");
-        toast.push("Stopped by you", "info");
+        setMessages(
+          paintStop
+            ? [...cleaned, { id: uid(), role: "system", content: "Stopped by you." }]
+            : cleaned,
+        );
+        if (paintStop) {
+          setRunFooter("Stopped by you");
+          toast.push("Stopped by you", "info");
+        }
         setAwaitingNextTurn(true);
         cancelInFlightRef.current = false;
       } else {
@@ -1456,7 +1488,7 @@ export function App() {
       thinkingIdRef.current = null;
       setRunPhase(null);
       setRunPhaseDetail(null);
-      setRunStartedAt(null);
+      endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
       toolFailCountRef.current = 0;
       return;
     }
@@ -1595,7 +1627,7 @@ export function App() {
           void restoreOwnedRuns("disconnect_restore").then(({ ok, hasNonterminal }) => {
             if (!ok) return;
             if (!hasNonterminal) {
-              setRunStartedAt(null);
+              endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
               setRunPhase(null);
               setRunPhaseDetail(null);
               setRunFooter(null);
@@ -1718,18 +1750,20 @@ export function App() {
   // transport delivered it (live WS, resume, admission replay, or health
   // reconciliation). This effect runs only after React has committed the
   // terminal projection, so it cannot observe the stale pre-reducer snapshot.
+  const ownedAllTerminal = runProjection.runOrder
+    .map((id) => runProjection.runsById[id])
+    .filter((run): run is NonNullable<typeof run> => Boolean(run && run.sessionId === sessionId))
+    .every((run) => run.state === "terminal")
+    && runProjection.runOrder.some((id) => runProjection.runsById[id]?.sessionId === sessionId);
   useEffect(() => {
-    const ownedRuns = runProjection.runOrder
-      .map((id) => runProjection.runsById[id])
-      .filter((run): run is NonNullable<typeof run> => Boolean(run && run.sessionId === sessionId));
-    if (!ownedRuns.length || ownedRuns.some((run) => run.state !== "terminal")) return;
-    setRunStartedAt(null);
+    if (!ownedAllTerminal) return;
+    endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
     setRunPhase(null);
     setRunPhaseDetail(null);
     setRunFooter(null);
     setAwaitingNextTurn(true);
     cancelInFlightRef.current = false;
-  }, [runProjection, sessionId]);
+  }, [ownedAllTerminal, sessionId]);
 
   // F5 — liveness is independent from socket lifecycle. Keeping this poll in
   // its own effect prevents a failed probe's state update from tearing down and
@@ -1862,7 +1896,18 @@ export function App() {
     return ids;
   }, [projectedRunIds, runProjection]);
   const visibleMessages = useMemo(
-    () => messages.filter((message) => {
+    () => {
+      const liveRailIds = new Set<string>();
+      const liveRailCopy = new Set<string>();
+      for (const id of projectedRunIds) {
+        const run = runProjection.runsById[id];
+        if (!run || run.state === "terminal") continue;
+        for (const item of railEvidenceFromRun(run)) {
+          liveRailIds.add(item.identity);
+          liveRailCopy.add(item.content);
+        }
+      }
+      return messages.filter((message) => {
       if (message.projectedRunId && projectedRunIds.has(message.projectedRunId)) return false;
       if (
         (message.role === "tool" || Boolean(message.toolMeta?.activityId)) &&
@@ -1873,15 +1918,42 @@ export function App() {
       }
       const activityId = message.toolMeta?.activityId;
       if (message.role === "tool" && activityId && journalActivityIds.has(activityId)) return false;
+      if (
+        message.role === "system" &&
+        message.content.startsWith("Stopped by you") &&
+        !stopChipBelongsOnTranscript(
+          runProjection.runOrder
+            .map((id) => runProjection.runsById[id])
+            .filter((run): run is NonNullable<typeof run> => Boolean(run) && run.sessionId === sessionId),
+        )
+      ) {
+        return false;
+      }
+      if (
+        message.role === "system" &&
+        (message.content.startsWith("Permission requested:") ||
+          message.content.startsWith("Diff proposed:"))
+      ) {
+        const identity = message.activityIdentity;
+        if (identity && (identity.startsWith("permission:") || identity.startsWith("diff:"))) {
+          return liveRailIds.has(identity);
+        }
+        return liveRailCopy.has(message.content);
+      }
       return true;
-    }),
-    [messages, projectedRunIds, journalActivityIds],
+    });
+    },
+    [messages, projectedRunIds, journalActivityIds, runProjection, sessionId],
   );
   const normalizedRunVisible = projectedRunIds.size > 0;
   // Run ownership is local to the active client session. The host's legacy
   // global `busy` bit is intentionally not a send/cancel authority: another
   // session may be running while this one remains usable.
-  const busy = Boolean(activeRun) || Boolean(runStartedAt);
+  const busy = composerChromeBusy({
+    activeNonTerminalRun: Boolean(activeRun),
+    runStartedAt,
+    ownedAllTerminal,
+  });
   busyRef.current = busy;
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
@@ -1930,25 +2002,44 @@ export function App() {
       return {
         run,
         decision,
-        empty: (run.plan?.proposedMembers.length ?? 0) === 0,
+        empty: planReadyIsEmpty(run.plan?.body, run.plan?.proposedMembers.length ?? 0),
       };
     }
     return null;
   }, [runProjection, sessionId]);
-  const planArm = projectPlanArm({
-    mode: productMode,
-    workspace: state?.workspace ?? null,
-    connected,
-    planEngagement: state?.planEngagement,
-    busyOther: Boolean(activeRun && !isLivePlanning(activeRun)),
-    armError: planArmError,
-  });
-  const projectInstructionsComposer = projectProjectInstructionsComposer({
-    mode: productMode,
-    workspace: state?.workspace ?? null,
-    connected,
-    projectInstructions: state?.projectInstructions,
-  });
+  useEffect(() => {
+    setPlanDecisionError(null);
+  }, [pendingPlanDecision?.decision.requestId, pendingPlanDecision?.run.runId, sessionId]);
+  const planBusyOther = Boolean(activeRun && !isLivePlanning(activeRun));
+  const planArm = useMemo(
+    () =>
+      projectPlanArm({
+        mode: productMode,
+        workspace: state?.workspace ?? null,
+        connected,
+        planEngagement: state?.planEngagement,
+        busyOther: planBusyOther,
+        armError: planArmError,
+      }),
+    [productMode, state?.workspace, connected, state?.planEngagement, planBusyOther, planArmError],
+  );
+  const projectInstructionsComposer = useMemo(
+    () =>
+      projectProjectInstructionsComposer({
+        mode: productMode,
+        workspace: state?.workspace ?? null,
+        connected,
+        projectInstructions: state?.projectInstructions,
+      }),
+    [
+      productMode,
+      state?.workspace,
+      connected,
+      state?.projectInstructions?.status,
+      state?.projectInstructions?.path,
+      state?.projectInstructions?.vouched,
+    ],
+  );
   const codeAgent = state?.codeAgent ?? null;
   const vendorCode = productMode === "code" && codeAgent?.identity === "vendor";
   const codeHardFail =
@@ -1958,11 +2049,22 @@ export function App() {
     productMode === "code" &&
     codeAgent != null &&
     codeAgent.resolveStatus !== "hard_fail";
-  const codeAgentComposer = projectCodeAgentComposer({
-    mode: productMode,
-    codeAgent,
-    transportOk: hostOk && wsOk,
-  });
+  const transportOk = hostOk && wsOk;
+  const codeAgentComposer = useMemo(
+    () =>
+      projectCodeAgentComposer({
+        mode: productMode,
+        codeAgent,
+        transportOk,
+      }),
+    [
+      productMode,
+      transportOk,
+      codeAgent?.identity,
+      codeAgent?.resolveStatus,
+      codeAgent?.fallbackReason,
+    ],
+  );
   const skillsPalette = useMemo(
     () =>
       projectSkillsPalette({
@@ -1970,7 +2072,14 @@ export function App() {
         codeAgent,
         skillsCatalog: state?.skillsCatalog,
       }),
-    [productMode, codeAgent, state?.skillsCatalog],
+    [
+      productMode,
+      codeAgent?.identity,
+      codeAgent?.resolveStatus,
+      codeAgent?.fallbackReason,
+      state?.skillsCatalog?.disposition,
+      state?.skillsCatalog?.commands,
+    ],
   );
   const skillsFilter = slashTokenFilter(
     draft,
@@ -1989,18 +2098,18 @@ export function App() {
     : armedSkillName;
   useEffect(() => {
     const caret = composerRef.current?.selectionStart ?? draft.length;
-    setSkillsOpen(mayOpenSkillsPalette(skillsPalette, draft, caret));
-  }, [skillsPalette, draft]);
+    const next = mayOpenSkillsPalette(skillsPalette, draft, caret);
+    setSkillsOpen((open) => (open === next ? open : next));
+  }, [skillsPalette.state, draft]);
   useEffect(() => {
     if (shouldClearArmedInvocation(skillsPalette)) setArmedSkillName(null);
-  }, [skillsPalette]);
+  }, [skillsPalette.state]);
   useEffect(() => {
     setArmedSkillName(null);
-    setSkillsOpen(false);
   }, [sessionId]);
   useEffect(() => {
-    setSkillsActiveIndex(0);
-  }, [draft, skillsPalette]);
+    setSkillsActiveIndex((i) => (i === 0 ? i : 0));
+  }, [draft, skillsPalette.state]);
   const effortLevel: EffortLevel =
     state?.effort === "fast" ||
     state?.effort === "expert" ||
@@ -2223,7 +2332,7 @@ export function App() {
     async (engaged: boolean) => {
       const previous = stateRef.current?.planEngagement?.engaged ? "Plan" : "Execute";
       try {
-        const s = await api.setPlanEngagement(engaged);
+        const s = await api.setPlanEngagement(engaged, sessionIdRef.current);
         applyState(s);
         setPlanArmError(null);
       } catch (e) {
@@ -2255,6 +2364,12 @@ export function App() {
     awaitingNextTurn &&
     (visibleMessages.length > 0 || normalizedRunVisible);
 
+  useEffect(() => {
+    if (!stickToBottomRef.current || !turnReady) return;
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turnReady]);
+
   const sendDisabledReason = useMemo(() => {
     if (!connected && !codePreAcquireOk) return "Engine offline — try again to send";
     if (codeHardFail) return CODE_AGENT_HARD_FAIL;
@@ -2273,18 +2388,44 @@ export function App() {
     ) {
       return SETTLE_CARD_BELOW;
     }
-    if (sessionHasNonTerminalRun) return "A run is in progress";
+    if (sessionHasNonTerminalRun || busy) return "A run is in progress";
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
-    if (!draft.trim() && !effectiveArmedName) return "Type a message to send";
+    const skillNames =
+      skillsPalette.state === "ready" ? skillsPalette.commands.map((c) => c.name) : [];
+    if (!draftIsSendReady(draft, skillNames) && !effectiveArmedName) return EMPTY_DRAFT_SEND;
     return null;
-  }, [connected, codePreAcquireOk, codeHardFail, vendorCode, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, sessionHasDockOwnedPending, draft, effectiveArmedName, oauth, permissions.length, diffQueue.length, pendingPlanDecision]);
+  }, [connected, codePreAcquireOk, codeHardFail, vendorCode, productMode, state?.workspace, state?.hasApiKey, state?.permissionPolicy, state?.planEngagement, sessionHasNonTerminalRun, busy, sessionHasDockOwnedPending, draft, effectiveArmedName, skillsPalette, oauth, permissions.length, diffQueue.length, pendingPlanDecision]);
   const overview = useMemo(
-    () =>
-      computeOverview(
+    () => {
+      const runPaths: string[] = [];
+      let runToolCount = 0;
+      let runToolFails = 0;
+      for (const id of projectedRunIds) {
+        const run = runProjection.runsById[id];
+        if (!run) continue;
+        for (const a of Object.values(run.activities)) {
+          runToolCount += 1;
+          if (a.status === "failed") runToolFails += 1;
+          if (
+            activityLooksLikeWrite(a) &&
+            !activityIsVendorSessionPlan(a) &&
+            typeof a.path === "string" &&
+            a.path
+          ) {
+            runPaths.push(a.path);
+          }
+        }
+      }
+      return computeOverview(
         messages,
-        diffQueue.map((d) => d.path),
-      ),
-    [messages, diffQueue],
+        [
+          ...diffQueue.map((d) => d.path),
+          ...runPaths,
+        ],
+        runToolCount > 0 ? { count: runToolCount, fails: runToolFails } : undefined,
+      );
+    },
+    [messages, diffQueue, projectedRunIds, runProjection],
   );
 
   /**
@@ -2551,7 +2692,7 @@ export function App() {
         !isChatKey && ws === state?.workspace
           ? (branchMap[ws] ?? null)
           : null;
-      const s = createSession(ws, "New chat", branch);
+      const s = createSession(ws, defaultSessionTitle(ws), branch);
       if (
         !isChatKey &&
         ws !== state?.workspace &&
@@ -2569,6 +2710,7 @@ export function App() {
       }
       setDiffQueue([]);
       setPermissions([]);
+      setPlanDecisionError(null);
       setView("chat");
       refreshTree();
     },
@@ -2583,6 +2725,7 @@ export function App() {
       productMode,
       reportError,
       discardTranscriptStream,
+      setPlanEngagementUi,
     ],
   );
 
@@ -2642,7 +2785,9 @@ export function App() {
       await openPath(native);
       return;
     }
-    document.getElementById("workspace-path")?.focus();
+    const pathField = document.getElementById("workspace-path");
+    pathField?.closest("details")?.setAttribute("open", "");
+    pathField?.focus();
   }, [openPath]);
 
   const bindChatFolder = useCallback(async () => {
@@ -2697,6 +2842,9 @@ export function App() {
     async (decision: "allow_once" | "allow_session" | "deny") => {
       const p = permissions[0];
       if (!p) return;
+      if (permissionInFlightRef.current === p.id) return;
+      permissionInFlightRef.current = p.id;
+      setPermissions((prev) => prev.filter((x) => x.id !== p.id));
       try {
         await api.runPermission({
           sessionId: p.sessionId,
@@ -2714,17 +2862,23 @@ export function App() {
           const stillPending = owner && Object.values(owner.decisions).some(
             (d) => d.requestId === p.id && d.kind === "permission" && d.status === "pending",
           );
-          if (stillPending) return prev;
+          if (stillPending) return prev.some((x) => x.id === p.id) ? prev : [p, ...prev];
           return prev.filter((x) => x.id !== p.id);
         });
-        toast.push(
-          decision === "deny"
-            ? `Denied ${p.kind}`
-            : `Allowed ${p.kind}${decision === "allow_session" ? " (session)" : ""}`,
-          decision === "deny" ? "info" : "success",
-        );
+        if (decision !== "allow_once") {
+          toast.push(
+            decision === "deny"
+              ? `Denied ${p.kind}`
+              : `Allowed ${p.kind} (session)`,
+            decision === "deny" ? "info" : "success",
+          );
+        }
       } catch (err) {
+        if (isStalePermissionDecision(err)) return;
+        setPermissions((prev) => (prev.some((x) => x.id === p.id) ? prev : [p, ...prev]));
         reportError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (permissionInFlightRef.current === p.id) permissionInFlightRef.current = null;
       }
     },
     [permissions, reportError, toast],
@@ -3019,6 +3173,7 @@ export function App() {
   const requestCancel = useCallback(() => {
     if (cancelInFlightRef.current && !busyRef.current) return;
     cancelInFlightRef.current = true;
+    cancelGenerationRef.current = streamEpochRef.current;
     setRunPhaseDetail("Cancelling…");
     setRunFooter("Cancelling…");
     toast.push("Cancel requested", "info");
@@ -3035,7 +3190,7 @@ export function App() {
           try {
             const replay = await api.runState(active.runId, sessionId, 0);
             commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
-            if (replay.run.state === "terminal") { setRunStartedAt(null); setRunPhase(null); setRunPhaseDetail(null); setRunFooter(null); setAwaitingNextTurn(true); cancelInFlightRef.current = false; }
+            if (replay.run.state === "terminal") { endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null); setRunPhase(null); setRunPhaseDetail(null); setRunFooter(null); setAwaitingNextTurn(true); cancelInFlightRef.current = false; }
           } catch { /* socket replay remains available */ }
         }
       })
@@ -3049,7 +3204,7 @@ export function App() {
             .then((replay) => {
               commitRunProjection(reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events));
               if (replay.run.state === "terminal") {
-                setRunStartedAt(null);
+                endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
                 setRunPhase(null);
                 setRunPhaseDetail(null);
                 setRunFooter(null);
@@ -3076,7 +3231,18 @@ export function App() {
         const run = runProjection.runsById[id];
         return run?.sessionId === sessionId && run.state !== "terminal";
       });
-      if (!text || ownedRunActive || (!connected && !codePreAcquireOk) || !sessionId) return;
+      if (
+        !composerSendAdmitted({
+          text,
+          sessionBusy: busyRef.current,
+          ownedRunActive,
+          sendInFlight: sendInFlightRef.current,
+        }) ||
+        (!connected && !codePreAcquireOk) ||
+        !sessionId
+      ) {
+        return;
+      }
       if (
         oauth ||
         permissions.length > 0 ||
@@ -3104,6 +3270,9 @@ export function App() {
         reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
         return;
       }
+      if (!beginPageSend()) return;
+      busyRef.current = true;
+      sendInFlightRef.current = true;
       setDraft("");
       setHistIdx(-1);
       setAtSuggestions([]);
@@ -3115,30 +3284,14 @@ export function App() {
       // New generation — accepts only this run's stream events
       beginStreamRun();
       setRunPhase("waiting_model");
-      setRunPhaseDetail(
-        effortLevel === "auto"
-          ? "Waiting for Grok…"
-          : `Waiting for Grok (${effortLevel} effort)…`,
-      );
+      setRunPhaseDetail(WAITING_PLACEHOLDER_HEAD);
       setRunStartedAt(Date.now());
       setRunFooter(null);
 
       // Build transcript base for history + UI (sync, before setState lag)
       let base = messagesRef.current.slice();
       if (opts?.stripTrailingAssistant) {
-        while (base.length) {
-          const last = base[base.length - 1]!;
-          if (
-            last.role === "assistant" ||
-            (last.role === "system" &&
-              (last.content.startsWith("Stopped by you") ||
-                last.content.startsWith("Run ended")))
-          ) {
-            base.pop();
-            continue;
-          }
-          break;
-        }
+        base = stripTrailingStopAndAssistant(base);
       }
       let promptMessageId: string | null = null;
       if (!opts?.skipUserBubble) {
@@ -3152,22 +3305,31 @@ export function App() {
       setMessages(base);
       setFirstRun((fr) => patchFirstRun({ ...fr, sentMessage: true }));
 
-      // Prior turns only — last bubble is the user prompt we're about to send
-      const history = base
-        .slice(0, -1)
-        .filter(
-          (m) =>
-            (m.role === "user" ||
-              m.role === "assistant" ||
-              m.role === "system") &&
-            m.content?.trim() &&
-            !m.content.startsWith("Stopped by you"),
-        )
-        .slice(-30)
-        .map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: m.content.slice(0, 12_000),
-        }));
+      // Prior turns only — last bubble is the user prompt we're about to send.
+      // Run-backed answers skip text_delta into messages; fold vouched run
+      // answers so follow-up history is not user-only.
+      const runAnswerById: Record<string, string> = {};
+      for (const run of Object.values(runProjectionRef.current.runsById)) {
+        if (run.answerVouched && run.finalAnswer?.trim()) runAnswerById[run.runId] = run.finalAnswer;
+      }
+      const history = foldRunAnswersIntoHistory(
+        base
+          .slice(0, -1)
+          .filter(
+            (m) =>
+              (m.role === "user" ||
+                m.role === "assistant" ||
+                m.role === "system") &&
+              m.content?.trim() &&
+              !m.content.startsWith("Stopped by you"),
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content.slice(0, 12_000),
+            projectedRunId: m.projectedRunId,
+          })),
+        runAnswerById,
+      ).slice(-30);
 
       let outbound = text;
       if (state?.workspace && /@/.test(text)) {
@@ -3182,6 +3344,38 @@ export function App() {
       }
 
       try {
+        if (
+          cancelDuringAdmission({
+            cancelRequested: cancelInFlightRef.current,
+            admitted: false,
+          }) === "abort_before_post"
+        ) {
+          endPageSend();
+          sendInFlightRef.current = false;
+          setRunStartedAt(null);
+          setRunPhase(null);
+          setRunPhaseDetail(null);
+          setRunFooter("Stopped by you");
+          setAwaitingNextTurn(true);
+          cancelInFlightRef.current = false;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (
+              !cancelledDoneShouldPaint({
+                promptGeneration: streamEpochRef.current,
+                cancelGeneration: cancelGenerationRef.current,
+                lastRole: last?.role ?? null,
+                lastContent: last?.content ?? "",
+                userCount: prev.filter((m) => m.role === "user").length,
+              })
+            ) {
+              return prev;
+            }
+            return [...prev, { id: uid(), role: "system", content: "Stopped by you." }];
+          });
+          toast.push("Stopped by you", "info");
+          return;
+        }
         // Contract path: admission returns the authoritative RunSnapshot (202).
         // A successful response without it is invalid and is never retried via
         // the legacy endpoint, which could dispatch the prompt twice.
@@ -3198,8 +3392,29 @@ export function App() {
         {
           const run = admitted.run;
           bindNormalizedRun(run.runId, run.sessionId);
-          if (run.state === "terminal") {
+          if (
+            cancelDuringAdmission({
+              cancelRequested: cancelInFlightRef.current,
+              admitted: true,
+            }) === "cancel_admitted_run" &&
+            sessionId &&
+            run.state !== "terminal"
+          ) {
+            const cancelled = await api.cancelRun(sessionId, run.runId);
+            if (cancelled.run) {
+              commitRunProjection(mergeRunSnapshot(runProjectionRef.current, cancelled.run));
+            }
+            endPageSend();
+            sendInFlightRef.current = false;
             setRunStartedAt(null);
+            setRunPhase(null);
+            setRunPhaseDetail(null);
+            setRunFooter("Stopped by you");
+            setAwaitingNextTurn(true);
+            return;
+          }
+          if (run.state === "terminal") {
+            endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
             setRunPhase(null);
             setRunPhaseDetail(null);
             setAwaitingNextTurn(true);
@@ -3226,7 +3441,7 @@ export function App() {
               applyRailEvidenceRef.current(nextRun);
             }
             if (replay.run.state === "terminal") {
-              setRunStartedAt(null);
+              endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
               setRunPhase(null);
               setRunPhaseDetail(null);
               setAwaitingNextTurn(true);
@@ -3241,7 +3456,7 @@ export function App() {
           pendingPromptSessionIdRef.current = null;
         }
         setRunPhase(null);
-        setRunStartedAt(null);
+        endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
         setAwaitingNextTurn(true);
         if (err instanceof ApiError && err.code === "skill_handoff_unavailable") {
           setArmedSkillName(null);
@@ -3318,7 +3533,7 @@ export function App() {
       setArtifactOpenBinding((b) => (b ? clearArtifactBinding(b) : null));
       // Drop trailing assistant / stop chips; keep the last user bubble
       void sendText(content, {
-        stripTrailingAssistant: true,
+        ...RETRY_PROMPT_SEND_OPTS,
         skipUserBubble: true,
       });
     },
@@ -3329,8 +3544,8 @@ export function App() {
     (userContent: string) => {
       setArtifactOpenBinding((b) => (b ? clearArtifactBinding(b) : null));
       void sendText(userContent, {
+        ...RETRY_PROMPT_SEND_OPTS,
         skipUserBubble: true,
-        stripTrailingAssistant: true,
       });
     },
     [sendText],
@@ -3479,25 +3694,28 @@ export function App() {
         ? listSessions(sessionPartition).find((s) => s.id === sessionId)
             ?.title
         : undefined;
+    const sessionRuns = runProjection.runOrder
+      .map((id) => runProjection.runsById[id])
+      .filter((run) => run && run.sessionId === sessionId);
     const md = transcriptToMarkdown({
       title: title || "Chat",
       mode: productMode,
-      messages: messagesRef.current,
+      messages: mergeLiveRunsForExport(messagesRef.current, sessionRuns),
     });
     downloadMarkdown(suggestChatFilename(title), md);
     toast.push("Downloaded chat as Markdown", "success");
-  }, [sessionId, sessionPartition, productMode, toast]);
+  }, [sessionId, sessionPartition, productMode, toast, runProjection]);
 
   const onComposerChange = (value: string) => {
     setDraft(value);
     const m = value.match(/@([^\s@]*)$/);
     if (m && fileIndex.length) {
       const q = m[1]!.toLowerCase();
-      setAtSuggestions(
-        fileIndex.filter((f) => f.toLowerCase().includes(q)).slice(0, 8),
-      );
+      setAtSuggestions(atFileSuggestions(fileIndex, q, 8));
+      setAtActiveIndex(0);
     } else {
       setAtSuggestions([]);
+      setAtActiveIndex(0);
     }
   };
 
@@ -3541,11 +3759,6 @@ export function App() {
         armSkill(skillsRows[skillsIndex]!.name);
         return;
       }
-    }
-    if (atSuggestions.length && (e.key === "ArrowDown" || e.key === "Tab")) {
-      e.preventDefault();
-      insertAtFile(atSuggestions[0]!);
-      return;
     }
     if (e.key === "ArrowUp" && !e.shiftKey && draft === "" && history.length) {
       e.preventDefault();
@@ -3988,7 +4201,8 @@ export function App() {
     messages.length === 0 &&
     !normalizedRunVisible &&
     !hasAnyStoredHistory() &&
-    state?.priorConversations === true;
+    state?.priorConversations === true &&
+    !notFoundDismissed;
 
   // The first-run welcome inherits the same correction: it must not welcome
   // a shell that already holds conversations elsewhere in its store just
@@ -3998,6 +4212,7 @@ export function App() {
   // simply swap the false "not found" alarm for a false "Welcome to Forge".
   const showOnboarding =
     !showConversationsNotFound &&
+    !notFoundDismissed &&
     !hasAnyStoredHistory() &&
     !isOnboardingDone(firstRun, productMode) &&
     view === "chat" &&
@@ -4069,7 +4284,7 @@ export function App() {
             <code>
               ~/.grokforge{appChannel() === "dev" ? "-dev" : ""}
             </code>
-            · safe beside Prod
+            {" · safe beside Prod"}
           </span>
         </div>
       )}
@@ -4638,6 +4853,91 @@ export function App() {
                   }
                   mode={productMode}
                   shellCapability={state?.shellCapability}
+                  codeAgentIdentity={state?.codeAgent?.identity}
+                  onJumpToFiles={
+                    overview.filesTouched.length
+                      ? () => {
+                          const files = document.querySelector<HTMLElement>(".file-changes");
+                          const you = document.querySelector<HTMLElement>(".run-prompt");
+                          const transcript = document.querySelector<HTMLElement>(".transcript");
+                          if (!files) return;
+                          files.scrollIntoView({ block: "start", behavior: "instant" });
+                          const thought = document.querySelector<HTMLElement>(".run-thought");
+                          const thoughtOpen =
+                            thought instanceof HTMLDetailsElement
+                              ? thought.open
+                              : Boolean(thought?.hasAttribute("open"));
+                          const thoughtR = !thoughtOpen ? thought?.getBoundingClientRect() : null;
+                          const thoughtTop = thoughtR?.top ?? null;
+                          const thoughtBottom = thoughtR?.bottom ?? null;
+                          if (
+                            you &&
+                            filesJumpNeedsStart({
+                              filesTop: files.getBoundingClientRect().top,
+                              youBottom: you.getBoundingClientRect().bottom,
+                              thoughtTop,
+                              thoughtBottom,
+                            })
+                          ) {
+                            const delta = scrollDeltaBelowYou({
+                              targetTop: files.getBoundingClientRect().top,
+                              youBottom: you.getBoundingClientRect().bottom,
+                              thoughtTop,
+                              thoughtBottom,
+                            });
+                            if (transcript) transcript.scrollTop += delta;
+                          }
+                        }
+                      : undefined
+                  }
+                  onJumpToTools={
+                    overview.tools > 0
+                      ? () => {
+                          const tools = pickToolsJumpEl();
+                          const transcript = document.querySelector<HTMLElement>(".transcript");
+                          const composer = document.querySelector<HTMLElement>(".composer-wrap");
+                          const cue = document.querySelector<HTMLElement>(".turn-delimiter");
+                          if (!tools) return;
+                          tools.scrollIntoView({ block: "nearest", behavior: "instant" });
+                          const you = document.querySelector<HTMLElement>(".run-prompt");
+                          if (you) {
+                            const toolsR0 = tools.getBoundingClientRect();
+                            const youR = you.getBoundingClientRect();
+                            if (toolsJumpNeedsStart({ toolsTop: toolsR0.top, youBottom: youR.bottom })) {
+                              tools.scrollIntoView({ block: "start", behavior: "instant" });
+                            }
+                          }
+                          if (!transcript || !composer || !cue) return;
+                          const toolsR = tools.getBoundingClientRect();
+                          const tr = transcript.getBoundingClientRect();
+                          const cueR = cue.getBoundingClientRect();
+                          const compR = composer.getBoundingClientRect();
+                          const thoughtEl = document.querySelector<HTMLElement>(".run-thought");
+                          const thoughtOpen =
+                            thoughtEl instanceof HTMLDetailsElement
+                              ? thoughtEl.open
+                              : Boolean(thoughtEl?.hasAttribute("open"));
+                          const thoughtR = !thoughtOpen ? thoughtEl?.getBoundingClientRect() : undefined;
+                          const fileHead = document.querySelector<HTMLElement>(".file-changes-header");
+                          if (
+                            shouldKeepEndAfterToolsJump({
+                              toolsTop: toolsR.top,
+                              toolsBottom: toolsR.bottom,
+                              transcriptTop: tr.top,
+                              composerTop: compR.top,
+                              cueBottom: cueR.bottom,
+                              hiddenBelow:
+                                transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight,
+                              fileHeadTop: fileHead?.getBoundingClientRect().top ?? null,
+                              youBottom: you?.getBoundingClientRect().bottom ?? null,
+                              thoughtBottom: thoughtR?.bottom ?? null,
+                            })
+                          ) {
+                            transcript.scrollTop = transcript.scrollHeight;
+                          }
+                        }
+                      : undefined
+                  }
                 />
               )}
               <RunStatusBar
@@ -4695,11 +4995,13 @@ export function App() {
               <div className={`chat-stage${artifactOpenBinding ? " chat-stage--artifact-open" : ""}`}>
               <div className="sr-only" aria-live="polite">{artifactAnnounce}</div>
               <div className="transcript" tabIndex={-1} ref={transcriptRef}>
-                {showConversationsNotFound ? (
+                {showConversationsNotFound && !skillsOpen && atSuggestions.length === 0 ? (
                   <EmptyStates
                     kind="conversations-not-found"
                     onSaveDiagnostics={() => void exportSessionDiagnostics()}
-                    onStartNewConversation={() => newSession()}
+                    onStartNewConversation={() => {
+                      setNotFoundDismissed(true);
+                    }}
                   />
                 ) : showOnboarding ? (
                   <Onboarding
@@ -4723,7 +5025,7 @@ export function App() {
                     }
                     packagedWindowsHonesty={isPackagedWindowsInstallerSession()}
                   />
-                ) : messages.length === 0 && !normalizedRunVisible && hostOk ? (
+                ) : messages.length === 0 && !normalizedRunVisible && hostOk && !skillsOpen && atSuggestions.length === 0 ? (
                   <EmptyStates
                     kind={
                       !state?.hasApiKey && !vendorCode
@@ -4756,15 +5058,7 @@ export function App() {
                       const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
                       return (
                       <div key={id} className="run-stack">
-                      <CodeRunProvenanceChip
-                        projection={projectCodeRunProvenance({
-                          mode: productMode,
-                          run,
-                          catchUp: runCatchUp,
-                        })}
-                      />
-                      <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
-                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
+                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
                       </div>
                       );
                     })}
@@ -4886,6 +5180,12 @@ export function App() {
                   composerRef.current?.focus();
                 }}
                 atSuggestions={atSuggestions}
+                atActiveIndex={atActiveIndex}
+                onAtActiveIndexChange={setAtActiveIndex}
+                onDismissAt={() => {
+                  setAtSuggestions([]);
+                  setAtActiveIndex(0);
+                }}
                 onInsertAt={insertAtFile}
                 onPinToPack={(file) => void mutateChatPack({ action: "pin_file", path: file })}
                 composerRef={composerRef}
@@ -4950,14 +5250,16 @@ export function App() {
                   {projectInstructionsComposer.state !== "absent_chat" ? (
                     <ProjectInstructionsStatus projection={projectInstructionsComposer} />
                   ) : null}
-                  <CodeAgentStatus projection={codeAgentComposer} />
-                  <span className="composer-meta">
-                    {productMode === "chat"
-                      ? "Chat"
-                      : state?.workspaceName || "no project"}
-                    {" · "}
-                    {state?.appliedModel || state?.model || modelDraft}
-                    {state?.authSource ? ` · ${state.authSource}` : ""}
+                  <span className="composer-identity">
+                    <CodeAgentStatus projection={codeAgentComposer} />
+                    <span className="composer-meta">
+                      {productMode === "chat"
+                        ? "Chat"
+                        : state?.workspaceName || "no project"}
+                      {" · "}
+                      {state?.appliedModel || state?.model || modelDraft}
+                      {state?.authSource ? ` · ${state.authSource}` : ""}
+                    </span>
                   </span>
                   {state?.permissionPolicy?.status === "confirmed" && (
                     <span className="composer-policy" aria-label="Effective permission policy">
@@ -4968,12 +5270,12 @@ export function App() {
                     Attach text · Export .md · Enter send · Ctrl+K
                   </span>
                 </div>
-                {state?.permissionPolicy?.fallbackReason && (
+                {savedPolicyUnusable(state?.permissionPolicy?.fallbackReason) && (
                   <div className="composer-policy-notice" role="status">
                     Forge couldn’t use the saved permission policy. Review is active.
                   </div>
                 )}
-                {sendDisabledReason && draft.trim() ? (
+                {composerBlockReasonVisible(sendDisabledReason, draft) ? (
                   <div className="composer-block-reason" role="status">
                     {sendDisabledReason}
                   </div>

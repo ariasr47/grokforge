@@ -16,7 +16,7 @@ export type PlanSectionProjection =
       decisionPending: boolean;
       empty: boolean;
     }
-  | { state: "accepted"; policyLabel: string; bypassActive: boolean }
+  | { state: "accepted"; policyLabel: string; bypassActive: boolean; body: string | null }
   | { state: "kept_planning" }
   | { state: "cancelled" }
   | { state: "failed" }
@@ -42,6 +42,16 @@ export const PLAN_LOAD_FAILURE =
 export const PLAN_OFFLINE_SECTION =
   "Forge is offline. This run’s plan so far is still shown. Reconnect to confirm plan status.";
 export const PLAN_READY_ANNOUNCE = "Plan ready to review";
+
+const NOTHING_TO_CHANGE = /\b(?:nothing to change|no changes?(?: proposed| needed| required)?|no files? to (?:change|edit)|unchanged)\b/i;
+
+/** Empty dock is blank / nothing-to-change — a real plan body is Review plan even with 0 paths. */
+export function planReadyIsEmpty(body: string | null | undefined, memberCount: number): boolean {
+  if (memberCount > 0) return false;
+  const text = typeof body === "string" ? body.trim() : "";
+  if (!text) return true;
+  return NOTHING_TO_CHANGE.test(text);
+}
 
 export type PlanSectionOptions = {
   connected?: boolean;
@@ -97,7 +107,7 @@ export function projectRunPlanSection(
         decisionPending: Object.values(run.decisions).some(
           (d) => d.kind === "plan" && d.status === "pending",
         ),
-        empty: proposedMembers.length === 0,
+        empty: planReadyIsEmpty(plan.body, proposedMembers.length),
       };
     }
     case "accepted":
@@ -105,6 +115,7 @@ export function projectRunPlanSection(
         state: "accepted",
         policyLabel: policyLabelFrom(plan),
         bypassActive: opts.bypassActive === true,
+        body: typeof plan.body === "string" && plan.body.trim() ? plan.body : null,
       };
     case "kept_planning":
       return { state: "kept_planning" };
