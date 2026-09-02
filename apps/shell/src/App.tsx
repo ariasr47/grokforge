@@ -4688,6 +4688,18 @@ export function App() {
                         Motion: {prefs.motion === "calm" ? "Calm" : "Full"}
                       </Button>
                     </Hint>
+                    <Hint label="Aurora is still. Stars twinkle.">
+                      <Button
+                        onClick={() => {
+                          const next = patchPrefs({
+                            field: prefs.field === "stars" ? "aurora" : "stars",
+                          });
+                          setPrefs(next);
+                        }}
+                      >
+                        Background: {prefs.field === "stars" ? "Stars" : "Aurora"}
+                      </Button>
+                    </Hint>
                   </div>
                   <label className="check-row" style={{ marginTop: 12 }}>
                     <input

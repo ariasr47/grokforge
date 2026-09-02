@@ -4,6 +4,8 @@ export type Density = "comfortable" | "compact";
 /** Voidglass is the locked dark default; Aeon remains an explicit optional theme. */
 export type ThemeMode = "aeon" | "light" | "voidglass";
 export type MotionMode = "full" | "calm";
+/** Background field: a still aurora wash by default, or the animated starfield opt-in. */
+export type FieldMode = "aurora" | "stars";
 export type ProductModePref = "chat" | "code";
 export type EffortPref = "auto" | "fast" | "expert" | "heavy";
 
@@ -11,6 +13,7 @@ export interface Prefs {
   density: Density;
   theme: ThemeMode;
   motion: MotionMode;
+  field: FieldMode;
   lastMode: ProductModePref;
   effort: EffortPref;
   /** True after user has used Code mode at least once */
@@ -25,6 +28,7 @@ const defaults: Prefs = {
   density: "comfortable",
   theme: "voidglass",
   motion: "full",
+  field: "aurora",
   lastMode: "chat",
   effort: "auto",
   usedCode: false,
@@ -38,6 +42,9 @@ function normalize(p: Prefs): Prefs {
   }
   if (p.motion !== "calm" && p.motion !== "full") {
     p = { ...p, motion: "full" };
+  }
+  if (p.field !== "aurora" && p.field !== "stars") {
+    p = { ...p, field: "aurora" };
   }
   return p;
 }
@@ -69,6 +76,7 @@ export function applyPrefsToDom(p: Prefs = loadPrefs()): void {
   root.dataset.theme = theme;
   root.dataset.density = p.density;
   root.dataset.motion = p.motion;
+  root.dataset.field = p.field;
   root.style.colorScheme = theme === "light" ? "light" : "dark";
 }
 

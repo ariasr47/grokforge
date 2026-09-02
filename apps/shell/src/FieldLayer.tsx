@@ -1,7 +1,10 @@
 /**
  * GPU-friendly Aeon constellation field.
  * Single full-screen canvas on its own compositor layer; pauses when hidden
- * or when motion is calm / reduced.
+ * or when motion is calm / reduced. Paints nothing at all unless the
+ * `field` preference is "stars" — the default "aurora" look is a static
+ * CSS background on `body` (see tokens.css), so the canvas stays blank and
+ * lets it show through.
  */
 import { useEffect, useRef } from "react";
 
@@ -24,6 +27,10 @@ function prefersReducedMotion(): boolean {
 
 function isCalmDom(): boolean {
   return document.documentElement.dataset.motion === "calm";
+}
+
+function isStarsDom(): boolean {
+  return document.documentElement.dataset.field === "stars";
 }
 
 export function FieldLayer() {
@@ -70,6 +77,9 @@ export function FieldLayer() {
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // Resizing the canvas already clears it; skip seeding/painting when
+      // the static aurora (CSS) is what should show through instead.
+      if (!isStarsDom()) return;
       seed();
       paint(performance.now(), true);
     };
@@ -123,6 +133,11 @@ export function FieldLayer() {
 
     const loop = (t: number) => {
       if (!running) return;
+      if (!isStarsDom()) {
+        ctx.clearRect(0, 0, w, h);
+        raf = 0;
+        return;
+      }
       if (document.hidden || prefersReducedMotion() || isCalmDom()) {
         paint(t, true);
         raf = 0;
@@ -133,6 +148,15 @@ export function FieldLayer() {
     };
 
     const start = () => {
+      if (!isStarsDom()) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        // Leave the canvas blank so the static aurora background painted
+        // on `body` (tokens.css) shows through underneath.
+        ctx.clearRect(0, 0, w, h);
+        return;
+      }
+      if (stars.length === 0) seed();
       if (raf) return;
       if (prefersReducedMotion() || isCalmDom()) {
         paint(performance.now(), true);
@@ -150,7 +174,7 @@ export function FieldLayer() {
       }
     };
 
-    const onMotionAttr = () => {
+    const onPrefAttr = () => {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       start();
@@ -160,10 +184,10 @@ export function FieldLayer() {
     start();
     window.addEventListener("resize", resize, { passive: true });
     document.addEventListener("visibilitychange", onVis);
-    const mo = new MutationObserver(onMotionAttr);
+    const mo = new MutationObserver(onPrefAttr);
     mo.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-motion"],
+      attributeFilter: ["data-motion", "data-field"],
     });
 
     return () => {

@@ -114,7 +114,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background: var(--void);
+  /* Static aurora wash — the default "field" look; FieldLayer's canvas
+     paints nothing over this unless the "stars" preference is chosen. */
+  background:
+    radial-gradient(900px 480px at 8% -12%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 58%),
+    radial-gradient(760px 420px at 100% -6%, color-mix(in srgb, var(--accent2) 8%, transparent), transparent 55%),
+    var(--void);
   color: var(--text);
   line-height: var(--leading);
   overflow: hidden;
