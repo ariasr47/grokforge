@@ -286,9 +286,6 @@
   white-space: pre-wrap;
 }
 
-.tool-row-actions {
-  padding: 0 12px 4px 30px;
-}
 .recovery {
   display: flex;
   flex-wrap: wrap;

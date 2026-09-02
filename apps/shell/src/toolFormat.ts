@@ -19,6 +19,22 @@ export interface ToolMeta {
   reason?: string | null;
   command?: string | null;
   activityEvent?: import("./api").ToolRunEvent;
+  /**
+   * Below: passed through verbatim from ActivityRecord (runReducer.ts) by
+   * RunSurface's activityToToolMessage, for receiptVerb — never invented,
+   * absent when the source pipeline (legacy chat tool_run) doesn't carry it.
+   */
+  input?: unknown;
+  output?: unknown;
+  error?: string | null;
+  /** Host-reported unified diff — the only legitimate source for a +/- tail. */
+  diff?: string | null;
+  path?: string | null;
+  kind?: "content" | "delete" | "rename" | null;
+  fromPath?: string | null;
+  toPath?: string | null;
+  automaticEligibility?: string;
+  autoApplied?: boolean;
 }
 
 const MAX_TOOL_BODY = 4_000;

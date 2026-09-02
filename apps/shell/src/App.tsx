@@ -683,7 +683,7 @@ export function App() {
     const key = activityRevealRef.current;
     if (!key) return;
     const header = document.querySelector<HTMLElement>(
-      `[data-activity-run="${CSS.escape(key)}"] .tool-activity-head`,
+      `[data-activity-run="${CSS.escape(key)}"] .rhead`,
     );
     const plan = planLiveActivityReveal(stickToBottomRef.current, Boolean(header));
     if (plan === "keep-end") {

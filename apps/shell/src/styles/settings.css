@@ -42,7 +42,7 @@ html[data-theme="light"] .mode-switch {
   border-color: var(--border-strong);
 }
 html[data-theme="light"] .md-code-wrap,
-html[data-theme="light"] .tool-row-body,
+html[data-theme="light"] .rout,
 html[data-theme="light"] .peek-modal {
   background: rgba(255, 255, 255, 0.95);
 }
@@ -56,8 +56,8 @@ html[data-density="compact"] .msg {
 html[data-density="compact"] .overview-strip {
   display: none;
 }
-html[data-density="compact"] .tool-activity-head {
-  padding: 6px 10px;
+html[data-density="compact"] .rhead {
+  padding: 0 10px;
 }
 html[data-density="compact"] .topbar {
   min-height: 44px;
@@ -895,9 +895,6 @@ html[data-theme="light"] .tok-plain {
 }
 
 /* Tool live polish */
-.tool-row-live {
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
-}
 .tool-spinner {
   display: inline-block;
   width: 8px;
@@ -911,10 +908,6 @@ html[data-theme="light"] .tok-plain {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-.tool-row-status {
-  display: inline-flex;
-  align-items: center;
 }
 
 /* New rich blocks */
@@ -1226,65 +1219,45 @@ h2,
 
 /* Live activity owns only its bounded body; the transcript remains the page
  * scroll owner. Avoid nested paint/layout containment on dynamic descendants. */
-.tool-activity {
-  align-self: stretch;
-  width: min(100%, 820px);
+.receipts {
+  width: min(100%, 680px);
   max-block-size: 100%;
   min-block-size: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   flex: 0 0 auto;
-  content-visibility: visible;
-  contain: none;
 }
-.tool-activity-head {
+.rhead {
   scroll-margin-block-start: 1px;
 }
-.tool-activity-body {
-  max-block-size: min(42vh, 28rem);
-  min-block-size: 0;
-  min-inline-size: 0;
-  inline-size: 100%;
-  overflow: auto;
-  scrollbar-gutter: stable;
+.rbody {
   scrollbar-width: auto;
   overscroll-behavior: contain;
-  content-visibility: visible;
-  contain: none;
 }
-.tool-activity-body::-webkit-scrollbar {
+.rbody::-webkit-scrollbar {
   width: 12px;
 }
-.tool-activity-body::-webkit-scrollbar-track {
+.rbody::-webkit-scrollbar-track {
   background: color-mix(in srgb, var(--bg3) 82%, transparent);
 }
-.tool-activity-body::-webkit-scrollbar-thumb {
+.rbody::-webkit-scrollbar-thumb {
   min-height: 28px;
   border: 3px solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 72%, transparent);
   background-clip: padding-box;
 }
-.tool-activity-body::-webkit-scrollbar-thumb:hover {
+.rbody::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--accent) 78%, transparent);
   background-clip: padding-box;
-}
-.tool-row,
-.activity-chip {
-  content-visibility: visible;
-  contain: none;
 }
 .activity-chip {
   align-self: flex-start;
   max-width: min(90%, 820px);
   flex: 0 0 auto;
-}
-.tool-activity-hint {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 10px;
-  font-family: var(--mono);
+  content-visibility: visible;
+  contain: none;
 }
 
 /* Interaction states — buttons */

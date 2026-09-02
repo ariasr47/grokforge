@@ -304,17 +304,17 @@ test("TOOLS keep-end does not clamp File changes header under collapsed Thought"
   );
 });
 
-test("TOOLS jump target prefers the activity header over the tall activity box", () => {
+test("TOOLS jump target prefers the receipts header over the tall receipts box", () => {
   const order: string[] = [];
-  const header = { className: "tool-activity-head" };
+  const header = { className: "rhead" };
   const root = {
     querySelector(sel: string) {
       order.push(sel);
-      if (sel === ".tool-activity-head") return header;
+      if (sel === ".rhead") return header;
       return null;
     },
   } as unknown as ParentNode;
   const el = pickToolsJumpEl(root);
   assert.equal(el, header);
-  assert.deepEqual(order, [".tool-activity-head"]);
+  assert.deepEqual(order, [".rhead"]);
 });

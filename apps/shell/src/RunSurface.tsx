@@ -34,7 +34,7 @@ import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
 import { elevateArtifact } from "./artifactEligibility";
 import { SETTLE_IN_DOCK } from "./copyDock";
-import { ToolActivityGroup } from "./ToolActivity";
+import { Receipts } from "./Receipts";
 import type { ChatMessage } from "./messageBlocks";
 import { formatToolInput, formatToolOutput } from "./toolFormat";
 import { cleanVendorAnswer } from "./vendorAnswerClean";
@@ -65,6 +65,17 @@ function activityToToolMessage(activity: ActivityRecord): ChatMessage {
       execution: activity.execution,
       status: activity.status,
       command: activity.command,
+      // Passed through verbatim so receiptVerb can read them — never derived/invented here.
+      input: activity.input,
+      output: activity.output,
+      error: activity.error,
+      diff: activity.diff,
+      path: activity.path,
+      kind: activity.kind ?? null,
+      fromPath: activity.fromPath ?? null,
+      toPath: activity.toPath ?? null,
+      automaticEligibility: activity.automaticEligibility,
+      autoApplied: activity.autoApplied,
     },
   };
 }
@@ -291,7 +302,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     if (!root || !transcript) return;
     const nudge = () => {
       const files = root.querySelector<HTMLElement>(".file-changes");
-      const tools = root.querySelector<HTMLElement>(".tool-activity-head");
+      const tools = root.querySelector<HTMLElement>(".rhead");
       const thought = root.querySelector<HTMLElement>(".run-thought:not([open])");
       const delta = scrollDeltaToClearStickyYou({
         youBottom: prompt.getBoundingClientRect().bottom,
@@ -651,7 +662,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     {productMode === "code" ? <HooksSection projection={hooksProjection} /> : null}
     {Object.values(run.activities).length > 0 && (
       <div className="activity-output" aria-label="Activity">
-        <ToolActivityGroup
+        <Receipts
           tools={toolMessages}
           live={run.state !== "terminal"}
           groupKey={`run-tools:${run.runId}`}

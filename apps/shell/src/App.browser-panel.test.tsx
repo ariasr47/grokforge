@@ -548,7 +548,7 @@ describe("browser-panel App journeys", () => {
     assert.equal(toolRows.length, 1);
     const activity = screen.getByLabelText("Activity");
     assert.ok(activity);
-    assert.equal(activity.querySelectorAll(".tool-row").length, 1);
+    assert.equal(activity.querySelectorAll(".rrow").length, 1);
   });
 
   it("non-fetch activity and thought do not invent Browser; fetch journal without members does not either", async () => {

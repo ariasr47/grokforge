@@ -412,7 +412,7 @@ describe("live-turn-attention App wiring", () => {
     });
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot({ state: "running" }) }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "activity_update", activity: burstActivity(1) }, 2) as unknown as Record<string, unknown>);
-    const head = await screen.findByRole("button", { name: /tool activity/i });
+    const head = await screen.findByRole("button", { name: /action/i });
     fireEvent.click(head);
     assert.equal(head.getAttribute("aria-expanded"), "false");
     ws.emit(envelope({ kind: "activity_update", activity: burstActivity(2) }, 3) as unknown as Record<string, unknown>);

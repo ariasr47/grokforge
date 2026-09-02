@@ -2,7 +2,7 @@ import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen } from "@testing-library/react";
 import { RunSurface } from "./RunSurface";
-import { ToolActivityGroup } from "./ToolActivity";
+import { Receipts } from "./Receipts";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
 import type { RunProjectionRun, RunSnapshot } from "./runReducer";
@@ -162,7 +162,7 @@ test("draft editor state cannot invent the list-auto chip", () => {
   assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
 });
 
-test("ToolActivity paints list-auto provenance only from host-vouched fields", () => {
+test("Receipts paints list-auto provenance only from host-vouched fields", () => {
   const tools: ChatMessage[] = [
     {
       id: "tool-1",
@@ -200,9 +200,9 @@ test("ToolActivity paints list-auto provenance only from host-vouched fields", (
       },
     },
   ];
-  render(<ToolActivityGroup tools={tools} groupKey="activity-run:list-auto" forceOpen />);
+  render(<Receipts tools={tools} groupKey="activity-run:list-auto" forceOpen />);
   assert.ok(screen.getByText("npm test"));
-  assert.ok(screen.getByText("Ran without asking · Trusted command class"));
+  assert.ok(screen.getByText("trusted class · no prompt"));
 });
 
 test("isListAutoExecuted requires executed + trusted_command_class + autoApplied", () => {

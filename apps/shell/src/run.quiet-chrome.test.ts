@@ -28,8 +28,8 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(body, /background:\s*none/);
   });
 
-  it("tool row status is not shouted uppercase", () => {
-    const body = ruleBody(".tool-row-status");
+  it("receipt row tail is not shouted uppercase", () => {
+    const body = ruleBody(".rrow .tail");
     assert.doesNotMatch(body, /text-transform\s*:\s*uppercase/);
   });
 
@@ -171,7 +171,7 @@ describe("settled-turn chrome is quiet", () => {
   });
 
   it("TOOLS jump target clears the sticky You card", () => {
-    const body = ruleBody(".tool-activity-head");
+    const body = ruleBody(".rhead");
     assert.match(body, /scroll-margin-top:\s*var\(--run-prompt-stick-below/);
   });
 
@@ -316,11 +316,13 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(foot[1]!, /flex-shrink:\s*0/);
   });
 
-  it("shell command rows wrap two lines instead of ellipsizing the command", () => {
-    const body = ruleBody(".tool-row-head.is-command .tool-row-name-plain");
-    assert.match(body, /-webkit-line-clamp:\s*2/);
-    assert.match(body, /white-space:\s*normal/);
-    assert.doesNotMatch(body, /white-space:\s*nowrap/);
+  it("receipt row what ellipsizes a long command instead of shouting/wrapping the row taller", () => {
+    // Voidglass receipts keep every row a fixed 30px: a long command
+    // ellipsizes in the collapsed row (full text still reachable via the
+    // title attribute and by expanding the row's own output).
+    const body = ruleBody(".rrow .what");
+    assert.match(body, /white-space:\s*nowrap/);
+    assert.match(body, /text-overflow:\s*ellipsis/);
   });
 
   it("slash Skills palette is a compact dropdown, not a full-width slab", () => {

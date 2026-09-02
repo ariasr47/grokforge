@@ -76,15 +76,15 @@ function installFollowGeometry(): void {
   Object.defineProperty(proto, "clientHeight", {
     configurable: true,
     get() {
-      return (this as HTMLElement).classList?.contains("tool-activity-body") ? 80 : 600;
+      return (this as HTMLElement).classList?.contains("rbody") ? 80 : 600;
     },
   });
   Object.defineProperty(proto, "scrollHeight", {
     configurable: true,
     get() {
       const el = this as HTMLElement;
-      if (el.classList?.contains("tool-activity-body")) {
-        return el.querySelectorAll(".tool-row").length * 24;
+      if (el.classList?.contains("rbody")) {
+        return el.querySelectorAll(".rrow").length * 24;
       }
       return Math.max(800, el.children.length * 40);
     },
@@ -171,14 +171,14 @@ async function observeSpine(mode: "chat" | "code") {
   await waitFor(() => {
     assert.ok(document.querySelector("[data-tool-activity]"));
   }, { timeout: 10_000 });
-  const head = document.querySelector(".tool-activity-head") as HTMLButtonElement | null;
+  const head = document.querySelector(".rhead") as HTMLButtonElement | null;
   if (head?.getAttribute("aria-expanded") === "false") head.click();
   const body = await waitFor(() => {
-    const el = document.querySelector(".tool-activity-body");
+    const el = document.querySelector(".rbody");
     assert.ok(el);
     return el as HTMLElement;
   }, { timeout: 10_000 });
-  const rows = body.querySelectorAll(".tool-row");
+  const rows = body.querySelectorAll(".rrow");
   assert.ok(rows.length >= 16, `AC1: expected a long burst, got ${rows.length} rows`);
   const last = rows[rows.length - 1] as HTMLElement;
   assert.ok(body.contains(last));

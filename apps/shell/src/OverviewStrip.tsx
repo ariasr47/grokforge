@@ -22,7 +22,7 @@ interface Props {
 /** Prefer the compact header so nearest-jump does not fill the viewport with rows. */
 export function pickToolsJumpEl(root: ParentNode = document): HTMLElement | null {
   return (
-    root.querySelector<HTMLElement>(".tool-activity-head") ??
+    root.querySelector<HTMLElement>(".rhead") ??
     root.querySelector<HTMLElement>("[data-tool-activity]") ??
     root.querySelector<HTMLElement>(".activity-output")
   );

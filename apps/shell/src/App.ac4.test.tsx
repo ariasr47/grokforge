@@ -112,7 +112,7 @@ describe("AC4 — Chat: an escaping path is rendered as a failed, visible tool r
     ws.emit({ type: "text_delta", text: "I can't read outside your folder." });
     ws.emit({ type: "done", reason: "stop" });
 
-    // Failed tool runs open by default (ToolActivityGroup: hasFail => open).
+    // Failed tool runs open by default (Receipts: hasFail => open).
     await waitFor(() => {
       const activity = document.querySelector('[data-tool-activity].fail');
       assert.ok(activity, "expected a failed tool-activity group, not a silent drop");

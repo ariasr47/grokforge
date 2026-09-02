@@ -4,7 +4,7 @@ import { toDisplayBlocks } from "./messageBlocks";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 export type { ChatMessage };
-import { ToolActivityGroup } from "./ToolActivity";
+import { Receipts } from "./Receipts";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
 import { writeClipboard } from "./copyClipboard";
@@ -353,7 +353,7 @@ export const MessageList = memo(function MessageList({
       );
     }
     return (
-      <ToolActivityGroup
+      <Receipts
         key={block.key}
         tools={block.tools}
         groupKey={block.key}

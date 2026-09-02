@@ -18,7 +18,7 @@ import { FILE_CHANGES_HEADER, FileChangesSection } from "./FileChangesSection";
 import type { RunChangeMember } from "./runChangeList";
 import { planReadyIsEmpty, projectRunPlanSection } from "./runPlanSection";
 import type { PlanRecord, RunProjectionRun } from "./runReducer";
-import { ToolActivityGroup } from "./ToolActivity";
+import { Receipts } from "./Receipts";
 import type { ChatMessage } from "./messageBlocks";
 
 afterEach(() => cleanup());
@@ -69,7 +69,7 @@ describe("J2 Test — first-subdir Set-Location + Failed is Failed", () => {
     assert.doesNotMatch(VENDOR_ACP_SHELL_CWD_RULE, /cd /);
   });
 
-  it("non-zero shell exit paints Failed, not Completed", () => {
+  it("non-zero shell exit paints as failed, not as a clean run whose body is just the word completed", () => {
     const tools: ChatMessage[] = [
       {
         id: "t-fail",
@@ -86,9 +86,9 @@ describe("J2 Test — first-subdir Set-Location + Failed is Failed", () => {
         },
       },
     ];
-    render(<ToolActivityGroup tools={tools} groupKey="activity-run:j2" />);
-    assert.ok(screen.getByText("Failed"));
-    assert.equal(screen.queryByText("Completed"), null);
+    render(<Receipts tools={tools} groupKey="activity-run:j2" />);
+    assert.ok(screen.getByText("Non-zero exit"));
+    assert.equal(screen.queryByText("completed"), null);
   });
 });
 

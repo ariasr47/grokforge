@@ -2061,7 +2061,7 @@ html[data-density="compact"] .hooks-row {
 }
 
 .transcript > .msg,
-.transcript > .tool-activity,
+.transcript > .receipts,
 .transcript > .thinking-placeholder,
 .transcript > .turn-delimiter,
 .transcript > .activity-chip,

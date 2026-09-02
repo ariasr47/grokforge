@@ -404,7 +404,8 @@ test("File changes sits after reasoning and before the activity stack (AC-18 hie
   const text = surface.textContent ?? "";
   const reasoningAt = Math.max(text.indexOf("Thought…"), text.indexOf("Thought"));
   const fileChangesAt = text.indexOf(FILE_CHANGES_HEADER);
-  const activityAt = Math.max(text.indexOf("write_file"), text.indexOf("write file"));
+  // Receipts shows the edited path, not the raw write_file tool name.
+  const activityAt = Math.max(text.indexOf("Edited"), text.indexOf("a.txt"));
   assert.ok(reasoningAt >= 0 && fileChangesAt > reasoningAt && activityAt > fileChangesAt);
 });
 

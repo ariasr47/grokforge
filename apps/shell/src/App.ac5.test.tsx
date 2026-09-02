@@ -132,18 +132,19 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
     ws.emit({ type: "text_delta", text: "Here's what's in the file." });
     ws.emit({ type: "done", reason: "stop" });
 
-    // Tool activity group starts collapsed once the run settles — expand it.
-    const toolHead = await screen.findByRole("button", { name: "Tool activity: read file" });
-    await user.click(toolHead);
-
-    const peekBtn = screen.queryByRole("button", { name: "Peek path" });
-    if (peekBtn) {
-      await user.click(peekBtn);
-      await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));
-    } else {
-      const rowHeads = screen.getAllByRole("button", { name: /read file/i });
-      await user.click(rowHeads[rowHeads.length - 1]!);
+    // Receipts group may start open or collapsed depending on groupKey —
+    // make sure it's open, then expand the row itself to reach its
+    // "Open <path>" action.
+    const toolHead = await screen.findByRole("button", { name: /action/i });
+    if (toolHead.getAttribute("aria-expanded") !== "true") {
+      await user.click(toolHead);
     }
-    await waitFor(() => assert.ok(screen.getByText(/read file/i)));
+    const rowHeads = await screen.findAllByRole("button", { name: /notes\.txt/i });
+    await user.click(rowHeads[rowHeads.length - 1]!);
+
+    const openBtn = screen.getByRole("button", { name: /^Open /i });
+    await user.click(openBtn);
+    await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));
+    await waitFor(() => assert.ok(screen.getAllByText(/notes\.txt/i).length >= 1));
   });
 });

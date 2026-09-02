@@ -249,7 +249,7 @@ describe("Chat PDF attach journeys", () => {
     });
 
     await waitFor(() => {
-      assert.ok(screen.getByText("Failed"));
+      assert.ok(document.querySelector(".ri-dot.tone-fail"), "row must be marked failed, not settled clean");
       assert.ok(screen.getByText("Couldn't extract text from enc.pdf. (encrypted)"));
     });
     assert.equal(screen.queryByText(/OCR/i), null);
