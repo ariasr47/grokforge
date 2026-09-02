@@ -11,10 +11,10 @@ async function currentWindow() {
 
 /**
  * Frameless-window caption buttons (minimize / maximize / close). The
- * topbar (`AppTopbar.tsx`) carries `data-tauri-drag-region` so the window
- * can be dragged from its empty space; these buttons are separate elements
- * and are never drag regions themselves. Renders nothing outside Tauri —
- * the browser-dev path has no native window to control.
+ * header, brand block, and spacer (`AppTopbar.tsx`) carry `data-tauri-drag-region`
+ * so the window can be dragged from their empty space; these buttons are
+ * separate elements and are never drag regions themselves. Renders nothing
+ * outside Tauri — the browser-dev path has no native window to control.
  */
 export function WindowControls() {
   if (!isTauri()) return null;

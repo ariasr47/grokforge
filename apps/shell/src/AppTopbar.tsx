@@ -49,7 +49,7 @@ export function AppTopbar({
 
   return (
     <header className="topbar" data-tauri-drag-region>
-      <div className="brand" title="Forge — agent shell">
+      <div className="brand" title="Forge — agent shell" data-tauri-drag-region>
         <BrandMark size={18} />
         <span className="brand-word">FORGE</span>
       </div>
@@ -79,7 +79,7 @@ export function AppTopbar({
         applying={modeSwitching}
         onChange={onSwitchMode}
       />
-      <div className="spacer" />
+      <div className="spacer" data-tauri-drag-region />
       <div
         className="engine"
         title={wsOk ? "WebSocket connected" : "Reconnecting…"}
