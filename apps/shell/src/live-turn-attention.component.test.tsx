@@ -174,10 +174,10 @@ test("pending permission card uses pinned title chrome and detail pass-through",
   });
   render(emptyDock({ permissions: pendingPermissionsFromRun(fixture) }));
   const dock = screen.getByRole("region", { name: "Pending agent actions" });
-  assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
+  assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
   assert.ok(within(dock).getByText("echo live-turn-attention"));
-  assert.ok(within(dock).getByRole("button", { name: "Allow once" }));
-  assert.ok(within(dock).getByRole("button", { name: "Always this session" }));
+  assert.ok(within(dock).getByRole("button", { name: "Allow" }));
+  assert.ok(within(dock).getByRole("button", { name: "Allow for this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
   assert.equal(screen.queryByRole("button", { name: "Trust this folder" }), null);
 });
@@ -192,7 +192,7 @@ test("write permission card offers Trust this folder when a workspace can be tru
     onTrustFolder: () => { trusted += 1; },
   }));
   const dock = screen.getByRole("region", { name: "Pending agent actions" });
-  assert.ok(within(dock).getByRole("region", { name: "Allow saving a file?" }));
+  assert.ok(within(dock).getByRole("region", { name: "Grok wants to write a file" }));
   fireEvent.click(within(dock).getByRole("button", { name: "Trust this folder" }));
   assert.equal(trusted, 1);
 });

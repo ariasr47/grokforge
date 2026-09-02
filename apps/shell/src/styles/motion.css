@@ -24,10 +24,6 @@
   animation: dock-enter var(--dur, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
-.perm-card {
-  animation: dock-enter var(--dur, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
-}
-
 .toast {
   animation: toast-in var(--dur, 200ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
@@ -69,14 +65,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .action-dock,
-  .perm-card,
+  .gate,
   .toast {
     animation: none;
   }
 }
 
 html[data-motion="calm"] .action-dock,
-html[data-motion="calm"] .perm-card,
+html[data-motion="calm"] .gate,
 html[data-motion="calm"] .toast {
   animation: none;
 }

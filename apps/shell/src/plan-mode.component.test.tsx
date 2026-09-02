@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { ActionDock, PLAN_ACCEPT, PLAN_DOCK_EMPTY, PLAN_DOCK_REVIEW, PLAN_END_EMPTY, PLAN_KEEP, PLAN_SETTLING } from "./ActionDock";
+import { ActionDock, PLAN_ACCEPT, PLAN_DOCK_EMPTY, PLAN_END_EMPTY, PLAN_KEEP, PLAN_SETTLING, planReadyTitle } from "./ActionDock";
 import { FILE_CHANGES_HEADER } from "./FileChangesSection";
 import { VERIFY_HEADER } from "./VerifySection";
 import { PLAN_HEADER } from "./PlanSection";
@@ -171,7 +171,7 @@ test("non-empty plan_pending: Review plan + Accept plan + Keep planning; no Reje
     />,
   );
   const dock = screen.getByRole("region", { name: "Pending agent actions" });
-  assert.ok(within(dock).getByText(PLAN_DOCK_REVIEW));
+  assert.ok(within(dock).getByText(planReadyTitle(0)));
   assert.ok(within(dock).getByRole("button", { name: PLAN_ACCEPT }));
   assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
   assert.equal(within(dock).queryByRole("button", { name: "Reject" }), null);
@@ -197,7 +197,7 @@ test("empty plan_pending: Plan complete · no changes + End Plan · no changes p
   assert.ok(screen.getByText(PLAN_DOCK_EMPTY));
   assert.ok(screen.getByRole("button", { name: PLAN_END_EMPTY }));
   assert.ok(screen.getByRole("button", { name: PLAN_KEEP }));
-  assert.equal(screen.queryByText(PLAN_DOCK_REVIEW), null);
+  assert.equal(screen.queryByText(/Plan ready/), null);
   assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
   assert.equal(screen.queryByRole("button", { name: /reject/i }), null);
 });

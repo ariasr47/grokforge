@@ -593,8 +593,8 @@ describe("browser-panel App journeys", () => {
     const { ws } = await mountApp({ browserWork: readyFact([docsRunning]) });
     ws.emit(envelope({ kind: "run_started", run: runSnapshot({ state: "waiting_for_decision" }) }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
-    const dockCard = await screen.findByRole("region", { name: "Allow running a command?" });
-    assert.ok(within(dockCard).getByRole("button", { name: "Allow once" }));
+    const dockCard = await screen.findByRole("region", { name: "Grok wants to run a command" });
+    assert.ok(within(dockCard).getByRole("button", { name: "Allow" }));
     assert.ok(within(dockCard).getByRole("button", { name: "Deny" }));
     const section = await waitFor(() => {
       const el = browserSection();
@@ -602,7 +602,7 @@ describe("browser-panel App journeys", () => {
       return el!;
     });
     assert.ok(within(section).getByText("Docs"));
-    assert.equal(within(section).queryByRole("button", { name: "Allow once" }), null);
+    assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Deny" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);

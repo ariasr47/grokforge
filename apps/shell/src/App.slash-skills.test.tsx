@@ -545,7 +545,7 @@ describe("slash-skills catch-up / dock / thought adversaries", () => {
     await waitFor(() => {
       assert.ok(screen.getByLabelText("Pending agent actions"));
     });
-    assert.ok(screen.getByLabelText("Allow running a command?"));
+    assert.ok(screen.getByLabelText("Grok wants to run a command"));
     const send = screen.queryByRole("button", { name: "Send" });
     if (send) {
       assert.equal(send.hasAttribute("disabled"), true);

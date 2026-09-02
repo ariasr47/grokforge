@@ -199,9 +199,12 @@ test("Review still asks: permission dock is unchanged by a saved list", async ()
     detail: "npm test",
   });
   const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-  assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
-  assert.ok(within(dock).getByRole("button", { name: "Allow once" }));
-  assert.ok(within(dock).getByRole("button", { name: "Always this session" }));
+  assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
+  assert.ok(within(dock).getByRole("button", { name: "Allow" }));
+  // The S label is a cosmetic class match on the command text alone — it
+  // shows "Allow npm for this session" here even though this saved list
+  // ("npm") is never consulted, because Policy stays Review and still asks.
+  assert.ok(within(dock).getByRole("button", { name: "Allow npm for this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
   assert.equal(within(dock).queryByText(/Trusted command class/i), null);
 });

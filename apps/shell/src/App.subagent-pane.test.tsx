@@ -504,8 +504,8 @@ describe("subagent-pane App journeys", () => {
       status: "running",
     }, 2) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 3) as unknown as Record<string, unknown>);
-    const dockCard = await screen.findByRole("region", { name: "Allow running a command?" });
-    assert.ok(within(dockCard).getByRole("button", { name: "Allow once" }));
+    const dockCard = await screen.findByRole("region", { name: "Grok wants to run a command" });
+    assert.ok(within(dockCard).getByRole("button", { name: "Allow" }));
     assert.ok(within(dockCard).getByRole("button", { name: "Deny" }));
     const section = await waitFor(() => {
       const el = childAgentsSection();
@@ -513,7 +513,7 @@ describe("subagent-pane App journeys", () => {
       return el!;
     });
     assert.ok(within(section).getByText("Researcher"));
-    assert.equal(within(section).queryByRole("button", { name: "Allow once" }), null);
+    assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Deny" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
     assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);

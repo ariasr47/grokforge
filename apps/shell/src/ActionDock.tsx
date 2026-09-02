@@ -1,21 +1,24 @@
 import { memo, useEffect, useRef } from "react";
 import { DiffPanel, type PendingDiff } from "./DiffPanel";
-import { PermissionCard, type PermissionReq } from "./PermissionCard";
+import type { PermissionReq } from "./runChangeList";
+import type { PlanProposedMember } from "./runReducer";
+import { Gate } from "./Gate";
 import { Button } from "./ui/Button";
-import { Icon } from "./ui/Icon";
-import { Bell } from "lucide-react";
 
-export const PLAN_DOCK_REVIEW = "Review plan";
-export const PLAN_DOCK_EMPTY = "Plan complete · no changes";
-export const PLAN_ACCEPT = "Accept plan";
-export const PLAN_END_EMPTY = "End Plan · no changes proposed";
-export const PLAN_KEEP = "Keep planning";
-export const PLAN_SETTLING = "Updating plan decision…";
-export const PLAN_DECISION_FAILURE =
-  "Couldn’t record that plan decision. The proposal is unchanged.";
+export {
+  PLAN_ACCEPT,
+  PLAN_DECISION_FAILURE,
+  PLAN_DOCK_EMPTY,
+  PLAN_END_EMPTY,
+  PLAN_KEEP,
+  PLAN_SETTLING,
+  planReadyTitle,
+} from "./copyDock";
 
 export type PlanDockDecision = {
   empty: boolean;
+  proposedMembers?: PlanProposedMember[];
+  body?: string | null;
   settling?: boolean;
   error?: string | null;
 };
@@ -34,6 +37,9 @@ interface Props {
   oauth: OauthPending | null;
   onPermission: (d: "allow_once" | "allow_session" | "deny") => void;
   onTrustFolder?: () => void;
+  onEditCommand?: () => void;
+  /** Real, host-reported workspace name — shell gate's cwd. Omitted (not faked) when unknown. */
+  workspaceName?: string | null;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onAcceptAll: () => void;
@@ -44,7 +50,7 @@ interface Props {
   onPlanKeepPlanning?: () => void;
 }
 
-/** Sticky dock above composer — always visible while agent waits. */
+/** Normal flex child above the composer — a gate rises here while Grok waits on you. */
 export const ActionDock = memo(function ActionDock({
   permissions,
   diffQueue,
@@ -53,6 +59,8 @@ export const ActionDock = memo(function ActionDock({
   oauth,
   onPermission,
   onTrustFolder,
+  onEditCommand,
+  workspaceName = null,
   onAccept,
   onReject,
   onAcceptAll,
@@ -63,7 +71,6 @@ export const ActionDock = memo(function ActionDock({
   onPlanKeepPlanning,
 }: Props) {
   const head = permissions[0] ?? null;
-  const rest = permissions.length - 1;
   const dockRef = useRef<HTMLDivElement>(null);
   const hasPlan = Boolean(planDecision);
 
@@ -86,12 +93,6 @@ export const ActionDock = memo(function ActionDock({
       aria-label="Pending agent actions"
       aria-live={hasPlan ? "assertive" : "polite"}
     >
-      <div className="action-dock-label">
-        <Icon icon={Bell} size={14} />
-        Attention required
-        {rest > 0 ? ` · ${permissions.length} permissions queued` : ""}
-      </div>
-
       {oauth && (
         <div className="oauth-dock" data-oauth-dock>
           <div className="oauth-dock-head">
@@ -118,7 +119,16 @@ export const ActionDock = memo(function ActionDock({
       )}
 
       {head ? (
-        <PermissionCard permission={head} onDecision={onPermission} onTrustFolder={onTrustFolder} />
+        <Gate
+          tier={head.kind}
+          detail={head.detail}
+          cwd={head.kind === "shell" ? workspaceName : undefined}
+          onAllow={() => onPermission("allow_once")}
+          onAllowSession={() => onPermission("allow_session")}
+          onDeny={() => onPermission("deny")}
+          onEditCommand={head.kind === "shell" ? onEditCommand : undefined}
+          onTrustFolder={head.kind === "write" ? onTrustFolder : undefined}
+        />
       ) : null}
 
       {diffQueue.length > 0 ? (
@@ -134,45 +144,16 @@ export const ActionDock = memo(function ActionDock({
       ) : null}
 
       {planDecision ? (
-        <div
-          className="plan-dock"
-          data-plan-dock={planDecision.empty ? "empty" : "ready"}
-          role="group"
-          aria-label={planDecision.empty ? PLAN_DOCK_EMPTY : PLAN_DOCK_REVIEW}
-          aria-busy={planDecision.settling === true}
-        >
-          <strong className="plan-dock-title">
-            {planDecision.empty ? PLAN_DOCK_EMPTY : PLAN_DOCK_REVIEW}
-          </strong>
-          {planDecision.settling ? (
-            <p className="plan-dock-settling" role="status">{PLAN_SETTLING}</p>
-          ) : null}
-          {planDecision.error ? (
-            <p className="plan-dock-error" role="alert">
-              {planDecision.error}
-              <Button variant="ghost" onClick={onPlanAccept}>
-                Try again
-              </Button>
-            </p>
-          ) : (
-            <div className="plan-dock-actions">
-              <Button
-                variant="primary"
-                disabled={planDecision.settling === true}
-                onClick={onPlanAccept}
-              >
-                {planDecision.empty ? PLAN_END_EMPTY : PLAN_ACCEPT}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={planDecision.settling === true}
-                onClick={onPlanKeepPlanning}
-              >
-                {PLAN_KEEP}
-              </Button>
-            </div>
-          )}
-        </div>
+        <Gate
+          tier="plan"
+          empty={planDecision.empty}
+          members={planDecision.proposedMembers ?? []}
+          why={planDecision.body}
+          settling={planDecision.settling}
+          error={planDecision.error}
+          onAccept={() => onPlanAccept?.()}
+          onKeepPlanning={() => onPlanKeepPlanning?.()}
+        />
       ) : null}
     </div>
   );

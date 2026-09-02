@@ -7,7 +7,7 @@ import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { PLAN_ARM_BLOCKED_UNVOUCHED, PLAN_ARM_HELPER_ARMED, PLAN_LIVE_FOOTER, PLAN_LIVE_STATUS } from "./planArm";
 import { PLAN_EMPTY, PLAN_HEADER } from "./PlanSection";
-import { PLAN_ACCEPT, PLAN_DECISION_FAILURE, PLAN_DOCK_EMPTY, PLAN_DOCK_REVIEW, PLAN_END_EMPTY, PLAN_KEEP } from "./ActionDock";
+import { PLAN_ACCEPT, PLAN_DECISION_FAILURE, PLAN_DOCK_EMPTY, PLAN_END_EMPTY, PLAN_KEEP, planReadyTitle } from "./ActionDock";
 import type { DecisionRequest, PlanRecord, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -273,7 +273,7 @@ describe("plan-mode App journeys", () => {
     assert.ok(within(dock).getByRole("button", { name: PLAN_END_EMPTY }));
     assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
     assert.equal(within(dock).queryByRole("button", { name: /reject/i }), null);
-    assert.equal(within(dock).queryByText(PLAN_DOCK_REVIEW), null);
+    assert.equal(within(dock).queryByText(/Plan ready/), null);
   });
 
   it("non-empty ready dock is Review plan + Accept plan + Keep planning; no Reject (AC-30)", async () => {
@@ -311,7 +311,7 @@ describe("plan-mode App journeys", () => {
       assert.ok(screen.getByText("src/b.ts"));
     });
     const dock = screen.getByRole("region", { name: "Pending agent actions" });
-    assert.ok(within(dock).getByText(PLAN_DOCK_REVIEW));
+    assert.ok(within(dock).getByText(planReadyTitle(2)));
     assert.ok(within(dock).getByRole("button", { name: PLAN_ACCEPT }));
     assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
     assert.equal(within(dock).queryByRole("button", { name: /reject/i }), null);

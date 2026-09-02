@@ -75,12 +75,14 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(tr[1]!, /scroll-padding-bottom:\s*24px/);
   });
 
-  it("toasts sit above the composer so Export stays clickable", () => {
-    // Live desktop-chat-export: "Downloaded chat as Markdown" covered Export.
+  it("toasts float at a fixed viewport offset, not pinned to a sticky composer height", () => {
+    // Task 8: the action dock is a normal flex child now (not sticky above
+    // the composer), so toasts no longer reserve --composer-height's worth
+    // of clearance — they sit at a flat viewport-relative bottom instead.
     const m = dock.match(/\.toast-stack\s*\{([^}]+)\}/);
     assert.ok(m?.[1], "missing .toast-stack");
-    assert.match(m[1]!, /bottom:\s*calc\(var\(--composer-height/);
-    assert.doesNotMatch(m[1]!, /bottom:\s*16px/);
+    assert.match(m[1]!, /bottom:\s*16px/);
+    assert.doesNotMatch(m[1]!, /composer-height/);
   });
 
   it("overview strip is opaque so a scrolled prompt does not show through", () => {

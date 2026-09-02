@@ -199,11 +199,11 @@ describe("live-turn-attention App wiring", () => {
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
 
     const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-    assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
+    assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
     assert.ok(within(dock).getByText(SHELL_DETAIL));
     assert.ok(screen.getByText("Permission requested: shell"));
 
-    fireEvent.click(within(dock).getByRole("button", { name: "Allow once" }));
+    fireEvent.click(within(dock).getByRole("button", { name: "Allow" }));
     await waitFor(() => {
       const calls = host.callsTo("/api/permission");
       assert.ok(calls.length >= 1);
@@ -220,7 +220,7 @@ describe("live-turn-attention App wiring", () => {
       request: shellPermission({ status: "accepted" }),
     }, 3) as unknown as Record<string, unknown>);
     await waitFor(() => {
-      assert.equal(document.body.textContent?.includes("Allow running a command?"), false);
+      assert.equal(document.body.textContent?.includes("Grok wants to run a command"), false);
     });
     assert.equal(
       document.body.textContent?.includes("Permission requested: shell") ?? false,
@@ -238,7 +238,7 @@ describe("live-turn-attention App wiring", () => {
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
     const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-    fireEvent.click(within(dock).getByRole("button", { name: "Allow once" }));
+    fireEvent.click(within(dock).getByRole("button", { name: "Allow" }));
     await waitFor(() => {
       assert.ok(host.callsTo("/api/permission").length >= 1);
     });
@@ -272,7 +272,7 @@ describe("live-turn-attention App wiring", () => {
     render(<App />);
 
     const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-    assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
+    assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
     assert.ok(within(dock).getByRole("button", { name: "Accept" }));
     await waitFor(() => {
       assert.ok(screen.getByText("Permission requested: shell"));
@@ -298,7 +298,7 @@ describe("live-turn-attention App wiring", () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
-    await screen.findByRole("region", { name: "Allow running a command?" });
+    await screen.findByRole("region", { name: "Grok wants to run a command" });
     assert.equal(screen.queryByText(TURN_COPY), null);
     assert.ok(screen.getByRole("button", { name: "Cancel" }));
     assert.equal(screen.queryByRole("button", { name: "Send" }), null);
@@ -313,7 +313,7 @@ describe("live-turn-attention App wiring", () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
-    await screen.findByRole("region", { name: "Allow running a command?" });
+    await screen.findByRole("region", { name: "Grok wants to run a command" });
     ws.emit(envelope({
       kind: "run_terminal",
       terminalKind: "cancelled",
@@ -324,7 +324,7 @@ describe("live-turn-attention App wiring", () => {
     }, 3) as unknown as Record<string, unknown>);
     const send = await screen.findByRole("button", { name: "Send" });
     assert.notEqual(send.getAttribute("title"), "Attention required");
-    assert.equal(screen.queryByRole("region", { name: "Allow running a command?" }), null);
+    assert.equal(screen.queryByRole("region", { name: "Grok wants to run a command" }), null);
   });
 
   it("clean finish paints the response node done and unlocks Send", async () => {
@@ -373,9 +373,9 @@ describe("live-turn-attention App wiring", () => {
       ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
       ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
       const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-      fireEvent.click(within(dock).getByRole("button", { name: "Allow once" }));
+      fireEvent.click(within(dock).getByRole("button", { name: "Allow" }));
       await waitFor(() => {
-        assert.ok(screen.getByRole("region", { name: "Allow running a command?" }));
+        assert.ok(screen.getByRole("region", { name: "Grok wants to run a command" }));
       });
       assert.equal(screen.queryByText(TURN_COPY), null);
       assert.ok(screen.getByRole("button", { name: "Cancel" }));
@@ -418,7 +418,7 @@ describe("live-turn-attention App wiring", () => {
     assert.equal(head.getAttribute("aria-expanded"), "false");
     ws.emit(envelope({ kind: "activity_update", activity: burstActivity(2) }, 3) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 4) as unknown as Record<string, unknown>);
-    await screen.findByRole("region", { name: "Allow running a command?" });
+    await screen.findByRole("region", { name: "Grok wants to run a command" });
     assert.equal(head.getAttribute("aria-expanded"), "false");
     assert.equal(screen.queryByText(TURN_COPY), null);
   });
@@ -431,7 +431,7 @@ describe("live-turn-attention App wiring", () => {
       ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
       ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
       const dock = await screen.findByRole("region", { name: "Pending agent actions" });
-      assert.ok(within(dock).getByRole("region", { name: "Allow running a command?" }));
+      assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
       assert.equal(screen.queryByText(TURN_COPY), null);
       assert.ok(screen.getByRole("button", { name: "Cancel" }));
     }

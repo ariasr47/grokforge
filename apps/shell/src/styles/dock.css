@@ -1,26 +1,201 @@
-/* —— Action dock (sticky) —— */
+/* —— Action dock —— a normal flex child above the composer, not sticky. */
 .action-dock {
   border-top: 1px solid rgba(240, 180, 90, 0.28);
   background: rgba(240, 180, 90, 0.06);
   max-height: min(42vh, 380px);
   overflow: auto;
   flex-shrink: 0;
-}
-.action-dock-label {
-  padding: 6px 14px 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent3);
-  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
 }
 .action-dock .diff-pane {
   border-bottom: none;
   max-height: none;
   background: transparent;
 }
-.action-dock .perm-card {
-  margin: 8px 12px;
+
+/* —— Gate —— three tiers, three colors. Amber (shell/write) asks for
+   permission, violet (plan) asks you to judge a plan, cyan (ask) asks a
+   question. Rises from the composer edge when Grok needs you. */
+.gate {
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--attention) 7%, transparent),
+    color-mix(in srgb, var(--attention) 3%, transparent)
+  );
+  /* Design ref: 14px — the top of the "cards 12–14px" radius range; no
+     dedicated token at this exact value. */
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: rise var(--dur-slow) var(--ease-out);
+}
+.gate.plan {
+  border-color: color-mix(in srgb, var(--accent2) 40%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent2) 8%, transparent),
+    color-mix(in srgb, var(--accent2) 3%, transparent)
+  );
+}
+.gate.ask {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    color-mix(in srgb, var(--accent) 2%, transparent)
+  );
+}
+.gate .gh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.gate .gh .pol {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.gate .cmd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r-control);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--stroke);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.gate .cmd .cwd {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.gate .why {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.gate .acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The shared .btn rule has no internal gap — harmless for a plain label,
+   but a button's own <span> label and <kbd> hint need daylight between
+   them. Scoped to the gate rather than widening the shared .btn rule. */
+.gate .btn {
+  gap: 8px;
+}
+.gate .files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.gate .snip {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-control);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  padding: 6px 0;
+}
+.gate .snip .ln {
+  padding: 0 12px;
+  white-space: pre;
+}
+.gate .snip .ln.del {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.gate .snip .ln.add {
+  color: var(--success);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.gate .opt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gate .opt button {
+  text-align: left;
+  height: var(--h-lg);
+  padding: 0 12px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gate .opt button:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.gate .opt button.rec {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.gate .opt kbd {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--stroke);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+.gate .opt .suggested {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 11px;
+}
+.gate.plan .btn.accent {
+  background: var(--accent2);
+}
+.gate.plan .btn.accent:hover:not(:disabled),
+.gate.plan .btn.accent:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent2) 85%, white);
+}
+
+.btn kbd {
+  font-family: inherit;
+  font-size: 11px;
+  opacity: 0.7;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+.btn.ghost kbd {
+  opacity: 1;
+  color: var(--muted);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .diff-collapse {
@@ -213,7 +388,7 @@
 .toast-stack {
   position: fixed;
   right: 16px;
-  bottom: calc(var(--composer-height, 160px) + 12px);
+  bottom: 16px;
   z-index: 80;
   display: flex;
   flex-direction: column;

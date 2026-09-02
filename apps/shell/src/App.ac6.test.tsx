@@ -91,9 +91,9 @@ describe("AC6 — Code: workspace + tools + permission + staged diff", () => {
     });
 
     await waitFor(() => {
-      assert.ok(screen.getByRole("region", { name: "Allow saving a file?" }));
+      assert.ok(screen.getByRole("region", { name: "Grok wants to write a file" }));
     });
-    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    await user.click(screen.getByRole("button", { name: "Allow" }));
 
     await waitFor(() => {
       const permCalls = host.callsTo("/api/permission");
@@ -101,7 +101,7 @@ describe("AC6 — Code: workspace + tools + permission + staged diff", () => {
       assert.equal(permCalls[permCalls.length - 1]!.body?.decision, "allow_once");
     });
     // Dock clears the decided permission.
-    assert.equal(screen.queryByRole("region", { name: "Allow saving a file?" }), null);
+    assert.equal(screen.queryByRole("region", { name: "Grok wants to write a file" }), null);
 
     // 3) Staged diff — proposed after the permission is granted.
     const diff = [

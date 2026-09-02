@@ -98,7 +98,6 @@ import {
   formatToolOutput,
 } from "./toolFormat";
 import { type PendingDiff } from "./DiffPanel";
-import { type PermissionReq } from "./PermissionCard";
 import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
@@ -203,6 +202,7 @@ import {
   isStaleRailChip,
   railEvidenceFromRun,
   settledRailIdentities,
+  type PermissionReq,
 } from "./runChangeList";
 import {
   appliedThroughLastEventSeq,
@@ -3611,6 +3611,12 @@ export function App() {
     [toast],
   );
 
+  /** Gate's "Edit command" — prefills the composer with the pending command, unchanged. */
+  const editGateCommand = useCallback((command: string) => {
+    setDraft(command);
+    setTimeout(() => composerRef.current?.focus(), 0);
+  }, []);
+
   const closeArtifact = useCallback(() => {
     setArtifactOpenBinding((prev) => {
       if (prev) setArtifactAnnounce("Artifact closed");
@@ -3884,6 +3890,13 @@ export function App() {
           setPaletteOpen(false);
           return;
         }
+        // Gate key: esc denies the pending permission — the dock owns
+        // Escape here rather than ceding it to close an open artifact.
+        if (permissions.length > 0) {
+          e.preventDefault();
+          void decidePermission("deny");
+          return;
+        }
         if (artifactOpenBinding) {
           const dockOwns =
             permissions.length > 0 ||
@@ -3893,6 +3906,23 @@ export function App() {
           if (dockOwns) return;
           e.preventDefault();
           closeArtifact();
+        }
+      },
+      Enter: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (inEditable(e.target)) return;
+        // Gate key: ⏎ allows the pending permission, or accepts a ready
+        // plan when no permission is showing. The composer's own Enter
+        // (send) is unaffected — it fires while focus is in the textarea,
+        // which inEditable already excludes here.
+        if (permissions.length > 0) {
+          e.preventDefault();
+          void decidePermission("allow_once");
+          return;
+        }
+        if (pendingPlanDecision && planSettling !== true) {
+          e.preventDefault();
+          void settlePlan("accept");
         }
       },
       KeyY: (e) => {
@@ -3950,6 +3980,8 @@ export function App() {
     artifactOpenBinding,
     closeArtifact,
     pendingPlanDecision,
+    planSettling,
+    settlePlan,
   ]);
 
   const saveSettings = async () => {
@@ -5158,6 +5190,12 @@ export function App() {
                     ? () => void trustFolder()
                     : undefined
                 }
+                onEditCommand={
+                  permissions[0]?.kind === "shell"
+                    ? () => editGateCommand(permissions[0]!.detail)
+                    : undefined
+                }
+                workspaceName={state?.workspaceName ?? null}
                 onAccept={(id) => void acceptDiff(id)}
                 onReject={(id) => void rejectDiff(id)}
                 onAcceptAll={() => void acceptAllDiffs()}
@@ -5170,6 +5208,8 @@ export function App() {
                   pendingPlanDecision
                     ? {
                         empty: pendingPlanDecision.empty,
+                        proposedMembers: pendingPlanDecision.run.plan?.proposedMembers ?? [],
+                        body: pendingPlanDecision.run.plan?.body ?? null,
                         settling: planSettling,
                         error: planDecisionError,
                       }

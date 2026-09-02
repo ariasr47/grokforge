@@ -1,7 +1,15 @@
 import type { PendingDiff } from "./DiffPanel";
-import type { PermissionReq } from "./PermissionCard";
 import type { ActivityRecord, DecisionRequest, MutationKind, RunProjectionRun } from "./runReducer";
 export type { MutationKind };
+
+export interface PermissionReq {
+  id: string;
+  kind: "write" | "shell";
+  detail: string;
+  sessionId: string;
+  runId: string;
+  invocationId: string;
+}
 
 export type PermissionTitle = "Run shell" | "Write file";
 

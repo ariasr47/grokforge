@@ -655,7 +655,6 @@ html[data-motion="calm"] .engine .dot.live {
 }
 
 .run-content,.activity-output,.terminal-detail { overflow-wrap:anywhere; min-width:0; }
-.action-dock { position:sticky; bottom:var(--composer-height); z-index:20; }
 :where(button,input,select,summary):focus-visible { outline:2px solid var(--accent); outline-offset:2px; box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent); }
 @media (prefers-reduced-motion: reduce) {
   .run-live,.policy-saving,.bypass-danger { animation:none !important; transition:none !important; }

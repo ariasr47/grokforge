@@ -503,12 +503,12 @@ describe("artifacts-panel App journeys", () => {
     ws.emit(
       envelope({ kind: "decision_request", request: shellPermission() }, 2, "perm-run") as unknown as Record<string, unknown>,
     );
-    await waitFor(() => assert.ok(screen.queryByRole("region", { name: "Allow running a command?" })));
-    const dockCard = screen.getByRole("region", { name: "Allow running a command?" });
-    assert.ok(within(dockCard).getByRole("button", { name: "Allow once" }));
+    await waitFor(() => assert.ok(screen.queryByRole("region", { name: "Grok wants to run a command" })));
+    const dockCard = screen.getByRole("region", { name: "Grok wants to run a command" });
+    assert.ok(within(dockCard).getByRole("button", { name: "Allow" }));
     const panel = document.querySelector(".artifact-panel") as HTMLElement;
     assert.ok(panel);
-    assert.equal(within(panel).queryByRole("button", { name: "Allow once" }), null);
+    assert.equal(within(panel).queryByRole("button", { name: "Allow" }), null);
     assert.equal(within(panel).queryByRole("button", { name: "Deny" }), null);
 
     fireEvent.keyDown(window, { key: "Escape" });
