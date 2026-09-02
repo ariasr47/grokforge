@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef } from "react";
 import { DiffPanel, type PendingDiff } from "./DiffPanel";
 import type { PermissionReq } from "./runChangeList";
 import type { PlanProposedMember } from "./runReducer";
@@ -86,14 +86,11 @@ export const ActionDock = memo(function ActionDock({
   const head = permissions[0] ?? null;
   const dockRef = useRef<HTMLDivElement>(null);
   const hasPlan = Boolean(planDecision);
-  // Local, cosmetic-only dismiss: recovery_confirmation has exactly one real
-  // server action (Recover — see api.editRecovery, which carries no decline
-  // param), so "Ask something else" cannot resolve the decision. Dismissing
-  // just stops showing this card; a fresh decision (different id) always
-  // reopens it since the comparison is keyed on id, not a sticky flag.
-  const [dismissedRecoveryId, setDismissedRecoveryId] = useState<string | null>(null);
-  const activeRecovery =
-    recoveryDecision && recoveryDecision.id !== dismissedRecoveryId ? recoveryDecision : null;
+  // recovery_confirmation has exactly one real server action (Recover — see
+  // api.editRecovery, which carries no decline param). The gate therefore
+  // offers no dismiss: hiding the card while the composer stays locked on
+  // "settle the card below" would strand the operator with nothing to settle.
+  const activeRecovery = recoveryDecision;
 
   useEffect(() => {
     if (!head && diffQueue.length === 0 && !oauth && !hasPlan && !activeRecovery) return;
@@ -185,7 +182,6 @@ export const ActionDock = memo(function ActionDock({
           // look like a multi-choice question.
           options={[{ label: GATE_RECOVER }]}
           onChoose={() => onRecover?.()}
-          onAskSomethingElse={() => setDismissedRecoveryId(activeRecovery.id)}
         />
       ) : null}
     </div>
