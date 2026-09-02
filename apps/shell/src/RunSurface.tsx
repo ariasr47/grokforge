@@ -444,7 +444,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
   const thoughtLbl = thoughtLabel(thoughtStreaming);
   const thoughtTx = reasoning.trim() ? thoughtExcerpt(reasoning) : "";
   return <article className="run-content" data-run-id={run.runId} aria-label={`Run ${youPrompt}`}>
-    <div className="spine" aria-hidden="true" />
     <article className="turn you-turn">
       <i className="node" aria-hidden="true" />
       <div className="you" title={youPrompt}>

@@ -13,6 +13,7 @@ import type { ActivityRecord, DecisionRequest, RunEventEnvelope, RunSnapshot } f
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "live-turn-session";
 const RUN_ID = "live-turn-run";
+const RUN_ID_2 = "live-turn-run-2";
 const TURN_COPY = "Your turn";
 const SHELL_DETAIL = "echo live-turn-attention";
 
@@ -70,12 +71,12 @@ function liveSnapshot(overrides: Partial<RunSnapshot> = {}): RunSnapshot {
   };
 }
 
-function envelope(payload: RunEventEnvelope["payload"], seq: number): RunEventEnvelope {
+function envelope(payload: RunEventEnvelope["payload"], seq: number, runId: string = RUN_ID): RunEventEnvelope {
   return {
     schemaVersion: 1,
     type: payload.kind,
     sessionId: SESSION_ID,
-    runId: RUN_ID,
+    runId,
     eventSeq: seq,
     connectionGeneration: 1,
     occurredAt: "",
@@ -441,5 +442,27 @@ describe("live-turn-attention App wiring", () => {
   it("removes the permanent activityOuterStickDisabledRef latch", () => {
     const src = readFileSync(fileURLToPath(new URL("./App.tsx", import.meta.url)), "utf8");
     assert.equal(src.includes("activityOuterStickDisabledRef"), false);
+  });
+
+  it("keeps exactly one continuous spine across two runs in the same session", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "first done",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }, 2) as unknown as Record<string, unknown>);
+    await waitFor(() => assert.ok(document.querySelector(".node--done")));
+    ws.emit(envelope(
+      { kind: "run_started", run: liveSnapshot({ runId: RUN_ID_2, acceptedPrompt: "second prompt" }) },
+      1,
+      RUN_ID_2,
+    ) as unknown as Record<string, unknown>);
+    await waitFor(() => assert.equal(document.querySelectorAll(".run-content").length, 2));
+    assert.equal(document.querySelectorAll(".spine").length, 1);
+    assert.equal(document.querySelectorAll(".stream").length, 1);
   });
 });

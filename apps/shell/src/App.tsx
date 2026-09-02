@@ -136,7 +136,7 @@ import {
   type ChatSession,
 } from "./sessions";
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
-import { computeOverview, filesJumpNeedsStart, OverviewStrip, pickToolsJumpEl, scrollDeltaBelowYou, shouldKeepEndAfterToolsJump, toolsJumpNeedsStart } from "./OverviewStrip";
+import { computeOverview, filesJumpNeedsStart, OverviewStrip, pickToolsJumpEl, scrollDeltaBelowYou, toolsJumpNeedsStart } from "./OverviewStrip";
 import { EmptyStates } from "./EmptyStates";
 import { Sidebar, type WorkspaceNode } from "./Sidebar";
 import {
@@ -4926,11 +4926,11 @@ export function App() {
                     overview.filesTouched.length
                       ? () => {
                           const files = document.querySelector<HTMLElement>(".file-changes");
-                          const you = document.querySelector<HTMLElement>(".run-prompt");
+                          const you = document.querySelector<HTMLElement>(".you");
                           const transcript = document.querySelector<HTMLElement>(".transcript");
                           if (!files) return;
                           files.scrollIntoView({ block: "start", behavior: "instant" });
-                          const thought = document.querySelector<HTMLElement>(".run-thought");
+                          const thought = document.querySelector<HTMLElement>(".thought");
                           const thoughtOpen =
                             thought instanceof HTMLDetailsElement
                               ? thought.open
@@ -4962,46 +4962,15 @@ export function App() {
                     overview.tools > 0
                       ? () => {
                           const tools = pickToolsJumpEl();
-                          const transcript = document.querySelector<HTMLElement>(".transcript");
-                          const composer = document.querySelector<HTMLElement>(".composer-wrap");
-                          const cue = document.querySelector<HTMLElement>(".turn-delimiter");
                           if (!tools) return;
                           tools.scrollIntoView({ block: "nearest", behavior: "instant" });
-                          const you = document.querySelector<HTMLElement>(".run-prompt");
+                          const you = document.querySelector<HTMLElement>(".you");
                           if (you) {
                             const toolsR0 = tools.getBoundingClientRect();
                             const youR = you.getBoundingClientRect();
                             if (toolsJumpNeedsStart({ toolsTop: toolsR0.top, youBottom: youR.bottom })) {
                               tools.scrollIntoView({ block: "start", behavior: "instant" });
                             }
-                          }
-                          if (!transcript || !composer || !cue) return;
-                          const toolsR = tools.getBoundingClientRect();
-                          const tr = transcript.getBoundingClientRect();
-                          const cueR = cue.getBoundingClientRect();
-                          const compR = composer.getBoundingClientRect();
-                          const thoughtEl = document.querySelector<HTMLElement>(".run-thought");
-                          const thoughtOpen =
-                            thoughtEl instanceof HTMLDetailsElement
-                              ? thoughtEl.open
-                              : Boolean(thoughtEl?.hasAttribute("open"));
-                          const thoughtR = !thoughtOpen ? thoughtEl?.getBoundingClientRect() : undefined;
-                          const fileHead = document.querySelector<HTMLElement>(".file-changes-header");
-                          if (
-                            shouldKeepEndAfterToolsJump({
-                              toolsTop: toolsR.top,
-                              toolsBottom: toolsR.bottom,
-                              transcriptTop: tr.top,
-                              composerTop: compR.top,
-                              cueBottom: cueR.bottom,
-                              hiddenBelow:
-                                transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight,
-                              fileHeadTop: fileHead?.getBoundingClientRect().top ?? null,
-                              youBottom: you?.getBoundingClientRect().bottom ?? null,
-                              thoughtBottom: thoughtR?.bottom ?? null,
-                            })
-                          ) {
-                            transcript.scrollTop = transcript.scrollHeight;
                           }
                         }
                       : undefined
@@ -5120,16 +5089,21 @@ export function App() {
                   />
                 ) : (
                   <>
-                    {runProjection.runOrder.map((id) => {
-                      const run = runProjection.runsById[id];
-                      if (!run || run.sessionId !== sessionId) return null;
-                      const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
-                      return (
-                      <div key={id} className="run-stack">
-                      <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
-                      </div>
-                      );
-                    })}
+                    {runProjection.runOrder.some((id) => runProjection.runsById[id]?.sessionId === sessionId) && (
+                    <div className="stream">
+                      <div className="spine" aria-hidden="true" />
+                      {runProjection.runOrder.map((id) => {
+                        const run = runProjection.runsById[id];
+                        if (!run || run.sessionId !== sessionId) return null;
+                        const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
+                        return (
+                        <div key={id} className="run-stack">
+                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
+                        </div>
+                        );
+                      })}
+                    </div>
+                    )}
                     {!hostOk && (
                       <div className="transcript-offline" role="status">
                         <strong>{activeRun ? "Offline" : "Forge's engine stopped."}</strong> {activeRun ? "Forge is offline. Your prompt and received output are preserved. Reconnect to confirm this run’s outcome." : "Your conversation is saved."}

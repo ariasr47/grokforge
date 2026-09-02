@@ -665,10 +665,21 @@ html[data-motion="calm"] .engine .dot.live {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  padding: 24px 28px 8px 24px;
   --run-file-stick-below: var(--run-prompt-stick-below);
 }
-/* —— Spine thread anatomy: one node-and-rail per turn —— */
+/* —— Spine thread anatomy: one continuous rail behind the whole Code
+   thread (every run), with one node per turn. .stream is the per-
+   session-thread wrapper (App.tsx wraps runProjection.runOrder in it);
+   .spine lives once as its child so the rail never restarts at a run
+   boundary. —— */
+.stream {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 28px 8px 24px;
+  min-width: 0;
+}
 .spine {
   position: absolute;
   left: 39px;
@@ -2162,12 +2173,6 @@ html[data-density="compact"] .hooks-row {
   word-break: break-word;
 }
 
-.stamp {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 0 4px;
-}
-
 .msg .who {
   display: flex;
   align-items: center;
@@ -3311,6 +3316,7 @@ a {
   align-self: stretch;
   width: 100%;
   max-width: min(820px, 100%);
+  min-width: 0;
   gap: 6px;
 }
 .run-stack .code-run-provenance {
