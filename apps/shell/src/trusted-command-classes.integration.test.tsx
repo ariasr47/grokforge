@@ -179,7 +179,14 @@ test("CAS 409 re-GETs expectedRevision before retry", async () => {
 test("Review still asks: permission dock is unchanged by a saved list", async () => {
   await openSettingsApp({ policy: "review", classes: ["npm"] });
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Messages" }));
+  // Settings has no sidebar tab back to chat any more (Task 5) — the same
+  // topbar toggle that opened Settings flips back; its title/accessible
+  // name swaps to "Chat" while view === "settings" (AppTopbar.tsx).
+  const backToChat = screen
+    .getAllByRole("button", { name: "Chat" })
+    .find((button) => button.className.includes("ghost"));
+  assert.ok(backToChat);
+  await user.click(backToChat!);
   const composer = await screen.findByLabelText("Message to agent");
   await user.type(composer, "run tests");
   await user.click(screen.getByRole("button", { name: "Send" }));

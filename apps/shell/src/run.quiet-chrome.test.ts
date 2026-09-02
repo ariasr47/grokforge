@@ -145,18 +145,6 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(line[1]!, /max-width:\s*100%/);
   });
 
-  it("sidebar Messages/Settings tabs are not filled pills", () => {
-    const btn = chrome.match(/\.nav-tabs button\s*\{([^}]+)\}/);
-    assert.ok(btn?.[1], "missing .nav-tabs button");
-    assert.match(btn[1]!, /background:\s*transparent/);
-    assert.match(btn[1]!, /border:\s*none/);
-    const active = chrome.match(/\.nav-tabs button\.active\s*\{([^}]+)\}/);
-    assert.ok(active?.[1], "missing .nav-tabs button.active");
-    assert.match(active[1]!, /background:\s*transparent/);
-    assert.doesNotMatch(active[1]!, /background:\s*var\(--bg3\)/);
-    assert.doesNotMatch(active[1]!, /border:\s*1px/);
-  });
-
   it("collapsed Git review is a compact fold, not a padded empty card", () => {
     // Live desktop-git-status: Git review 1 / 1 status was a full-width empty well.
     const m = chrome.match(
@@ -357,20 +345,6 @@ describe("settled-turn chrome is quiet", () => {
     const compact = chrome.match(/\.skills-palette\.is-compact\s*\{([^}]+)\}/);
     assert.ok(compact?.[1], "missing .skills-palette.is-compact");
     assert.match(compact[1]!, /width:\s*max-content/);
-  });
-
-  it("sidebar New session is not a full-width outlined well", () => {
-    const body = css.match(/\.btn\.ghost\.new-session-btn\s*\{([^}]+)\}/);
-    assert.ok(body?.[1], "missing .btn.ghost.new-session-btn");
-    assert.match(body[1]!, /border:\s*none/);
-    assert.match(body[1]!, /width:\s*max-content/);
-    assert.doesNotMatch(body[1]!, /(?<!max-)width:\s*100%/);
-    const hover = css.match(
-      /\.btn\.ghost\.new-session-btn:hover:not\(:disabled\)\s*\{([^}]+)\}/,
-    );
-    assert.ok(hover?.[1], "missing .btn.ghost.new-session-btn hover");
-    assert.match(hover[1]!, /border:\s*none/);
-    assert.match(hover[1]!, /background:\s*none/);
   });
 
   it("@file menu is a compact dropdown, not a full-width slab", () => {

@@ -127,6 +127,7 @@ import {
   setActiveSession,
   setExpanded,
   setSessionBranch,
+  setSessionNeedsYou,
   toggleExpanded,
   updatePackMembers,
   updateSessionMeta,
@@ -1870,6 +1871,10 @@ export function App() {
     [launchStatus],
   );
   const chip = useMemo(() => statusChip(state), [state]);
+  // Sidebar footer (Code): same auth source the topbar's Settings line
+  // shows, in the two words the rail's footer copy is allowed.
+  const railAuthLabel =
+    state?.authMode === "sub_pool" ? "Grok · subscription" : "Grok · API key";
   const activeRun = useMemo(() => runProjection.runOrder
     .map((id) => runProjection.runsById[id])
     .find((run) => run?.sessionId === sessionId && run.state !== "terminal") ?? null,
@@ -2739,6 +2744,49 @@ export function App() {
       setExpandTick((t) => t + 1);
     }
   }, [busy, sessionPartition, sessionId, productMode]);
+
+  // Sidebar "Needs you" — live-derived from the run projection's own pending
+  // decisions (runReducer.ts DecisionRequest), not a second source of truth.
+  // permission/diff decisions read "approve"; recovery_confirmation/plan
+  // read "question". Keyed by sessionId across every run the projection
+  // currently holds, so a decision settling or its run reaching terminal
+  // clears the flag even if the operator has since switched sessions.
+  const needsYouReasons = useMemo(() => {
+    const map: Record<string, "approve" | "question"> = {};
+    for (const id of runProjection.runOrder) {
+      const run = runProjection.runsById[id];
+      if (!run || run.state === "terminal") continue;
+      const pending = Object.values(run.decisions).find(
+        (d) => d.status === "pending",
+      );
+      if (!pending) continue;
+      map[run.sessionId] =
+        pending.kind === "permission" || pending.kind === "diff"
+          ? "approve"
+          : "question";
+    }
+    return map;
+  }, [runProjection]);
+  const needsYouIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const nextIds = new Set(Object.keys(needsYouReasons));
+    const prevIds = needsYouIdsRef.current;
+    let changed = false;
+    for (const id of nextIds) {
+      if (!prevIds.has(id)) {
+        setSessionNeedsYou(sessionPartition, id, true);
+        changed = true;
+      }
+    }
+    for (const id of prevIds) {
+      if (!nextIds.has(id)) {
+        setSessionNeedsYou(sessionPartition, id, false);
+        changed = true;
+      }
+    }
+    needsYouIdsRef.current = nextIds;
+    if (changed) setSessionList(listSessions(sessionPartition));
+  }, [needsYouReasons, sessionPartition]);
 
   useEffect(() => {
     if (productMode === "chat") return;
@@ -3811,6 +3859,11 @@ export function App() {
         e.preventDefault();
         newSession();
       },
+      "$mod+KeyO": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        void browseFolder();
+      },
       Escape: (e) => {
         if (peek) {
           e.preventDefault();
@@ -3881,6 +3934,7 @@ export function App() {
     permissions,
     decidePermission,
     newSession,
+    browseFolder,
     peek,
     paletteOpen,
     skillsOpen,
@@ -4365,11 +4419,9 @@ export function App() {
             onNewCodeSession={(ws) => newSession(ws)}
             onRenameCodeSession={renameSession}
             onDeleteCodeSession={removeSession}
-            pathInput={pathInput}
-            onPathInputChange={setPathInput}
-            onPathOpen={() => void openPath(pathInput)}
-            viewTab={view === "settings" ? "settings" : "messages"}
-            onViewTab={(t) => setView(t === "settings" ? "settings" : "chat")}
+            needsYouReasons={needsYouReasons}
+            authLabel={railAuthLabel}
+            version={buildInfo?.version ?? null}
           />
         </div>
         </Panel>

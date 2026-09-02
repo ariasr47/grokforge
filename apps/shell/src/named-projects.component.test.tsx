@@ -133,7 +133,7 @@ test("Code renders no Chat pack chrome", async () => {
   assert.equal(screen.queryByText("Pack ·"), null);
 });
 
-test("Code with a pinned workspace keeps Open folder compact, not the side-top hero", async () => {
+test("Code with a pinned workspace shows the gradient New session CTA, not Open folder", async () => {
   reloadSessionsFromDisk({
     byWorkspace: {
       [WORKSPACE]: [{
@@ -161,21 +161,15 @@ test("Code with a pinned workspace keeps Open folder compact, not the side-top h
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
   await screen.findByLabelText("Message to agent");
-  const btn = screen
-    .getAllByRole("button", { name: "Open folder…" })
-    .find((b) => b.className.includes("open-folder-btn"));
-  assert.ok(btn);
-  assert.ok(btn!.className.includes("open-folder-btn-compact"));
-  assert.ok(btn!.className.includes("icon-only"));
-  assert.equal(/Open folder/.test(btn!.textContent ?? ""), false);
-  assert.equal(
-    document.querySelector(".side-top .open-folder-btn:not(.open-folder-btn-compact)"),
-    null,
-  );
+
+  // Folder opening moves off the sidebar entirely once a workspace is
+  // pinned (command palette / Ctrl+O instead) — no compact icon button.
+  assert.equal(screen.queryByRole("button", { name: "Open folder…" }), null);
+  assert.equal(document.querySelector(".open-folder-btn-compact"), null);
+
   const newSession = screen.getByRole("button", { name: "New session" });
-  assert.ok(newSession.className.includes("ghost"));
-  assert.ok(newSession.className.includes("new-session-btn"));
-  assert.equal(newSession.className.includes("primary"), false);
+  assert.ok(newSession.className.includes("cta"));
+  assert.equal(newSession.className.includes("ghost"), false);
 });
 
 test("armed chip is not Included; hydrate drop is not empty", async () => {

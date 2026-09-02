@@ -40,6 +40,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Canvas utility — Geist Mono, tracking reset. Reused wherever the design
+   reference marks text `.mono` (paths, commands, counts, branch names). */
+.mono {
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+
 .app {
   /* Flex column so channel banner + topbar + error strips + layout
      all resize correctly (fixed 2-row grid broke when DEV banner was added). */
@@ -2289,35 +2296,6 @@ html[data-density="compact"] .hooks-row {
   margin: -10px 0 18px;
   font-size: 12px;
   color: var(--muted);
-}
-
-.nav-tabs {
-  display: flex;
-  gap: 2px;
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.nav-tabs button {
-  flex: 1;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.nav-tabs button:hover:not(:disabled):not(.active) {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-.nav-tabs button.active {
-  color: var(--text);
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .banner-error {

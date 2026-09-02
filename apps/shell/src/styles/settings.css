@@ -179,37 +179,6 @@ html[data-density="compact"] .run-footer {
   min-height: 0;
   height: 100%;
 }
-.side-mode-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 6px;
-  border-bottom: 1px solid transparent;
-}
-.side-mode-pill {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-family: var(--mono);
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-}
-.side-mode-pill.chat {
-  color: var(--accent2);
-  border-color: color-mix(in srgb, var(--accent2) 35%, transparent);
-  background: color-mix(in srgb, var(--accent2) 10%, transparent);
-}
-.side-mode-pill.code {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.side-mode-hint {
-  font-size: 11px;
-  color: var(--muted);
-}
 .side-body {
   flex: 1;
   overflow: auto;
@@ -217,9 +186,6 @@ html[data-density="compact"] .run-footer {
 }
 .side-shell.mode-chat .session-title {
   font-size: 13px;
-}
-.side-shell.mode-code .folder-branch {
-  margin-top: 2px;
 }
 .sidebar-stack[data-mode="chat"] .side-shell,
 .sidebar-stack[data-mode="code"] .side-shell {

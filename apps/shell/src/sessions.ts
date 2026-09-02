@@ -47,6 +47,8 @@ export interface ChatSession {
   status?: SessionStatus;
   subagents?: SubagentRecord[];
   open?: boolean;
+  /** True while a decision (permission/diff/plan/recovery) is pending on this session's run. */
+  needsYou?: boolean;
 }
 
 interface Store {
@@ -456,7 +458,7 @@ export function updateSessionMeta(
   workspace: string,
   id: string,
   patch: Partial<
-    Pick<ChatSession, "branch" | "status" | "title" | "subagents" | "open">
+    Pick<ChatSession, "branch" | "status" | "title" | "subagents" | "open" | "needsYou">
   >,
 ): void {
   const store = loadStore();
@@ -475,6 +477,20 @@ export function setSessionBranch(
   branch: string | null,
 ): void {
   updateSessionMeta(workspace, id, { branch });
+}
+
+/** Flip the Needs-you flag for one session (permission/diff/plan/recovery pending). */
+export function setSessionNeedsYou(
+  workspace: string,
+  id: string,
+  needsYou: boolean,
+): void {
+  updateSessionMeta(workspace, id, { needsYou });
+}
+
+/** Sessions in `workspace` currently flagged Needs-you, most recently updated first. */
+export function listNeedsYou(workspace: string): ChatSession[] {
+  return listSessions(workspace).filter((s) => s.needsYou === true);
 }
 
 export function setWorkspaceBranchAll(
