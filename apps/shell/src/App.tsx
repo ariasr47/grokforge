@@ -340,6 +340,7 @@ export function App() {
   const [shellAllowlist, setShellAllowlist] = useState(true);
   const [permissions, setPermissions] = useState<PermissionReq[]>([]);
   const permissionInFlightRef = useRef<string | null>(null);
+  const recoveryInFlightRef = useRef<string | null>(null);
   const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
   const [planArmError, setPlanArmError] = useState<string | null>(null);
   const [planSettling, setPlanSettling] = useState(false);
@@ -2014,6 +2015,24 @@ export function App() {
   useEffect(() => {
     setPlanDecisionError(null);
   }, [pendingPlanDecision?.decision.requestId, pendingPlanDecision?.run.runId, sessionId]);
+  // Cyan ask tier — recovery_confirmation. Same run-scan shape as
+  // pendingPlanDecision above; editId is resolved the same way RunSurface's
+  // now-removed submitDecision used to (match the activity by invocationId).
+  const pendingRecoveryDecision = useMemo(() => {
+    for (const id of runProjection.runOrder) {
+      const run = runProjection.runsById[id];
+      if (!run || run.sessionId !== sessionId) continue;
+      const decision = Object.values(run.decisions).find(
+        (d) => d.kind === "recovery_confirmation" && d.status === "pending",
+      );
+      if (!decision) continue;
+      const activity = Object.values(run.activities).find(
+        (a) => a.invocationId === decision.invocationId,
+      );
+      return { run, decision, editId: activity?.editId ?? null };
+    }
+    return null;
+  }, [runProjection, sessionId]);
   const planBusyOther = Boolean(activeRun && !isLivePlanning(activeRun));
   const planArm = useMemo(
     () =>
@@ -3577,6 +3596,30 @@ export function App() {
     },
     [pendingPlanDecision],
   );
+
+  const recoverFromDock = useCallback(async () => {
+    const pending = pendingRecoveryDecision;
+    if (!pending) return;
+    if (recoveryInFlightRef.current === pending.decision.requestId) return;
+    if (!pending.editId) {
+      reportError("Recovery details unavailable");
+      return;
+    }
+    recoveryInFlightRef.current = pending.decision.requestId;
+    try {
+      await api.editRecovery({
+        sessionId: pending.run.sessionId,
+        runId: pending.run.runId,
+        editId: pending.editId,
+      });
+    } catch (e) {
+      reportError(e instanceof Error ? e.message : "Recovery failed");
+    } finally {
+      if (recoveryInFlightRef.current === pending.decision.requestId) {
+        recoveryInFlightRef.current = null;
+      }
+    }
+  }, [pendingRecoveryDecision, reportError]);
 
   const retryLastUser = useCallback(
     (_id: string, content: string) => {
@@ -5217,6 +5260,15 @@ export function App() {
                 }
                 onPlanAccept={() => void settlePlan("accept")}
                 onPlanKeepPlanning={() => void settlePlan("keep_planning")}
+                recoveryDecision={
+                  pendingRecoveryDecision
+                    ? {
+                        id: pendingRecoveryDecision.decision.requestId,
+                        question: pendingRecoveryDecision.decision.detail,
+                      }
+                    : null
+                }
+                onRecover={() => void recoverFromDock()}
               />
 
               <ComposerPane

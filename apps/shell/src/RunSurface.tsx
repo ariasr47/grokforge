@@ -284,24 +284,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     if (decision && decision.status !== "pending") setPending(null);
     else if (activity && activity.recovery && activity.recovery.status !== "available") setPending(null);
   }, [pending, run.decisions, run.activities]);
-  async function submitDecision(d: RunProjectionRun["decisions"][string], decision: "allow_once" | "deny") {
-    setPending(d.requestId); setError(null);
-    try {
-      if (d.kind === "diff") {
-        const activity = Object.values(run.activities).find(a => a.invocationId === d.invocationId);
-        if (!activity?.editId) throw new Error("Edit details unavailable");
-        await api.runDiff({ sessionId: run.sessionId, runId: run.runId, requestId: d.requestId, invocationId: d.invocationId, editId: activity.editId, action: decision === "allow_once" ? "accept" : "reject" });
-      } else if (d.kind === "recovery_confirmation") {
-        const activity = Object.values(run.activities).find(a => a.invocationId === d.invocationId);
-        if (!activity?.editId) throw new Error("Recovery details unavailable");
-        await api.editRecovery({ sessionId: run.sessionId, runId: run.runId, editId: activity.editId });
-      } else {
-        await api.runPermission({ sessionId: run.sessionId, runId: run.runId, requestId: d.requestId, invocationId: d.invocationId, decision });
-      }
-    } catch (e) { setError(e instanceof Error ? e.message : "Decision failed"); setPending(null); }
-    // Keep the control disabled until the authoritative WS event changes the
-    // pending decision; clearing here permits a second click race.
-  }
   async function recover(activity: RunProjectionRun["activities"][string]) {
     if (!activity.editId) return;
     setPending(activity.editId); setError(null);
@@ -635,26 +617,20 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
           // cards duplicate File changes.
           return d.status === "pending";
         })
-        .map((d) => {
-          const isRecovery = d.kind === "recovery_confirmation";
-          return (
-            <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
-              <strong>{d.title}</strong>
-              <p>{d.detail}</p>
-              {isRecovery ? (
-                <Button
-                  variant="primary"
-                  disabled={pending === d.requestId}
-                  onClick={() => void submitDecision(d, "allow_once")}
-                >
-                  Recover
-                </Button>
-              ) : d.status === "pending" ? (
-                <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
-              ) : null}
-            </div>
-          );
-        })}
+        .map((d) => (
+          // The dock (ActionDock's ask/amber gates) owns every action for
+          // these — recovery_confirmation included, since Task 8's follow-up
+          // wired the cyan ask tier there. This keeps only the record (title
+          // + detail) and, while still pending, the same settle-below hint
+          // permission/diff cards show — never a live control of its own.
+          <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
+            <strong>{d.title}</strong>
+            <p>{d.detail}</p>
+            {d.status === "pending" ? (
+              <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
+            ) : null}
+          </div>
+        ))}
       {error && <p role="alert">{error}</p>}
       {run.state !== "terminal" && <div className="run-live" role="status" aria-live="polite">{run.state === "recovering" ? "Recovering run…" : run.state === "cancelling" ? "Ending run…" : "Run in progress…"}</div>}
       {showLegacyPartial && (

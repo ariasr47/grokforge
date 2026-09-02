@@ -42,6 +42,9 @@ export const GATE_ASK_TITLE = "Grok has a question";
 export const GATE_ASK_POLICY = "blocks the run until answered";
 export const GATE_ASK_ELSE = "Ask something else";
 
+/** recovery_confirmation's one real action — same label the old inline card used. */
+export const GATE_RECOVER = "Recover";
+
 export type LiveRevealPlan = "keep-end" | "show-header" | "skip";
 
 /** At the live end, keep following the bottom. Do not jump to the first tool header. */

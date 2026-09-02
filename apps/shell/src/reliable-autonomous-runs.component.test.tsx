@@ -10,6 +10,7 @@ import { api } from "./api";
 import { setDesktopBridge } from "./desktopBridge";
 import type { DesktopCommand } from "./desktopBridge";
 import type { RunProjectionRun, RunSnapshot } from "./runReducer";
+import { SETTLE_IN_DOCK } from "./copyDock";
 
 afterEach(() => cleanup());
 
@@ -243,6 +244,37 @@ test("routes diff decisions with edit identity and prevents duplicate submits", 
     assert.equal(screen.queryByRole("button", { name: "Reject" }), null, "diff settle stays in the action dock");
     assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.runDiff = original; }
+});
+
+test("recovery_confirmation decisions settle in the dock now — no inline Recover button in RunSurface", async () => {
+  let calls = 0;
+  const original = api.editRecovery;
+  api.editRecovery = (async () => { calls++; return { ok: true, activity: {} }; }) as typeof api.editRecovery;
+  try {
+    const activity = { activityId: "a", invocationId: "i", name: "write", lifecycle: "terminal", execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: null, policy: {}, automaticEligibility: "none", autoApplied: false, editId: "edit-1", recovery: null } as any;
+    render(<RunSurface run={run({
+      decisions: {
+        d: {
+          requestId: "d",
+          invocationId: "i",
+          kind: "recovery_confirmation",
+          status: "pending",
+          title: "Recovery needed",
+          detail: "Restore edit-1 to its state before the last write?",
+          expiresAt: null,
+          policy: {},
+        },
+      },
+      activities: { a: activity },
+    })} />);
+    // The record (title + detail) still shows here, but the cyan ask gate in
+    // the dock now owns the actual action — this is a record, not a control.
+    assert.ok(screen.getByText("Recovery needed"));
+    assert.ok(screen.getByText("Restore edit-1 to its state before the last write?"));
+    assert.equal(screen.queryByRole("button", { name: "Recover" }), null, "recovery settle stays in the action dock");
+    assert.ok(screen.getByText(SETTLE_IN_DOCK), "keeps the same dock hint permission/diff cards show while pending");
+    assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
+  } finally { api.editRecovery = original; }
 });
 
 test("guarded recovery explains the hash guard and confirms success without stale action", async () => {

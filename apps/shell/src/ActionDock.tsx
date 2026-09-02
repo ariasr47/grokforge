@@ -1,9 +1,10 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { DiffPanel, type PendingDiff } from "./DiffPanel";
 import type { PermissionReq } from "./runChangeList";
 import type { PlanProposedMember } from "./runReducer";
 import { Gate } from "./Gate";
 import { Button } from "./ui/Button";
+import { GATE_RECOVER } from "./copyDock";
 
 export {
   PLAN_ACCEPT,
@@ -21,6 +22,13 @@ export type PlanDockDecision = {
   body?: string | null;
   settling?: boolean;
   error?: string | null;
+};
+
+/** A pending recovery_confirmation decision — cyan ask tier. detail is a
+ * pass-through question, never parsed; the one real action is Recover. */
+export type RecoveryDockDecision = {
+  id: string;
+  question: string;
 };
 
 interface OauthPending {
@@ -48,6 +56,9 @@ interface Props {
   planDecision?: PlanDockDecision | null;
   onPlanAccept?: () => void;
   onPlanKeepPlanning?: () => void;
+  /** Pending recovery_confirmation — cyan ask tier. */
+  recoveryDecision?: RecoveryDockDecision | null;
+  onRecover?: () => void;
 }
 
 /** Normal flex child above the composer — a gate rises here while Grok waits on you. */
@@ -69,21 +80,31 @@ export const ActionDock = memo(function ActionDock({
   planDecision = null,
   onPlanAccept,
   onPlanKeepPlanning,
+  recoveryDecision = null,
+  onRecover,
 }: Props) {
   const head = permissions[0] ?? null;
   const dockRef = useRef<HTMLDivElement>(null);
   const hasPlan = Boolean(planDecision);
+  // Local, cosmetic-only dismiss: recovery_confirmation has exactly one real
+  // server action (Recover — see api.editRecovery, which carries no decline
+  // param), so "Ask something else" cannot resolve the decision. Dismissing
+  // just stops showing this card; a fresh decision (different id) always
+  // reopens it since the comparison is keyed on id, not a sticky flag.
+  const [dismissedRecoveryId, setDismissedRecoveryId] = useState<string | null>(null);
+  const activeRecovery =
+    recoveryDecision && recoveryDecision.id !== dismissedRecoveryId ? recoveryDecision : null;
 
   useEffect(() => {
-    if (!head && diffQueue.length === 0 && !oauth && !hasPlan) return;
+    if (!head && diffQueue.length === 0 && !oauth && !hasPlan && !activeRecovery) return;
     // Focus dock for a11y without stealing composer permanently
     const el = dockRef.current?.querySelector<HTMLElement>(
       "button.btn.primary, a, button",
     );
     el?.focus({ preventScroll: true });
-  }, [head?.id, diffQueue.length, oauth?.user_code, hasPlan]);
+  }, [head?.id, diffQueue.length, oauth?.user_code, hasPlan, activeRecovery?.id]);
 
-  if (!head && diffQueue.length === 0 && !oauth && !hasPlan) return null;
+  if (!head && diffQueue.length === 0 && !oauth && !hasPlan && !activeRecovery) return null;
 
   return (
     <div
@@ -153,6 +174,18 @@ export const ActionDock = memo(function ActionDock({
           error={planDecision.error}
           onAccept={() => onPlanAccept?.()}
           onKeepPlanning={() => onPlanKeepPlanning?.()}
+        />
+      ) : null}
+
+      {activeRecovery ? (
+        <Gate
+          tier="ask"
+          question={activeRecovery.question}
+          // Exactly the one real action the request offers — never padded to
+          // look like a multi-choice question.
+          options={[{ label: GATE_RECOVER }]}
+          onChoose={() => onRecover?.()}
+          onAskSomethingElse={() => setDismissedRecoveryId(activeRecovery.id)}
         />
       ) : null}
     </div>
