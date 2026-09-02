@@ -88,14 +88,15 @@ test("declined write without onRetryPrompt still shows Denied", () => {
   assert.equal(screen.queryByText("Answered"), null);
 });
 
-test("clean answered run stays Answered with no Retry", () => {
-  render(
+test("clean answered run renders nothing — the response turn's node carries that fact", () => {
+  const { container } = render(
     createElement(RunTerminalNotice, {
       run: run(),
       onRetryPrompt: () => {},
     }),
   );
-  assert.ok(screen.getByText("Answered"));
+  assert.equal(container.firstChild, null);
+  assert.equal(screen.queryByText("Answered"), null);
   assert.equal(screen.queryByText("Denied"), null);
   assert.equal(screen.queryByRole("button", { name: /^Retry$/ }), null);
 });

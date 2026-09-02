@@ -19,7 +19,9 @@ export function declinedReviewDecision(run: Pick<RunProjectionRun, "decisions">)
 
 export function RunTerminalNotice({ run, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics }: RunTerminalNoticeProps) {
   if (run.terminalKind === "answered") {
-    if (!declinedReviewDecision(run)) return <span className="run-answered">Answered</span>;
+    // A clean answered turn renders nothing here — the response turn's node
+    // (muted "done") already carries that fact; no "Answered" strip.
+    if (!declinedReviewDecision(run)) return null;
     return (
       <div className="terminal-detail" role="status">
         <strong>Denied</strong>

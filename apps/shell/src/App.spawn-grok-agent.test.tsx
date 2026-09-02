@@ -324,7 +324,7 @@ describe("spawn-grok-agent — run provenance + agent_exited", () => {
     const composer = document.querySelector("[data-code-agent='vendor']");
     assert.ok(composer?.classList.contains("is-quiet"));
     assert.ok(chip?.classList.contains("is-quiet"));
-    assert.ok(chip?.closest(".run-prompt"));
+    assert.ok(chip?.closest(".you"));
   });
 
   it("later generation on a new run id does not rewrite prior provenance", async () => {

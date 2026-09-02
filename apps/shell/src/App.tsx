@@ -5146,7 +5146,6 @@ export function App() {
                       scrollRef={transcriptRef}
                       busy={normalizedRunVisible ? false : busy || Boolean(runStartedAt)}
                       thinkingDetail={runPhaseDetail}
-                      showTurnDelimiter={turnReady}
                       lastUserId={lastUserId}
                       lastAssistantId={lastAssistantId}
                       onRetryUser={retryLastUser}

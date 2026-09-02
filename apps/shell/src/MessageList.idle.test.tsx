@@ -3,17 +3,15 @@ import { afterEach, test } from "node:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import {
   MessageList,
-  TURN_IDLE_COPY,
   waitHeading,
   WAITING_PLACEHOLDER_HEAD,
 } from "./MessageList";
 
 afterEach(() => cleanup());
 
-test("idle delimiter is a short Your turn, not a shouted instruction", () => {
-  render(<MessageList messages={[]} showTurnDelimiter busy={false} />);
-  assert.equal(TURN_IDLE_COPY, "Your turn");
-  assert.ok(screen.getByText(TURN_IDLE_COPY));
+test("idle transcript never paints the retired Your turn delimiter", () => {
+  render(<MessageList messages={[]} busy={false} />);
+  assert.equal(screen.queryByText("Your turn"), null);
   assert.equal(screen.queryByText(/type the next message/i), null);
 });
 

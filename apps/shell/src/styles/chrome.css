@@ -661,17 +661,87 @@ html[data-motion="calm"] .engine .dot.live {
   .run-live,.policy-saving,.bypass-danger { animation:none !important; transition:none !important; }
 }
 .run-content {
-  display: grid;
-  gap: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 28px 8px 24px;
   --run-file-stick-below: var(--run-prompt-stick-below);
+}
+/* —— Spine thread anatomy: one node-and-rail per turn —— */
+.spine {
+  position: absolute;
+  left: 39px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent 0,
+    var(--border) 24px,
+    var(--border) calc(100% - 24px),
+    transparent
+  );
+  pointer-events: none;
+}
+.turn {
+  position: relative;
+  min-width: 0;
+  padding-left: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.node {
+  position: absolute;
+  left: 10px;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent);
+  background: var(--bg);
+}
+.node--filled {
+  border-color: transparent;
+  background: var(--accent);
+}
+html:not([data-motion="calm"]) .node--filled {
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+html[data-motion="calm"] .node--filled {
+  animation: none !important;
+}
+.node--amber {
+  border-color: transparent;
+  background: var(--attention);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--attention) 16%, transparent);
+}
+html:not([data-motion="calm"]) .node--amber {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+html[data-motion="calm"] .node--amber {
+  animation: none !important;
+}
+.node--rose {
+  border-color: transparent;
+  background: var(--danger);
+}
+.node--done {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .node--filled,
+  .node--amber {
+    animation: none !important;
+  }
 }
 .run-decision-dock-hint {
   margin: 8px 0 0;
   color: var(--muted);
   font-size: 12px;
 }
-.run-provenance { display:flex; flex-wrap:wrap; gap:6px 10px; color:var(--muted); font-family:var(--mono); font-size:11px; line-height:1.4; }
-.run-provenance span { display:inline-flex; min-width:0; padding:3px 8px; border:1px solid var(--border); border-radius:999px; background:var(--card); overflow-wrap:anywhere; }
 .run-content details { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; }
 .file-changes {
   display: grid;
@@ -1736,42 +1806,43 @@ html[data-density="compact"] .hooks-row {
 .shiki { margin: 0; background: transparent !important; overflow-x: auto; }
 .shiki code { font-family: var(--mono); font-size: 12px; }
 
-.assistant-answer { background:var(--card); border:1px solid var(--border-strong); border-radius:var(--radius); padding:16px; }
-.run-thought {
-  position: relative;
-  z-index: 0;
-  margin: 8px 0 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--muted);
-}
-.run-content details.run-thought:not([open]) {
-  justify-self: stretch;
-  width: auto;
-  max-width: 100%;
-  padding: 4px 12px;
+/* .assistant-answer carries no card chrome of its own — .prose (alongside it
+   on the same element) supplies the typography; the answer prose no longer
+   sits in a bordered card. */
+/* —— Thought: one-line summary, chevron opens the full think-aloud —— */
+.thought {
+  max-width: 680px;
+  min-width: 0;
   margin: 0;
-  position: sticky;
-  top: var(--run-prompt-stick-below);
-  z-index: 4;
-  isolation: isolate;
-  background: var(--bg);
-  box-shadow:
-    0 -8px 0 0 var(--bg),
-    0 14px 0 0 var(--bg);
 }
-.run-content details.run-thought:not([open]) > summary {
-  width: max-content;
-}
-.run-thought > summary {
+.thought > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   cursor: pointer;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--muted);
+  list-style: none;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--accent2) 90%, transparent);
 }
-.run-thought-body,
+.thought > summary::-webkit-details-marker {
+  display: none;
+}
+.thought .ch {
+  flex: none;
+  color: color-mix(in srgb, var(--accent2) 70%, transparent);
+}
+.thought .lb {
+  flex: none;
+  white-space: nowrap;
+}
+.thought .tx {
+  min-width: 0;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .run-midturn-body {
   margin: 8px 0 0;
   font: inherit;
@@ -1861,70 +1932,72 @@ html[data-density="compact"] .hooks-row {
   flex-direction: column;
   gap: 14px;
 }
-.run-prompt {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  isolation: isolate;
-  width: 100%;
+.you {
+  max-width: 680px;
+  min-width: 0;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  overflow: hidden;
-  padding: 8px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  padding: 12px 16px;
   border-radius: 14px;
-  background: var(--bg);
-  box-shadow:
-    0 -16px 0 12px var(--bg),
-    0 8px 10px -2px var(--bg);
-  scroll-margin-top: 8px;
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 14.5px;
+  line-height: 1.55;
 }
-
-.run-prompt-main {
+.you .who {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  min-width: 0;
-  overflow: hidden;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.run-prompt-role {
-  flex: 0 0 auto;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--whisper);
+  margin-bottom: 4px;
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--whisper);
 }
-.run-prompt-body {
-  margin: 0;
+.you .who .m {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--muted);
+}
+.you-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 2px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.you-meta > * + *::before {
+  content: "·";
+  margin: 0 0.55em 0 0.2em;
+  color: var(--whisper);
+}
+.you-body {
   min-width: 0;
-  flex: 1 1 auto;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   text-overflow: ellipsis;
   white-space: pre-wrap;
-  font-size: 13px;
-  line-height: 1.4;
+  overflow-wrap: anywhere;
+  font-family: var(--sans);
   color: var(--text);
 }
-.run-prompt-more {
-  flex: 0 0 auto;
-  align-self: flex-end;
-  margin-left: auto;
+.you-body.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  text-overflow: unset;
+}
+.you-more {
+  display: block;
+  margin: 4px 0 0;
   padding: 0;
   border: none;
   background: none;
@@ -1932,50 +2005,19 @@ html[data-density="compact"] .hooks-row {
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
+  cursor: pointer;
 }
-.run-prompt.is-expanded {
-  max-height: min(36vh, 280px);
+.you-more:hover {
+  color: var(--text);
 }
-.run-prompt.is-expanded .run-prompt-main {
-  min-height: 0;
-  overflow: hidden;
-}
-.run-prompt.is-expanded .run-prompt-body {
-  display: block;
-  -webkit-line-clamp: unset;
-  overflow: auto;
-  max-height: min(28vh, 200px);
-  text-overflow: unset;
-  white-space: pre-wrap;
-}
-.run-prompt-mention {
-  font: inherit;
+.mention {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
-  background: none;
-  border: none;
-  padding: 0;
-}
-.run-prompt .run-provenance {
-  min-width: 0;
-  align-items: center;
-  gap: 0 2px;
-}
-.run-prompt .run-provenance > * + *::before {
-  content: "·";
-  margin: 0 0.55em 0 0.2em;
-  color: var(--whisper);
-}
-.run-prompt .run-provenance > span:not([class]) {
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: 0;
-}
-.run-prompt .code-run-provenance.is-quiet {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--muted);
 }
 
 .chat-stage {
@@ -2063,26 +2105,11 @@ html[data-density="compact"] .hooks-row {
 .transcript > .msg,
 .transcript > .receipts,
 .transcript > .thinking-placeholder,
-.transcript > .turn-delimiter,
 .transcript > .activity-chip,
 .transcript > .msg-window-note,
 .transcript > .run-stack {
   max-width: min(820px, 100%);
   min-width: 0;
-}
-
-.transcript > .turn-delimiter {
-  align-self: center;
-  width: max-content;
-  margin-top: auto;
-  flex-shrink: 0;
-  background: var(--bg);
-  padding: 4px 12px;
-  border-radius: 999px;
-  box-shadow: none;
-}
-.transcript > .turn-delimiter .turn-delimiter-line {
-  display: none;
 }
 
 .empty-state {
@@ -2107,57 +2134,100 @@ html[data-density="compact"] .hooks-row {
 }
 
 .msg {
-  max-width: 820px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 640px;
   min-width: 0;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 7%, transparent),
-    color-mix(in srgb, var(--accent2) 9%, transparent)
-  );
-  backdrop-filter: blur(20px);
-  border-radius: var(--radius-thought);
-  padding: 16px 20px;
-  box-shadow: 0 0 40px rgba(100, 80, 255, 0.1);
 }
 
-.msg.user {
+.msg.me {
   align-self: flex-end;
-  border-radius: 28px 28px 10px 28px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 10%, transparent),
-    color-mix(in srgb, var(--accent) 4%, transparent)
-  );
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  align-items: flex-end;
+  max-width: 520px;
 }
 
-.msg.assistant {
-  align-self: flex-start;
-}
-
-.msg .role {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--plasma);
-  margin-bottom: 8px;
-  font-weight: 500;
-  opacity: 0.9;
-}
-
-.msg.user .role {
-  color: var(--whisper);
-}
-
-.msg .body {
+.bubble {
+  max-width: 100%;
+  min-width: 0;
+  padding: 12px 16px;
+  border-radius: 16px 16px 6px 16px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 14px;
-  color: #e8f2ff;
-  line-height: 1.55;
+}
+
+.stamp {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.msg .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.msg .who .g {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  flex: none;
+}
+
+.msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.7;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.msg.me .msg-foot {
+  justify-content: flex-end;
+}
+.msg:hover .msg-foot,
+.msg:focus-within .msg-foot {
+  opacity: 1;
+}
+
+/* —— Prose: settled answer typography, no bordered card —— */
+.prose {
+  max-width: var(--measure);
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--text);
+}
+.prose p {
+  margin: 0 0 10px;
+}
+.prose p:last-child {
+  margin-bottom: 0;
+}
+.prose code {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: color-mix(in srgb, var(--accent) 25%, var(--text));
+}
+/* MarkdownBody renders its own .md-body/.md-p/.md-inline-code, not plain
+   <p>/<code> — scope the prose type-scale to it here rather than touching
+   .md-body's base rule, which other surfaces still use unchanged. */
+.prose .md-body {
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--text);
 }
 
 .composer {

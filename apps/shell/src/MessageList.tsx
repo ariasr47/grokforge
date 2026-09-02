@@ -16,8 +16,6 @@ interface Props {
   windowSize?: number;
   onOpenPath?: (path: string) => void;
   forceOpenFailedTools?: boolean;
-  /** Show idle delimiter after a finished run */
-  showTurnDelimiter?: boolean;
   onRetryUser?: (messageId: string, content: string) => void;
   onRegenerate?: (userContent: string) => void;
   lastUserId?: string | null;
@@ -34,8 +32,6 @@ function copyText(text: string): Promise<void> {
   return writeClipboard(text);
 }
 
-/** Idle cue after a finished run. Short — the composer is the instruction. */
-export const TURN_IDLE_COPY = "Your turn";
 /** Chat wait chrome — same locked phrase as the live phase bar, not retired “Thinking field”. */
 export const WAITING_PLACEHOLDER_HEAD = "Waiting for model…";
 
@@ -133,14 +129,6 @@ const ChatBubble = memo(function ChatBubble({
     },
     [],
   );
-  const kind =
-    m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant";
-  const label =
-    m.role === "user"
-      ? "You"
-      : m.role === "system"
-        ? "System"
-        : "Grok · presence";
 
   const onCopy = useCallback(() => {
     void copyText(m.content)
@@ -157,7 +145,44 @@ const ChatBubble = memo(function ChatBubble({
       });
   }, [m.content]);
 
-  const useMd = m.role === "assistant" || m.role === "system";
+  const copyLabel = copyErr ? "Failed" : copied ? "Copied" : "Copy";
+
+  if (m.role === "user") {
+    return (
+      <article
+        className={`msg me${m.streaming ? " streaming" : ""}`}
+        data-msg-role={m.role}
+        data-msg-id={m.id}
+      >
+        <div className="bubble">{m.content}</div>
+        <div className="msg-foot">
+          {showRetry && onRetry && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="msg-action"
+              onClick={onRetry}
+              title="Send this message again"
+            >
+              Retry
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="msg-action"
+            onClick={onCopy}
+            title="Copy message"
+          >
+            {copyLabel}
+          </Button>
+        </div>
+      </article>
+    );
+  }
+
+  // Only "assistant"/"system" reach here — "user" returned above and "tool"
+  // never reaches ChatBubble (Receipts/ActivityChip own that role).
   const elevateKind =
     m.role === "assistant" && !m.streaming && m.content?.trim()
       ? elevateArtifact(m.content).kind
@@ -185,59 +210,13 @@ const ChatBubble = memo(function ChatBubble({
 
   return (
     <article
-      className={`msg ${kind}${m.streaming ? " streaming" : ""}`}
+      className={`msg${m.role === "system" ? " system" : ""}${m.streaming ? " streaming" : ""}`}
       data-msg-role={m.role}
       data-msg-id={m.id}
     >
-      <div className="msg-head">
-        <div className="role">
-          {label}
-          {m.streaming ? " · streaming" : ""}
-        </div>
-        <div className="msg-actions">
-          {elevatable ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="msg-action"
-              onClick={() => onOpenArtifact?.(m.id)}
-              title={openTitle}
-            >
-              Open
-            </Button>
-          ) : null}
-          {showRetry && onRetry && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="msg-action"
-              onClick={onRetry}
-              title="Send this message again"
-            >
-              Retry
-            </Button>
-          )}
-          {showRegenerate && onRegenerate && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="msg-action"
-              onClick={onRegenerate}
-              title="Generate a new reply to the last question"
-            >
-              Regenerate
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="msg-action"
-            onClick={onCopy}
-            title="Copy message"
-          >
-            {copyErr ? "Failed" : copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
+      <div className="who">
+        <span className="g" aria-hidden="true" />
+        <span>{m.role === "system" ? "System" : "Grok"}</span>
       </div>
       {m.thinking ? (
         <details
@@ -253,28 +232,57 @@ const ChatBubble = memo(function ChatBubble({
         </details>
       ) : null}
       {showPlainStream ? (
-        <div className="body md-body streaming">
+        <div className="prose streaming">
           {m.content || (m.thinking ? "" : "…")}
           <span className="md-caret" aria-hidden />
         </div>
-      ) : useMd ? (
-        m.content ? (
-          <div
-            className={artifactOpen ? "msg-body--artifact-compact" : undefined}
-            hidden={artifactOpen || undefined}
+      ) : m.content ? (
+        <div
+          className={artifactOpen ? "prose msg-body--artifact-compact" : "prose"}
+          hidden={artifactOpen || undefined}
+        >
+          {artifactOpen ? null : (
+            <MarkdownBody
+              text={m.content}
+              streaming={Boolean(m.streaming)}
+              onChoose={onChoose}
+            />
+          )}
+        </div>
+      ) : null}
+      <div className="msg-foot">
+        {elevatable ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="msg-action"
+            onClick={() => onOpenArtifact?.(m.id)}
+            title={openTitle}
           >
-            {artifactOpen ? null : (
-              <MarkdownBody
-                text={m.content}
-                streaming={Boolean(m.streaming)}
-                onChoose={onChoose}
-              />
-            )}
-          </div>
-        ) : null
-      ) : (
-        <div className="body">{m.content}</div>
-      )}
+            Open
+          </Button>
+        ) : null}
+        {showRegenerate && onRegenerate && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="msg-action"
+            onClick={onRegenerate}
+            title="Generate a new reply to the last question"
+          >
+            Regenerate
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="msg-action"
+          onClick={onCopy}
+          title="Copy message"
+        >
+          {copyLabel}
+        </Button>
+      </div>
     </article>
   );
 });
@@ -285,7 +293,6 @@ export const MessageList = memo(function MessageList({
   windowSize = 120,
   onOpenPath,
   forceOpenFailedTools = false,
-  showTurnDelimiter = false,
   onRetryUser,
   onRegenerate,
   lastUserId,
@@ -413,15 +420,6 @@ export const MessageList = memo(function MessageList({
       )}
       {showPlaceholder ? (
         <ThinkingPlaceholder detail={thinkingDetail} />
-      ) : null}
-      {showTurnDelimiter && !busy ? (
-        <div className="turn-delimiter" role="status">
-          <span className="turn-delimiter-line" aria-hidden />
-          <span className="turn-delimiter-label">
-            {TURN_IDLE_COPY}
-          </span>
-          <span className="turn-delimiter-line" aria-hidden />
-        </div>
       ) : null}
     </>
   );

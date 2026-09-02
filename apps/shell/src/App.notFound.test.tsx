@@ -4,7 +4,7 @@
 // produces it (that's AC12d/AC12e, review-only, out of this lane's reach).
 import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
@@ -172,7 +172,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByText("Answered"));
+    await waitFor(() => assert.ok(document.querySelector(".node--done")));
     assert.ok(screen.getByText("restored answer"));
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
   });

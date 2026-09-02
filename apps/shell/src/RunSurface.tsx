@@ -13,7 +13,6 @@ import { HooksSection } from "./HooksSection";
 import { projectHooks } from "./hooksProjection";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { writeClipboard } from "./copyClipboard";
-import { scrollDeltaToClearStickyYou, scrollDeltaToKeepCueAboveComposer, transcriptScrollAfterOpenFileDiff, youHeightToKeepCueVisible } from "./OverviewStrip";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
 import { changeListCoversActivity, projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
 import { FileChangesSection } from "./FileChangesSection";
@@ -158,34 +157,41 @@ export function midturnFoldedIntoAnswer(
   return paras.length > 0 && paras.every((p) => ans.includes(p));
 }
 
-/** Sticky Thought offset: measured You height plus the run-content gap. */
-export function runPromptStickBelowPx(promptHeight: number): number {
-  if (!Number.isFinite(promptHeight) || promptHeight <= 0) return 88;
-  return Math.round(promptHeight) + 12;
+/** Collapse whitespace and cap the live thought excerpt so the DOM never carries
+ *  a full reasoning transcript on the one-line summary. */
+export function thoughtExcerpt(reasoning: string, max = 120): string {
+  const collapsed = reasoning.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  return `${collapsed.slice(0, max).trimEnd()}…`;
 }
 
-/** File changes stick-below: You, plus collapsed Thought so FILES jump does not cover it. */
-export function runFileStickBelowPx(promptHeight: number, collapsedThoughtHeight: number): number {
-  const you = runPromptStickBelowPx(promptHeight);
-  if (!Number.isFinite(collapsedThoughtHeight) || collapsedThoughtHeight <= 0) return you;
-  return you + Math.round(collapsedThoughtHeight) + 12;
+/** `Thought for Ns` needs a real thinking-span timestamp. The projection carries
+ *  none today (never invent one) — so the label omits the duration until a real
+ *  thought start/end timestamp exists on the projection. */
+export function thoughtLabel(streaming: boolean): string {
+  return streaming ? "Thought…" : "Thought";
 }
 
-/** Collapsed Thought box height. Uses the details `.open` property — `:not([open])` misses
- *  a closed details that still carries the attribute, and then File changes sticks under Thought. */
-export function collapsedThoughtHeightPx(thought: HTMLElement | null): number {
-  if (!thought) return 0;
-  const open = thought instanceof HTMLDetailsElement ? thought.open : thought.hasAttribute("open");
-  if (open) return 0;
-  const h = thought.getBoundingClientRect().height;
-  return Number.isFinite(h) && h > 0 ? Math.round(h) : 0;
+/** Response-turn node modifier from run state — hollow (You) is handled separately;
+ *  this is only for the turn that carries Grok's own work. */
+export function responseNodeModifier(
+  run: Pick<RunProjectionRun, "state" | "terminalKind">,
+): "filled" | "amber" | "rose" | "done" {
+  if (run.state === "waiting_for_decision") return "amber";
+  if (run.state === "terminal") return run.terminalKind === "failed" ? "rose" : "done";
+  return "filled";
 }
 
-/** Latch Show more so a later tighter measure cannot drop it (WebView2
- *  scrollHeight/clientHeight can oscillate when the button itself appears). */
-export function nextPromptOverflow(prev: boolean, measured: boolean, promptChanged: boolean): boolean {
-  if (promptChanged) return measured;
-  return prev || measured;
+/** HH:MM in the viewer's local clock from a real host timestamp. Empty/invalid
+ *  input (common in fixtures, and possible before the host stamps a run) never
+ *  renders a guessed or garbled time — it renders nothing. */
+export function formatClockTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 /** Thought disclosure: user click wins; terminal closes; live reasoning must
@@ -211,44 +217,18 @@ export function promptBodyMeasuresOverflow(input: {
   );
 }
 
+/** Latch Show more so a later tighter measure cannot drop it (WebView2
+ *  scrollHeight/clientHeight can oscillate when the button itself appears). */
+export function nextPromptOverflow(prev: boolean, measured: boolean, promptChanged: boolean): boolean {
+  if (promptChanged) return measured;
+  return prev || measured;
+}
+
 export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose, artifactOpen = false, onOpenArtifact }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
   const [openChangeDiff, setOpenChangeDiff] = useState<string | null>(null);
-  const nearTranscriptEndRef = useRef(true);
-  useEffect(() => {
-    const el = document.querySelector<HTMLElement>(".transcript");
-    if (!el) return;
-    const onScroll = () => {
-      nearTranscriptEndRef.current =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 96;
-    };
-    onScroll();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-  useLayoutEffect(() => {
-    if (!openChangeDiff) return;
-    const transcript = document.querySelector<HTMLElement>(".transcript");
-    const files = document.querySelector<HTMLElement>(".file-changes");
-    const you = document.querySelector<HTMLElement>(".run-prompt");
-    if (!transcript || !files || !you) return;
-    const thought = document.querySelector<HTMLElement>(".run-thought");
-    const thoughtOpen =
-      thought instanceof HTMLDetailsElement
-        ? thought.open
-        : Boolean(thought?.hasAttribute("open"));
-    const thoughtR = !thoughtOpen ? thought?.getBoundingClientRect() : undefined;
-    const delta = transcriptScrollAfterOpenFileDiff({
-      nearEnd: nearTranscriptEndRef.current,
-      fileTop: files.getBoundingClientRect().top,
-      youBottom: you.getBoundingClientRect().bottom,
-      thoughtTop: thoughtR?.top ?? null,
-      thoughtBottom: thoughtR?.bottom ?? null,
-    });
-    if (delta) transcript.scrollTop += delta;
-  }, [openChangeDiff]);
   const [recoveryResult, setRecoveryResult] = useState<Record<string, "reverted" | "conflict">>({});
   const [focusActivityId, setFocusActivityId] = useState<string | null>(null);
   const [thoughtOpen, setThoughtOpen] = useState(() => run.state !== "terminal");
@@ -256,85 +236,11 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [promptOverflows, setPromptOverflows] = useState(false);
   const promptOverflowTextRef = useRef(youPrompt);
-  const promptRef = useRef<HTMLDivElement>(null);
-  const promptBodyRef = useRef<HTMLSpanElement>(null);
-  const runRootRef = useRef<HTMLElement>(null);
+  const promptBodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setPromptExpanded(false);
     setThoughtOpen(run.state !== "terminal");
   }, [run.runId]);
-  useLayoutEffect(() => {
-    const prompt = promptRef.current;
-    const root = runRootRef.current;
-    if (!prompt || !root) return;
-    const apply = () => {
-      const promptH = prompt.getBoundingClientRect().height;
-      const youPx = `${runPromptStickBelowPx(promptH)}px`;
-      const thoughtH = collapsedThoughtHeightPx(root.querySelector<HTMLElement>(".run-thought"));
-      const filePx = `${runFileStickBelowPx(promptH, thoughtH)}px`;
-      const transcript = document.querySelector<HTMLElement>(".transcript");
-      if (root.style.getPropertyValue("--run-prompt-stick-below") !== youPx) {
-        root.style.setProperty("--run-prompt-stick-below", youPx);
-        transcript?.style.setProperty("--run-prompt-stick-below", youPx);
-      }
-      if (root.style.getPropertyValue("--run-file-stick-below") !== filePx) {
-        root.style.setProperty("--run-file-stick-below", filePx);
-      }
-    };
-    const ro = new ResizeObserver(apply);
-    ro.observe(prompt);
-    const thought = root.querySelector(".run-thought");
-    if (thought) ro.observe(thought);
-    apply();
-    return () => ro.disconnect();
-  }, [run.acceptedPrompt, thoughtOpen, promptExpanded, openChangeDiff]);
-  useLayoutEffect(() => {
-    const prompt = promptRef.current;
-    if (!prompt) return;
-    if (!promptExpanded) {
-      prompt.style.removeProperty("max-height");
-      return;
-    }
-    const root = runRootRef.current;
-    const transcript = document.querySelector<HTMLElement>(".transcript");
-    const composer = document.querySelector<HTMLElement>(".composer-wrap");
-    const cue = document.querySelector<HTMLElement>(".turn-delimiter");
-    if (!root || !transcript) return;
-    const nudge = () => {
-      const files = root.querySelector<HTMLElement>(".file-changes");
-      const tools = root.querySelector<HTMLElement>(".rhead");
-      const thought = root.querySelector<HTMLElement>(".run-thought:not([open])");
-      const delta = scrollDeltaToClearStickyYou({
-        youBottom: prompt.getBoundingClientRect().bottom,
-        tops: [
-          thought?.getBoundingClientRect().top,
-          files?.getBoundingClientRect().top,
-          tools?.getBoundingClientRect().top,
-        ],
-      });
-      if (delta) transcript.scrollTop += delta;
-    };
-    // Clear docks first — cue often still fits before that scroll, then sits under the composer.
-    nudge();
-    if (cue && composer) {
-      const youHeight = prompt.getBoundingClientRect().height;
-      const nextH = youHeightToKeepCueVisible({
-        youHeight,
-        cueBottom: cue.getBoundingClientRect().bottom,
-        composerTop: composer.getBoundingClientRect().top,
-        gap: 40,
-      });
-      if (nextH < youHeight - 1) prompt.style.maxHeight = `${nextH}px`;
-      const files = root.querySelector<HTMLElement>(".file-changes");
-      const keep = scrollDeltaToKeepCueAboveComposer({
-        cueBottom: cue.getBoundingClientRect().bottom,
-        composerTop: composer.getBoundingClientRect().top,
-        youBottom: prompt.getBoundingClientRect().bottom,
-        filesTop: files?.getBoundingClientRect().top,
-      });
-      if (keep) transcript.scrollTop += keep;
-    }
-  }, [promptExpanded]);
   const textOverflows = promptBodyMeasuresOverflow({
     scrollHeight: 0,
     clientHeight: 0,
@@ -352,7 +258,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
       return;
     }
     const measure = (changed: boolean) => {
-      if (el.closest(".run-prompt")?.classList.contains("is-expanded")) return;
+      if (el.closest(".you")?.classList.contains("is-expanded")) return;
       const measured = promptBodyMeasuresOverflow({
         scrollHeight: el.scrollHeight,
         clientHeight: el.clientHeight,
@@ -533,121 +439,116 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
     catchUp,
     sessionIdentity: codeAgent?.identity ?? null,
   });
-  return <article ref={runRootRef} className="run-content" data-run-id={run.runId} aria-label={`Run ${youPrompt}`}>
-    <div
-      ref={promptRef}
-      className={`run-prompt${promptExpanded ? " is-expanded" : ""}`}
-      title={youPrompt}
-    >
-      <button
-        type="button"
-        className="run-prompt-main"
-        aria-expanded={promptExpanded}
-        onClick={() => setPromptExpanded((open) => !open)}
-      >
-        <strong className="run-prompt-role">You</strong>
-        <span ref={promptBodyRef} className="run-prompt-body">
+  const clockTime = formatClockTime(run.admittedAt);
+  const nodeModifier = responseNodeModifier(run);
+  const thoughtLbl = thoughtLabel(thoughtStreaming);
+  const thoughtTx = reasoning.trim() ? thoughtExcerpt(reasoning) : "";
+  return <article className="run-content" data-run-id={run.runId} aria-label={`Run ${youPrompt}`}>
+    <div className="spine" aria-hidden="true" />
+    <article className="turn you-turn">
+      <i className="node" aria-hidden="true" />
+      <div className="you" title={youPrompt}>
+        <div className="who">
+          <span>You</span>
+          {clockTime ? <span className="m">{clockTime}</span> : null}
+        </div>
+        <div
+          className="you-meta"
+          aria-label={[
+            codeRunProvenance.state === "absent" ? null : codeRunProvenanceCopy(codeRunProvenance),
+            `Model: ${model.appliedModel || model.requestedModel || "unspecified"}`,
+            `Policy: ${policy.effectiveMode || "unspecified"}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          <CodeRunProvenanceChip projection={codeRunProvenance} />
+          <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
+          <span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>
+          {model.selectionProvenance && model.selectionProvenance !== "inherited" ? <span>Selection: {model.selectionProvenance}</span> : null}
+          <span>Policy: {policy.effectiveMode || "unspecified"}</span>
+          {policy.source && policy.source !== "fallback" ? <span>Policy source: {policy.source}</span> : null}
+          <ProjectInstructionsTurnChip projection={projectInstructionsTurn} />
+          <ChatPackTurnChip projection={chatPackTurn} />
+        </div>
+        <div ref={promptBodyRef} className={`you-body${promptExpanded ? " is-expanded" : ""}`}>
           {splitUserPromptMentions(youPrompt).map((part, i) =>
             part.kind === "mention" ? (
-              <code key={i} className="run-prompt-mention">
+              <code key={i} className="mention">
                 {part.value}
               </code>
             ) : (
               part.value
             ),
           )}
-        </span>
-        {promptOverflows ? (
-          <span className="run-prompt-more">{promptExpanded ? "Show less" : "Show more"}</span>
-        ) : null}
-      </button>
-      <div
-        className="run-provenance"
-        aria-label={[
-          codeRunProvenance.state === "absent" ? null : codeRunProvenanceCopy(codeRunProvenance),
-          `Model: ${model.appliedModel || model.requestedModel || "unspecified"}`,
-          `Policy: ${policy.effectiveMode || "unspecified"}`,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      >
-        <CodeRunProvenanceChip projection={codeRunProvenance} />
-        <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
-        <span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>
-        {model.selectionProvenance && model.selectionProvenance !== "inherited" ? <span>Selection: {model.selectionProvenance}</span> : null}
-        <span>Policy: {policy.effectiveMode || "unspecified"}</span>
-        {policy.source && policy.source !== "fallback" ? <span>Policy source: {policy.source}</span> : null}
-        <ProjectInstructionsTurnChip projection={projectInstructionsTurn} />
-        <ChatPackTurnChip projection={chatPackTurn} />
-      </div>
-    </div>
-    {reasoning.trim() ? (
-      <details
-        className="run-thought think-aloud"
-        open={thoughtOpen}
-      >
-        <summary
-          onClick={(e) => {
-            e.preventDefault();
-            setThoughtOpen((open) => nextThoughtOpen(open, { runState: run.state, toggleTo: !open }));
-          }}
-        >
-          {thoughtStreaming ? "Thought…" : "Thought"}
-        </summary>
-        <pre className="run-thought-body think-aloud-body">{reasoning}</pre>
-      </details>
-    ) : null}
-    {midturn.trim() && !midturnFoldedIntoAnswer(midturn, answer, vouchedAnswer) ? (
-      vouchedAnswer ? (
-        <details className="run-midturn run-midturn-yielded" aria-label="Mid-turn narration">
-          <summary>Earlier</summary>
-          <pre className="run-midturn-body">{midturn}</pre>
-        </details>
-      ) : (
-        <div
-          className={`run-midturn${thoughtStreaming ? " streaming" : ""}`}
-          aria-label="Mid-turn narration"
-        >
-          <pre className="run-midturn-body">{midturn}</pre>
-          {thoughtStreaming ? <span className="md-caret" aria-hidden /> : null}
         </div>
-      )
-    ) : null}
-    {productMode !== "chat" ? (
-      <PlanSection projection={planSection} preserved={run.plan ?? null} offline={offline} />
-    ) : null}
-    {productMode !== "chat" ? (
-    <FileChangesSection
-      projection={changeList}
-      runNonTerminal={run.state !== "terminal"}
-      offline={offline}
-      openEditId={openChangeDiff}
-      onViewDiff={(member) => setOpenChangeDiff(member.editId)}
-      onHideDiff={() => setOpenChangeDiff(null)}
-      onRevert={(member) => void recoverByMember(member)}
-      revertPendingEditId={pending}
-      recoveryFlash={recoveryResult}
-      onFocusDock={onFocusDiffRequest}
-    />
-    ) : null}
-    {productMode !== "chat" ? (
-    <VerifySection
-      projection={verifyList}
-      offline={offline}
-      onViewOutput={(member) => setFocusActivityId(member.activityId)}
-      outputAvailableIds={new Set(
-        Object.values(run.activities)
-          .filter((a) => a.output != null)
-          .map((a) => a.activityId),
-      )}
-    />
-    ) : null}
-    {productMode === "code" ? (
-      <GitReviewSection
-        projection={gitReviewList}
+        {promptOverflows ? (
+          <button
+            type="button"
+            className="you-more"
+            aria-expanded={promptExpanded}
+            onClick={() => setPromptExpanded((open) => !open)}
+          >
+            {promptExpanded ? "Show less" : "Show more"}
+          </button>
+        ) : null}
+      </div>
+    </article>
+
+    <article className="turn response-turn">
+      <i className={`node node--${nodeModifier}`} aria-hidden="true" />
+      {reasoning.trim() ? (
+        <details className="thought" open={thoughtOpen}>
+          <summary
+            onClick={(e) => {
+              e.preventDefault();
+              setThoughtOpen((open) => nextThoughtOpen(open, { runState: run.state, toggleTo: !open }));
+            }}
+          >
+            <span className="ch" aria-hidden="true">{thoughtOpen ? "▾" : "▸"}</span>
+            <span className="lb">{thoughtLbl}</span>
+            {thoughtTx ? <span className="tx">— {thoughtTx}</span> : null}
+          </summary>
+          <pre className="think-aloud-body">{reasoning}</pre>
+        </details>
+      ) : null}
+      {midturn.trim() && !midturnFoldedIntoAnswer(midturn, answer, vouchedAnswer) ? (
+        vouchedAnswer ? (
+          <details className="run-midturn run-midturn-yielded" aria-label="Mid-turn narration">
+            <summary>Earlier</summary>
+            <pre className="run-midturn-body">{midturn}</pre>
+          </details>
+        ) : (
+          <div
+            className={`run-midturn${thoughtStreaming ? " streaming" : ""}`}
+            aria-label="Mid-turn narration"
+          >
+            <pre className="run-midturn-body">{midturn}</pre>
+            {thoughtStreaming ? <span className="md-caret" aria-hidden /> : null}
+          </div>
+        )
+      ) : null}
+      {productMode !== "chat" ? (
+        <PlanSection projection={planSection} preserved={run.plan ?? null} offline={offline} />
+      ) : null}
+      {productMode !== "chat" ? (
+      <FileChangesSection
+        projection={changeList}
+        runNonTerminal={run.state !== "terminal"}
         offline={offline}
-        activityStatusById={activityStatusById}
-        activityLifecycleById={activityLifecycleById}
+        openEditId={openChangeDiff}
+        onViewDiff={(member) => setOpenChangeDiff(member.editId)}
+        onHideDiff={() => setOpenChangeDiff(null)}
+        onRevert={(member) => void recoverByMember(member)}
+        revertPendingEditId={pending}
+        recoveryFlash={recoveryResult}
+        onFocusDock={onFocusDiffRequest}
+      />
+      ) : null}
+      {productMode !== "chat" ? (
+      <VerifySection
+        projection={verifyList}
+        offline={offline}
         onViewOutput={(member) => setFocusActivityId(member.activityId)}
         outputAvailableIds={new Set(
           Object.values(run.activities)
@@ -655,129 +556,144 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
             .map((a) => a.activityId),
         )}
       />
-    ) : null}
-    {productMode === "code" ? <ChildAgentsSection projection={childProjection} /> : null}
-    {productMode === "code" ? <BrowserSection projection={browserProjection} /> : null}
-    {productMode === "code" ? <McpServersSection projection={mcpProjection} /> : null}
-    {productMode === "code" ? <HooksSection projection={hooksProjection} /> : null}
-    {Object.values(run.activities).length > 0 && (
-      <div className="activity-output" aria-label="Activity">
-        <Receipts
-          tools={toolMessages}
-          live={run.state !== "terminal"}
-          groupKey={`run-tools:${run.runId}`}
-          forceOpen={Boolean(focusActivityId)}
+      ) : null}
+      {productMode === "code" ? (
+        <GitReviewSection
+          projection={gitReviewList}
+          offline={offline}
+          activityStatusById={activityStatusById}
+          activityLifecycleById={activityLifecycleById}
+          onViewOutput={(member) => setFocusActivityId(member.activityId)}
+          outputAvailableIds={new Set(
+            Object.values(run.activities)
+              .filter((a) => a.output != null)
+              .map((a) => a.activityId),
+          )}
         />
-        {Object.values(run.activities).map((a) => {
-          const result = recoveryResult[a.activityId];
-          const listAuto = isListAutoExecuted(a);
-          const inChangeList = changeListCoversActivity(changeList, a);
-          // Trusted AC-03 keeps an Activity View diff. Review File changes
-          // already owns the write — a second button is duplicate chrome.
-          // Reads/greps that carry a leftover diff must not mint View diff pills.
-          const showDiffHere =
-            activityLooksLikeWrite(a) &&
-            Boolean(a.diff) &&
-            !activityIsVendorSessionPlan(a) &&
-            !(inChangeList && !a.autoApplied);
-          // File changes already owns Revert / Edit reverted for list members.
-          const showRecoveryHere = !inChangeList && Boolean(a.recovery?.available || result);
-          const showExtras = Boolean(showRecoveryHere || showDiffHere || a.autoApplied || listAuto);
-          if (!showExtras) return null;
+      ) : null}
+      {productMode === "code" ? <ChildAgentsSection projection={childProjection} /> : null}
+      {productMode === "code" ? <BrowserSection projection={browserProjection} /> : null}
+      {productMode === "code" ? <McpServersSection projection={mcpProjection} /> : null}
+      {productMode === "code" ? <HooksSection projection={hooksProjection} /> : null}
+      {Object.values(run.activities).length > 0 && (
+        <div className="activity-output" aria-label="Activity">
+          <Receipts
+            tools={toolMessages}
+            live={run.state !== "terminal"}
+            groupKey={`run-tools:${run.runId}`}
+            forceOpen={Boolean(focusActivityId)}
+          />
+          {Object.values(run.activities).map((a) => {
+            const result = recoveryResult[a.activityId];
+            const listAuto = isListAutoExecuted(a);
+            const inChangeList = changeListCoversActivity(changeList, a);
+            // Trusted AC-03 keeps an Activity View diff. Review File changes
+            // already owns the write — a second button is duplicate chrome.
+            // Reads/greps that carry a leftover diff must not mint View diff pills.
+            const showDiffHere =
+              activityLooksLikeWrite(a) &&
+              Boolean(a.diff) &&
+              !activityIsVendorSessionPlan(a) &&
+              !(inChangeList && !a.autoApplied);
+            // File changes already owns Revert / Edit reverted for list members.
+            const showRecoveryHere = !inChangeList && Boolean(a.recovery?.available || result);
+            const showExtras = Boolean(showRecoveryHere || showDiffHere || a.autoApplied || listAuto);
+            if (!showExtras) return null;
+            return (
+              <div key={`prov-${a.activityId}`}>
+                <ActivityProvenance activity={a} hideCommand />
+                {showDiffHere && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      className="activity-diff-toggle"
+                      onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}
+                    >
+                      {openDiff === a.activityId ? "Hide diff" : "View diff"}
+                    </Button>
+                    {openDiff === a.activityId && <pre>{a.diff}</pre>}
+                  </>
+                )}
+                {showRecoveryHere && a.recovery?.available && !result && (
+                  <>
+                    <p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p>
+                    <Button variant="ghost" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</Button>
+                  </>
+                )}
+                {showRecoveryHere && result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}
+                {showRecoveryHere && result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}
+                {showRecoveryHere && result === "conflict" && a.diff && <Button variant="ghost" onClick={() => setOpenDiff(a.activityId)}>View diff</Button>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {Object.values(run.decisions)
+        .filter((d) => {
+          if (d.kind === "plan") return false;
+          if (d.kind === "recovery_confirmation") return true;
+          // Pending permission/diff live in the dock. Settled Write file/Edit
+          // cards duplicate File changes.
+          return d.status === "pending";
+        })
+        .map((d) => {
+          const isRecovery = d.kind === "recovery_confirmation";
           return (
-            <div key={`prov-${a.activityId}`}>
-              <ActivityProvenance activity={a} hideCommand />
-              {showDiffHere && (
-                <>
-                  <Button
-                    variant="ghost"
-                    className="activity-diff-toggle"
-                    onClick={() => setOpenDiff(openDiff === a.activityId ? null : a.activityId)}
-                  >
-                    {openDiff === a.activityId ? "Hide diff" : "View diff"}
-                  </Button>
-                  {openDiff === a.activityId && <pre>{a.diff}</pre>}
-                </>
-              )}
-              {showRecoveryHere && a.recovery?.available && !result && (
-                <>
-                  <p className="recovery-guard">Restore this file to its state immediately before the edit. Forge will stop if the file has changed since.</p>
-                  <Button variant="ghost" disabled={pending === a.editId} onClick={() => void recover(a)}>Revert edit</Button>
-                </>
-              )}
-              {showRecoveryHere && result === "reverted" && <p role="status"><strong>Edit reverted</strong><br />The file was restored to its state immediately before this edit.</p>}
-              {showRecoveryHere && result === "conflict" && <p role="alert"><strong>Edit not reverted</strong><br />The file changed after Forge applied this edit, so Forge left it unchanged. Review the current file and this edit’s diff before deciding what to do next.</p>}
-              {showRecoveryHere && result === "conflict" && a.diff && <Button variant="ghost" onClick={() => setOpenDiff(a.activityId)}>View diff</Button>}
+            <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
+              <strong>{d.title}</strong>
+              <p>{d.detail}</p>
+              {isRecovery ? (
+                <Button
+                  variant="primary"
+                  disabled={pending === d.requestId}
+                  onClick={() => void submitDecision(d, "allow_once")}
+                >
+                  Recover
+                </Button>
+              ) : d.status === "pending" ? (
+                <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
+              ) : null}
             </div>
           );
         })}
-      </div>
-    )}
-    {Object.values(run.decisions)
-      .filter((d) => {
-        if (d.kind === "plan") return false;
-        if (d.kind === "recovery_confirmation") return true;
-        // Pending permission/diff live in the dock. Settled Write file/Edit
-        // cards duplicate File changes.
-        return d.status === "pending";
-      })
-      .map((d) => {
-        const isRecovery = d.kind === "recovery_confirmation";
-        return (
-          <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
-            <strong>{d.title}</strong>
-            <p>{d.detail}</p>
-            {isRecovery ? (
-              <Button
-                variant="primary"
-                disabled={pending === d.requestId}
-                onClick={() => void submitDecision(d, "allow_once")}
-              >
-                Recover
-              </Button>
-            ) : d.status === "pending" ? (
-              <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
-            ) : null}
-          </div>
-        );
-      })}
-    {error && <p role="alert">{error}</p>}
-    {run.state !== "terminal" && <div className="run-live" role="status" aria-live="polite">{run.state === "recovering" ? "Recovering run…" : run.state === "cancelling" ? "Ending run…" : "Run in progress…"}</div>}
-    {showLegacyPartial && (
-      <div
-        className={`assistant-partial${run.state !== "terminal" ? " streaming" : ""}`}
-        aria-label="Received answer (not final)"
-      >
-        <pre className="assistant-partial-text">{receivedLegacy}</pre>
-        {run.state !== "terminal" ? <span className="md-caret" aria-hidden /> : null}
-      </div>
-    )}
-    {vouchedAnswer && answer ? (
-      <div className="assistant-answer-wrap">
-        <div className="assistant-answer-actions">
-          {answerElevatable ? (
-            <Button
-              variant="ghost"
-              onClick={() => onOpenArtifact?.(run.runId)}
-              title={openTitle}
-            >
-              Open
-            </Button>
-          ) : null}
-          <Button variant="ghost" onClick={onCopyAnswer} title="Copy message">
-            {copyErr ? "Failed" : copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
+      {error && <p role="alert">{error}</p>}
+      {run.state !== "terminal" && <div className="run-live" role="status" aria-live="polite">{run.state === "recovering" ? "Recovering run…" : run.state === "cancelling" ? "Ending run…" : "Run in progress…"}</div>}
+      {showLegacyPartial && (
         <div
-          className={`assistant-answer${artifactOpen ? " assistant-answer--compact" : ""}`}
-          role="article"
-          aria-label="Assistant answer"
-          hidden={artifactOpen || undefined}
+          className={`assistant-partial${run.state !== "terminal" ? " streaming" : ""}`}
+          aria-label="Received answer (not final)"
         >
-          {artifactOpen ? null : <MarkdownBody text={cleanVendorAnswer(answer)} onChoose={onChoose} />}
+          <pre className="assistant-partial-text">{receivedLegacy}</pre>
+          {run.state !== "terminal" ? <span className="md-caret" aria-hidden /> : null}
         </div>
-      </div>
-    ) : null}
-    {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}
+      )}
+      {vouchedAnswer && answer ? (
+        <div className="assistant-answer-wrap">
+          <div className="assistant-answer-actions">
+            {answerElevatable ? (
+              <Button
+                variant="ghost"
+                onClick={() => onOpenArtifact?.(run.runId)}
+                title={openTitle}
+              >
+                Open
+              </Button>
+            ) : null}
+            <Button variant="ghost" onClick={onCopyAnswer} title="Copy message">
+              {copyErr ? "Failed" : copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <div
+            className={`assistant-answer prose${artifactOpen ? " assistant-answer--compact" : ""}`}
+            role="article"
+            aria-label="Assistant answer"
+            hidden={artifactOpen || undefined}
+          >
+            {artifactOpen ? null : <MarkdownBody text={cleanVendorAnswer(answer)} onChoose={onChoose} />}
+          </div>
+        </div>
+      ) : null}
+      {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}
+    </article>
   </article>;
 });

@@ -276,17 +276,17 @@ describe("acp-live-streams App path", () => {
     }, 3) as unknown as Record<string, unknown>);
     await waitFor(() => {
       assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
-      assert.ok(screen.getByText("Answered"));
+      assert.ok(document.querySelector(".node--done"), "answered turn's node paints done (muted)");
     });
     assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
     assert.equal(document.body.textContent?.includes("Writing…"), false);
-    assert.ok(screen.getByText(TURN_COPY));
+    assert.equal(document.body.textContent?.includes("Answered"), false);
   });
 
-  it("Code RunSurface Answered still paints Your turn when projected messages leave visibleMessages empty", async () => {
+  it("Code RunSurface answered turn still renders when projected messages leave visibleMessages empty", async () => {
     // Live Fast-pong path: sendText stamps projectedRunId on the prompt, so
     // RunSurface consumes every owned message. A seed without that stamp keeps
-    // visibleMessages nonempty and hollows the TURN_COPY oracle.
+    // visibleMessages nonempty and hollows this oracle.
     cleanup();
     localStorage.clear();
     localStorage.setItem(
@@ -343,11 +343,11 @@ describe("acp-live-streams App path", () => {
     }, 3) as unknown as Record<string, unknown>);
     await waitFor(() => {
       assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
-      assert.ok(screen.getByText("Answered"));
+      assert.ok(document.querySelector(".node--done"), "answered turn's node paints done (muted)");
     });
     assert.equal(document.body.textContent?.includes("Writing…"), false);
     assert.equal(document.querySelectorAll('[data-msg-role="user"]').length, 0);
-    assert.ok(screen.getByText(TURN_COPY));
+    assert.equal(document.body.textContent?.includes("Answered"), false);
   });
 
   it("execution_owner_lost clears Writing…, keeps Mid-turn unvouched, and is not Answered", async () => {

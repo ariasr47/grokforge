@@ -80,7 +80,7 @@ test("real host admits a delayed run and publishes an owned terminal envelope", 
   const started = await waitForRunEvent(h.ws, (e) => e.type === "run_started" && e.runId === run.runId);
   assert.equal(started.payload.kind, "run_started");
   assert.ok(screen.getByRole("radio", { name: "Chat" }));
-  await screen.findByText("Answered");
+  await waitFor(() => assert.ok(document.querySelector(".node--done")));
   assert.equal(screen.getAllByText("fixture prompt").length, 1, "accepted prompt must render once");
   assert.equal(countVouchedAnswer("delayed final answer"), 1, "vouched answer must render once");
 });
@@ -112,7 +112,7 @@ test("GET run replay returns only events owned by the requesting session", async
   assert.equal(response.status, 200);
   const body = await response.json() as any;
   assert.ok(body.events.every((e: any) => e.sessionId === sid && e.runId === run.runId));
-  await screen.findByText("Answered");
+  await waitFor(() => assert.ok(document.querySelector(".node--done")));
 });
 test("run replay rejects a foreign session", async () => {
   const h = await host(); await mountApp(h); const run = await prompt(h, "owner-session");
@@ -228,7 +228,7 @@ test("WS resume uses the same run/session cursor envelope", async () => {
   h.ws.send(JSON.stringify({ type: "resume_runs", cursors: [{ sessionId: sid, runId: run.runId, afterEventSeq: 0 }] }));
   const replay = await waitForRunEvent(h.ws, (e) => e.type === "run_started" && e.runId === run.runId);
   assert.equal(replay.sessionId, sid); assert.equal(replay.connectionGeneration, run.connectionGeneration);
-  await screen.findByText("Answered");
+  await waitFor(() => assert.ok(document.querySelector(".node--done")));
 });
 
 test("Chat production boundary renders an owned run surface in the real App", async () => {
@@ -236,7 +236,7 @@ test("Chat production boundary renders an owned run surface in the real App", as
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("Message to agent"), "fixture prompt");
   await user.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText("Answered");
+  await waitFor(() => assert.ok(document.querySelector(".node--done")));
   assert.equal(screen.getAllByText("fixture prompt").length, 1, "App-owned prompt must render once");
   assert.equal(countVouchedAnswer("delayed final answer"), 1, "App-owned answer must render once");
   assert.ok(screen.getByRole("radio", { name: "Chat" }));
@@ -248,7 +248,7 @@ test("Code production boundary preserves mode and run-owned DOM controls", async
   const user = userEvent.setup(); await user.type(screen.getByLabelText("Message to agent"), "inspect this repo"); const send = screen.getByRole("button", { name: "Send" }); assert.equal((send as HTMLButtonElement).disabled, false, "Code Send unexpectedly disabled"); await user.click(send);
   await waitFor(() => assert.ok(captures.length, "Code prompt must cross real fetch boundary"));
   assert.match(captures[0]!, /sessionId/);
-  await screen.findByText(/Thought|Reasoning|Answered|Failed|Cancelled|Running/);
+  await screen.findByText(/Thought|Reasoning|Failed|Cancelled|Running/);
   globalThis.fetch = previousFetch;
 });
 
@@ -263,7 +263,7 @@ test("real App preserves a second-send draft and re-enables after authoritative 
   assert.equal(composer.value, "second draft must stay intact");
   await user.keyboard("{Enter}");
   assert.ok(screen.getByText("A run is in progress"));
-  await screen.findByText("Answered", {}, { timeout: 10_000 });
+  await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
   assert.ok(screen.getAllByText("long run complete").length >= 1);
   assert.equal((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled, false);
   assert.equal(composer.value, "second draft must stay intact");
@@ -280,7 +280,7 @@ test("real App reports unknown status across an actual socket close and restores
   appSocket!.close();
   await screen.findByText(/Reconnecting — Connection lost\. Forge is reconnecting\./);
   assert.ok(screen.getAllByText("disconnect me").length >= 1);
-  await screen.findByText("Answered", {}, { timeout: 10_000 });
+  await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
   assert.equal(screen.getAllByText("delayed final answer").length >= 1, true);
 });
 
@@ -295,7 +295,7 @@ test("Code App keeps run ownership through a real socket close and replay", asyn
   appSocket!.close();
   await screen.findByText(/Reconnecting — Connection lost\. Forge is reconnecting\./);
   assert.ok(screen.getAllByText("code disconnect me").length >= 1);
-  await screen.findByText("Answered", {}, { timeout: 10_000 });
+  await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
   assert.equal(screen.getAllByText("delayed final answer").length >= 1, true);
 });
 
@@ -310,7 +310,7 @@ for (const mode of ["chat", "code"] as const) {
     appSocket!.close();
     await user.type(screen.getByLabelText("Message to agent"), `${mode} fast race`);
     await user.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Answered", {}, { timeout: 10_000 });
+    await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
     const runSurface = screen.getByRole("article", { name: `Run ${mode} fast race` });
     const answerMatches = within(runSurface).getAllByText("ok from grok-4.6");
     assert.equal(countVouchedAnswer("ok from grok-4.6", runSurface), 1, answerMatches.map((node) => node.parentElement?.outerHTML ?? node.outerHTML).join("\n--- duplicate answer surface ---\n"));
@@ -320,12 +320,12 @@ for (const mode of ["chat", "code"] as const) {
   test(`${mode} real reload preserves run projection and active session`, async () => {
     const h = await host(); await mountApp(h, mode); const user = userEvent.setup();
     await user.type(screen.getByLabelText("Message to agent"), `${mode} reload`); await user.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Answered", {}, { timeout: 10_000 });
+    await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
     await waitFor(() => { const p = JSON.parse(localStorage.getItem("grokforge.runProjection.v1") || "null"); const s = JSON.parse(localStorage.getItem("grokforge.sessions.v2") || "null"); assert.ok(p?.runs?.length, JSON.stringify({ p, s })); assert.ok(Object.values(s?.activeId || {}).includes(p.runs[0].sessionId), JSON.stringify({ p, s })); });
     const before = { projection: localStorage.getItem("grokforge.runProjection.v1"), sessions: localStorage.getItem("grokforge.sessions.v2") };
     window.dispatchEvent(new Event("pagehide")); flushSessions(); cleanup(); reloadSessionsFromDisk();
     assert.equal(localStorage.getItem("grokforge.runProjection.v1"), before.projection, JSON.stringify({ before, after: localStorage.getItem("grokforge.runProjection.v1") }));
-    render(<App />); await screen.findByRole("radio", { name: mode === "chat" ? "Chat" : "Code" }); await screen.findByText("Answered", {}, { timeout: 10_000 }); assert.equal(countVouchedAnswer("ok from grok-4.6"), 1);
+    render(<App />); await screen.findByRole("radio", { name: mode === "chat" ? "Chat" : "Code" }); await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 }); assert.equal(countVouchedAnswer("ok from grok-4.6"), 1);
   });
   test(`${mode} cancel 409 terminal response reconciles through replay`, async () => {
     const h = await host(); await mountApp(h, mode); const user = userEvent.setup();
@@ -346,7 +346,7 @@ for (const mode of ["chat", "code"] as const) {
       const owningSessionId = await activeAppSessionId();
       await waitFor(async () => { const response = await originalFetch(`${h.baseUrl}/api/runs/${runId}?sessionId=${encodeURIComponent(owningSessionId)}&after=0`); const replay = await response.json() as { run?: { state?: string } }; assert.equal(replay.run?.state, "terminal"); });
       await user.click(screen.getByRole("button", { name: "Cancel run" }));
-      await screen.findByText("Answered", {}, { timeout: 10_000 });
+      await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
       await waitFor(() => { assert.equal(screen.queryByText("Ending run…"), null); assert.equal(screen.queryAllByText("Cancelling…").length, 0); assert.equal((screen.getByLabelText("Message to agent") as HTMLTextAreaElement).disabled, false); });
       assert.equal(countVouchedAnswer("ok from grok-4.6"), 1); assert.equal(screen.queryByText(/Run is terminal|selective replay fault/), null);
       const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement; await user.type(composer, "next draft"); assert.equal((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled, false);
@@ -364,7 +364,7 @@ for (const mode of ["chat", "code"] as const) {
     await waitFor(() => { appSocket = currentAppSocket(Number(new URL(h.baseUrl).port)); });
     appSocket!.close();
     await screen.findByText(/Reconnecting — Connection lost\. Forge is reconnecting\./);
-    await screen.findByText("Answered", {}, { timeout: 10_000 });
+    await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
     assert.equal(countVouchedAnswer("settled answer"), 1, "replayed answer must render once");
     assert.equal(screen.queryByText(/late reasoning|late answer|late-tool|late_error/), null, "late classes must not escape the settled owning run");
   });

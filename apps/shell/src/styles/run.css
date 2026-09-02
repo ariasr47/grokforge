@@ -176,29 +176,14 @@
   align-self: stretch;
 }
 
-.msg.system {
-  align-self: stretch;
-  max-width: 820px;
-  background: rgba(255, 255, 255, 0.02);
-  border-style: dashed;
+.msg.system .who {
+  color: var(--whisper);
+}
+.msg.system .prose {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
-.run-answered {
-  display: inline-flex;
-  align-self: start;
-  width: max-content;
-  margin: 0 2px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: var(--mono);
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border);
-}
 /* —— Run status —— */
 .run-status {
   display: flex;
@@ -1326,24 +1311,6 @@ html[data-motion="calm"] .rail .dot.needs {
   margin-bottom: 8px;
 }
 
-.msg-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.msg-head .role {
-  margin-bottom: 0;
-}
-.msg-actions {
-  opacity: 0.7;
-  transition: opacity 0.12s ease;
-}
-.msg:hover .msg-actions,
-.msg:focus-within .msg-actions {
-  opacity: 1;
-}
 .msg-body--artifact-compact {
   display: none;
 }

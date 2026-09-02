@@ -7,9 +7,6 @@ import {
   nextPromptOverflow,
   nextThoughtOpen,
   promptBodyMeasuresOverflow,
-  runPromptStickBelowPx,
-  runFileStickBelowPx,
-  collapsedThoughtHeightPx,
 } from "./RunSurface.js";
 import type { RunProjectionRun } from "./runReducer.js";
 
@@ -52,7 +49,7 @@ function answeredRun(finalAnswer: string): RunProjectionRun {
   } as RunProjectionRun;
 }
 
-describe("RunSurface You prompt card", () => {
+describe("RunSurface You card", () => {
   it("labels the accepted prompt as a You card", () => {
     render(
       createElement(RunSurface, {
@@ -60,26 +57,26 @@ describe("RunSurface You prompt card", () => {
         productMode: "code",
       }),
     );
-    const card = document.querySelector(".run-prompt");
+    const card = document.querySelector(".you");
     assert.ok(card);
-    assert.equal(card!.querySelector(".run-prompt-role")?.textContent, "You");
-    assert.equal(card!.querySelector(".run-prompt-body")?.textContent, "sides");
+    assert.equal(card!.querySelector(".who")?.textContent, "You");
+    assert.equal(card!.querySelector(".you-body")?.textContent, "sides");
   });
 
-  it("clicking You expands the 2-line clamp", () => {
+  it("clicking Show more expands the 2-line clamp", () => {
     const proto = HTMLElement.prototype;
     const prevScroll = Object.getOwnPropertyDescriptor(proto, "scrollHeight");
     const prevClient = Object.getOwnPropertyDescriptor(proto, "clientHeight");
     Object.defineProperty(proto, "scrollHeight", {
       configurable: true,
       get() {
-        return (this as HTMLElement).classList?.contains("run-prompt-body") ? 80 : 0;
+        return (this as HTMLElement).classList?.contains("you-body") ? 80 : 0;
       },
     });
     Object.defineProperty(proto, "clientHeight", {
       configurable: true,
       get() {
-        return (this as HTMLElement).classList?.contains("run-prompt-body") ? 36 : 0;
+        return (this as HTMLElement).classList?.contains("you-body") ? 36 : 0;
       },
     });
     try {
@@ -91,17 +88,16 @@ describe("RunSurface You prompt card", () => {
           productMode: "code",
         }),
       );
-      const toggle = screen.getByRole("button", { name: /you/i });
+      const toggle = screen.getByRole("button", { name: "Show more" });
       assert.equal(toggle.getAttribute("aria-expanded"), "false");
-      assert.equal(document.querySelector(".run-prompt")?.classList.contains("is-expanded"), false);
-      assert.equal(screen.getByText("Show more").textContent, "Show more");
-      assert.equal(document.querySelector(".run-prompt-chevron"), null);
+      assert.equal(document.querySelector(".you-body")?.classList.contains("is-expanded"), false);
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
-      assert.equal(document.querySelector(".run-prompt")?.classList.contains("is-expanded"), true);
+      assert.equal(document.querySelector(".you-body")?.classList.contains("is-expanded"), true);
       assert.equal(screen.getByText("Show less").textContent, "Show less");
       fireEvent.click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      assert.equal(document.querySelector(".you-body")?.classList.contains("is-expanded"), false);
       assert.equal(screen.getByText("Show more").textContent, "Show more");
     } finally {
       if (prevScroll) Object.defineProperty(proto, "scrollHeight", prevScroll);
@@ -132,15 +128,15 @@ describe("RunSurface You prompt card", () => {
         productMode: "code",
       }),
     );
-    const body = document.querySelector(".run-prompt-body")?.textContent ?? "";
+    const body = document.querySelector(".you-body")?.textContent ?? "";
     assert.equal(body, "@AGENTS.md Quote the first heading.");
     assert.equal(body.includes("Attached file contents"), false);
     assert.equal(body.includes("Spire OS"), false);
-    const mention = document.querySelector(".run-prompt-mention");
+    const mention = document.querySelector(".mention");
     assert.equal(mention?.textContent, "@AGENTS.md");
   });
 
-  it("keeps Grok Code and model/policy inside the You card", () => {
+  it("keeps Grok Code and model/policy inside the You card, in one muted meta line", () => {
     const run = answeredRun("ok");
     (run as { codeAgentProvenance: { identity: string; fallbackReason: null } }).codeAgentProvenance =
       { identity: "vendor", fallbackReason: null };
@@ -152,21 +148,21 @@ describe("RunSurface You prompt card", () => {
         productMode: "code",
       }),
     );
-    const card = document.querySelector(".run-prompt");
+    const card = document.querySelector(".you");
     assert.ok(card);
     const chip = card!.querySelector("[data-code-run-provenance='vendor']");
     assert.ok(chip);
     assert.ok(chip!.classList.contains("is-quiet"));
     assert.match(card!.textContent ?? "", /Model: grok-4\.6/);
     assert.match(card!.textContent ?? "", /Policy: review/);
-    assert.equal(card!.querySelector(".run-provenance")?.parentElement, card);
+    assert.equal(card!.querySelector(".you-meta")?.parentElement, card);
     assert.match(
-      card!.querySelector(".run-provenance")?.getAttribute("aria-label") ?? "",
+      card!.querySelector(".you-meta")?.getAttribute("aria-label") ?? "",
       /Grok Code · Model: grok-4\.6 · Policy: review/,
     );
   });
 
-  it("Show more overflow latches so a later tighter measure cannot drop it", () => {
+  it("Show more overflow latched so a later tighter measure cannot drop it", () => {
     assert.equal(promptBodyMeasuresOverflow({ scrollHeight: 40, clientHeight: 20, text: "short" }), true);
     assert.equal(promptBodyMeasuresOverflow({ scrollHeight: 20, clientHeight: 20, text: "short" }), false);
     // Live desktop-atfile: 2-line @file You (~134 chars) still offered Show more.
@@ -222,8 +218,8 @@ describe("RunSurface You prompt card", () => {
     Object.defineProperty(proto, "scrollHeight", {
       configurable: true,
       get() {
-        if ((this as HTMLElement).classList?.contains("run-prompt-body")) {
-          const more = (this as HTMLElement).closest(".run-prompt")?.querySelector(".run-prompt-more");
+        if ((this as HTMLElement).classList?.contains("you-body")) {
+          const more = (this as HTMLElement).closest(".you")?.querySelector(".you-more");
           return more ? 36 : 80;
         }
         return 0;
@@ -232,7 +228,7 @@ describe("RunSurface You prompt card", () => {
     Object.defineProperty(proto, "clientHeight", {
       configurable: true,
       get() {
-        return (this as HTMLElement).classList?.contains("run-prompt-body") ? 36 : 0;
+        return (this as HTMLElement).classList?.contains("you-body") ? 36 : 0;
       },
     });
     const mo = new MutationObserver(() => {
@@ -263,7 +259,7 @@ describe("RunSurface You prompt card", () => {
         false,
         errors.filter((line) => line.includes("Maximum update depth")).join("\n"),
       );
-      assert.ok(document.querySelector(".run-prompt-more"));
+      assert.ok(document.querySelector(".you-more"));
     } finally {
       console.error = origError;
       mo.disconnect();
@@ -295,7 +291,7 @@ describe("RunSurface You prompt card", () => {
         productMode: "code",
       }),
     );
-    const thought = () => document.querySelector(".run-thought") as HTMLDetailsElement | null;
+    const thought = () => document.querySelector(".thought") as HTMLDetailsElement | null;
     assert.equal(thought()!.open, true);
     fireEvent.click(screen.getByText("Thought…"));
     assert.equal(thought()!.open, false);
@@ -322,46 +318,6 @@ describe("RunSurface You prompt card", () => {
     assert.equal(thought()!.open, false);
     fireEvent.click(screen.getByText("Thought"));
     assert.equal(thought()!.open, true);
-  });
-
-  it("stick-below tracks You height instead of a 2-line-only 88px gap", () => {
-    assert.equal(runPromptStickBelowPx(58), 70);
-    assert.equal(runPromptStickBelowPx(76), 88);
-    assert.equal(runPromptStickBelowPx(0), 88);
-    assert.equal(runFileStickBelowPx(81, 0), 93);
-    assert.equal(runFileStickBelowPx(81, 26), 131);
-    const closed = document.createElement("details");
-    closed.className = "run-thought";
-    closed.open = false;
-    closed.getBoundingClientRect = () =>
-      ({
-        x: 0,
-        y: 225,
-        width: 82,
-        height: 26,
-        top: 225,
-        right: 82,
-        bottom: 251,
-        left: 0,
-        toJSON() {
-          return this;
-        },
-      }) as DOMRect;
-    const opened = document.createElement("details");
-    opened.open = true;
-    opened.getBoundingClientRect = closed.getBoundingClientRect;
-    assert.equal(collapsedThoughtHeightPx(null), 0);
-    assert.equal(collapsedThoughtHeightPx(opened), 0);
-    assert.equal(collapsedThoughtHeightPx(closed), 26);
-    render(
-      createElement(RunSurface, {
-        run: answeredRun("ok"),
-        productMode: "code",
-      }),
-    );
-    const root = document.querySelector(".run-content") as HTMLElement | null;
-    assert.ok(root);
-    assert.match(root!.style.getPropertyValue("--run-prompt-stick-below"), /^\d+px$/);
   });
 });
 

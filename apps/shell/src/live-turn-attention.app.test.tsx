@@ -326,7 +326,7 @@ describe("live-turn-attention App wiring", () => {
     assert.equal(screen.queryByRole("region", { name: "Allow running a command?" }), null);
   });
 
-  it("clean finish shows the turn delimiter and unlocks Send", async () => {
+  it("clean finish paints the response node done and unlocks Send", async () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({
       kind: "run_started",
@@ -341,7 +341,7 @@ describe("live-turn-attention App wiring", () => {
       terminalAt: "",
     }, 2) as unknown as Record<string, unknown>);
     await waitFor(() => {
-      assert.ok(screen.getByText(TURN_COPY));
+      assert.ok(document.querySelector(".node--done"));
     });
     const composer = screen.getByLabelText("Message to agent");
     fireEvent.change(composer, { target: { value: "next" } });

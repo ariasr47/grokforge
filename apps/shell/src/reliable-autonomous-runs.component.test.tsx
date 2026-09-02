@@ -32,10 +32,10 @@ test("renders reasoning as one disclosure and does not promote it to an answer",
 test("renders only a vouched terminal answer once", () => {
   render(<RunSurface run={run({ state: "terminal", terminalKind: "answered", finalAnswer: "Complete", answerVouched: true })} />);
   assert.equal(screen.getAllByRole("article", { name: /assistant answer/i }).length, 1);
-  assert.equal(screen.getByText("Answered").textContent, "Answered");
-  const answered = screen.getByText("Answered");
-  assert.ok(answered.className.includes("run-answered"));
-  assert.equal(answered.className.includes("run-status"), false);
+  // The response turn's node (muted node--done) carries the answered fact now
+  // — no separate "Answered" strip.
+  assert.ok(document.querySelector(".node--done"));
+  assert.equal(screen.queryByText("Answered"), null);
 });
 test("renders durable received answer segments before and after a non-answer terminal", () => {
   const { rerender } = render(<RunSurface run={run({ answer: { seg: "answer before cancel" } })} />);
@@ -188,11 +188,16 @@ test("§4 copy/action matrix exposes every supported policy, run, recovery, and 
   cleanup();
   const states: Array<[Partial<RunProjectionRun>, string]> = [
     [{ state: "recovering" }, "Recovering run…"], [{ state: "cancelling" }, "Ending run…"],
-    [{ state: "terminal", terminalKind: "answered", finalAnswer: "answer", answerVouched: true }, "Answered"],
     [{ state: "terminal", terminalKind: "failed", failure: { code: "provider_error", message: "failed", retryable: true, recoveryAction: "retry_prompt" } }, "Run failed"],
     [{ state: "terminal", terminalKind: "cancelled" }, "Cancelled"],
   ];
   for (const [override, copy] of states) { cleanup(); render(<RunSurface run={run(override)} onRetryPrompt={() => undefined} />); assert.ok(screen.getByText(copy, { exact: true })); }
+  cleanup();
+  // Answered has no exact-text card of its own — the response turn's node
+  // (muted node--done) carries that fact.
+  render(<RunSurface run={run({ state: "terminal", terminalKind: "answered", finalAnswer: "answer", answerVouched: true })} onRetryPrompt={() => undefined} />);
+  assert.ok(document.querySelector(".node--done"));
+  assert.equal(screen.queryByText("Answered"), null);
   cleanup();
   render(<RunSurface run={run({ state: "terminal", terminalKind: "failed", failure: { code: "provider_error", message: "lost", retryable: true, recoveryAction: "reconnect" } })} onReconnect={() => undefined} />);
   assert.ok(screen.getByRole("button", { name: "Reconnect" }));
