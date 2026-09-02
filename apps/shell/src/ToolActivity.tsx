@@ -175,6 +175,7 @@ const ToolRow = memo(function ToolRow({
         <div className="tool-row-actions">
           <Button
             variant="ghost"
+            size="sm"
             className="tool-peek-btn"
             onClick={() => onOpenPath(pathHint)}
           >

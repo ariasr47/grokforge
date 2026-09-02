@@ -16,17 +16,28 @@ export const buttonVariants = cva("btn", {
       default: "",
       primary: "primary",
       ghost: "ghost",
+      accent: "accent",
+      danger: "danger",
+    },
+    size: {
+      sm: "btn-sm",
+      md: "",
+      lg: "btn-lg",
     },
   },
-  defaultVariants: { variant: "default" },
+  defaultVariants: { variant: "default", size: "md" },
 });
 
 export type ButtonVariant = NonNullable<
   VariantProps<typeof buttonVariants>["variant"]
 >;
+export type ButtonSize = NonNullable<
+  VariantProps<typeof buttonVariants>["size"]
+>;
 
 export interface ButtonProps extends Omit<AriaButtonProps, "isDisabled"> {
   variant?: ButtonVariant;
+  size?: ButtonSize;
   className?: string;
   children?: ReactNode;
   /** Native alias — React Aria uses onPress. */
@@ -47,6 +58,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
     {
       variant = "default",
+      size = "md",
       className,
       onClick,
       onPress,
@@ -80,7 +92,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...buttonProps}
         ref={ref}
         type="button"
-        className={clsx(buttonVariants({ variant }), className)}
+        className={clsx(buttonVariants({ variant, size }), className)}
         title={title}
         id={id}
       >

@@ -198,6 +198,7 @@ const ChatBubble = memo(function ChatBubble({
           {elevatable ? (
             <Button
               variant="ghost"
+              size="sm"
               className="msg-action"
               onClick={() => onOpenArtifact?.(m.id)}
               title={openTitle}
@@ -208,6 +209,7 @@ const ChatBubble = memo(function ChatBubble({
           {showRetry && onRetry && (
             <Button
               variant="ghost"
+              size="sm"
               className="msg-action"
               onClick={onRetry}
               title="Send this message again"
@@ -218,6 +220,7 @@ const ChatBubble = memo(function ChatBubble({
           {showRegenerate && onRegenerate && (
             <Button
               variant="ghost"
+              size="sm"
               className="msg-action"
               onClick={onRegenerate}
               title="Generate a new reply to the last question"
@@ -227,6 +230,7 @@ const ChatBubble = memo(function ChatBubble({
           )}
           <Button
             variant="ghost"
+            size="sm"
             className="msg-action"
             onClick={onCopy}
             title="Copy message"

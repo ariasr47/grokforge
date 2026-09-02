@@ -155,7 +155,7 @@ export const CodeBlock = memo(function CodeBlock({
   const bodyHtml = !compact && gate.gatePassed ? richHtml : null;
 
   const copyBtn = (
-    <Button variant="ghost" className="md-copy-btn" onClick={onCopy}>
+    <Button variant="ghost" size="sm" className="md-copy-btn" onClick={onCopy}>
       {copied ? "Copied" : "Copy"}
     </Button>
   );

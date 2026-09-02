@@ -193,6 +193,7 @@ function PathRow({
             >
               <Button
                 variant="ghost"
+                size="sm"
                 aria-expanded={open}
                 onClick={() => (open ? onHideDiff?.(member) : onViewDiff?.(member))}
               >

@@ -75,6 +75,7 @@ function ToastViewport() {
           <span>{t.message}</span>
           <Button
             variant="ghost"
+            size="sm"
             className="toast-x icon-only"
             onClick={() => dismissToast(t.id)}
             aria-label="Dismiss"

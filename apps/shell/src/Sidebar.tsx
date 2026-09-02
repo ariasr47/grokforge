@@ -123,6 +123,7 @@ const SessionRow = memo(function SessionRow({
         {onRename && (
           <Button
             variant="ghost"
+            size="sm"
             className="sess-op icon-only"
             title="Rename"
             onClick={() => {
@@ -136,6 +137,7 @@ const SessionRow = memo(function SessionRow({
         {onDelete && (
           <Button
             variant="ghost"
+            size="sm"
             className="sess-op icon-only"
             title="Delete"
             onClick={() => {
@@ -282,6 +284,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
           {mode === "code" && props.workspaces.length > 0 ? (
             <Button
               variant="ghost"
+              size="sm"
               className="open-folder-btn open-folder-btn-compact icon-only"
               onClick={props.onOpenFolder}
               title="Open folder…"
@@ -410,6 +413,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                   <div className="folder-body">
                     <Button
                       variant="ghost"
+                      size="sm"
                       className="new-session-btn"
                       onClick={() => props.onNewCodeSession(ws.path)}
                     >

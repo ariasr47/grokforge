@@ -42,4 +42,40 @@ describe("Button", () => {
     assert.ok(el.classList.contains("btn"));
     assert.ok(el.classList.contains("msg-action"));
   });
+
+  it("default size renders plain .btn with no size suffix class", () => {
+    render(createElement(Button, {}, "Send"));
+    const el = screen.getByRole("button", { name: "Send" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(!el.classList.contains("btn-sm"));
+    assert.ok(!el.classList.contains("btn-lg"));
+  });
+
+  it("size sm maps to .btn-sm", () => {
+    render(createElement(Button, { size: "sm" }, "Peek path"));
+    const el = screen.getByRole("button", { name: "Peek path" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(el.classList.contains("btn-sm"));
+  });
+
+  it("size lg maps to .btn-lg", () => {
+    render(createElement(Button, { size: "lg" }, "Continue"));
+    const el = screen.getByRole("button", { name: "Continue" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(el.classList.contains("btn-lg"));
+  });
+
+  it("accent variant is .btn.accent", () => {
+    render(createElement(Button, { variant: "accent" }, "Allow"));
+    const el = screen.getByRole("button", { name: "Allow" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(el.classList.contains("accent"));
+  });
+
+  it("danger variant is .btn.danger", () => {
+    render(createElement(Button, { variant: "danger" }, "Delete"));
+    const el = screen.getByRole("button", { name: "Delete" });
+    assert.ok(el.classList.contains("btn"));
+    assert.ok(el.classList.contains("danger"));
+  });
 });

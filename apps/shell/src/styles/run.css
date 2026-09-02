@@ -689,10 +689,6 @@ textarea:focus:not(:focus-visible) {
 .topbar {
   gap: 8px;
 }
-.chip {
-  font-size: 10px;
-  padding: 3px 8px;
-}
 .btn {
   min-height: 32px;
 }
@@ -749,10 +745,7 @@ textarea:focus:not(:focus-visible) {
   margin-top: 0;
 }
 .open-folder-btn-compact {
-  width: auto;
   flex: 0 0 auto;
-  min-height: 32px;
-  padding: 8px 10px;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -870,12 +863,9 @@ textarea:focus:not(:focus-visible) {
   width: max-content;
   max-width: 100%;
   margin: 4px 0 6px;
-  font-size: 12px;
   justify-content: flex-start;
   font-weight: 500;
   color: var(--muted);
-  min-height: 0;
-  padding: 4px 2px;
   box-shadow: none;
   border: none;
   background: none;
@@ -1224,9 +1214,6 @@ textarea:focus:not(:focus-visible) {
   letter-spacing: 0.06em;
 }
 .md-copy-btn {
-  font-size: 11px !important;
-  padding: 4px 10px !important;
-  min-height: 28px;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -1272,11 +1259,6 @@ textarea:focus:not(:focus-visible) {
 .msg:hover .msg-actions,
 .msg:focus-within .msg-actions {
   opacity: 1;
-}
-.msg-action {
-  font-size: 11px !important;
-  padding: 4px 10px !important;
-  min-height: 28px;
 }
 .msg-body--artifact-compact {
   display: none;
