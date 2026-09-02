@@ -9,7 +9,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "Forge Dev · DEV"
+        "title": "Forge Dev · DEV",
+        "decorations": false
       }
     ],
     "security": {

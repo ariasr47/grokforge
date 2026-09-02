@@ -128,7 +128,7 @@ function installPackagedWindows(): void {
 
 async function openSettings(): Promise<HTMLElement> {
   const user = userEvent.setup();
-  await screen.findByText(/Engine · (live|reconnecting)/, undefined, { timeout: 8_000 });
+  await screen.findByText(/Grok · (live|reconnecting)/, undefined, { timeout: 8_000 });
   const settings = screen
     .getAllByRole("button", { name: "Settings" })
     .find((button) => button.className.includes("ghost"));

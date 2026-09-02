@@ -527,7 +527,7 @@ describe("F10/N-2 — AC-S8: Details carries build identity even though the engi
 // per SPEC §2.5 — the operator's own `npm run start`, named there as the
 // normal loop).
 describe("N-3 — a packaged build never attaches to a foreign engine on the fallback port", () => {
-  it("renders the named entry_missing failure card, never 'Engine · live', when a foreign engine holds the fallback port", async () => {
+  it("renders the named entry_missing failure card, never 'Grok · live', when a foreign engine holds the fallback port", async () => {
     localStorage.clear();
     reloadSessionsFromDisk({ byWorkspace: {}, activeId: {}, pinned: [], expanded: [] });
     FakeWebSocket.reset();
@@ -561,7 +561,7 @@ describe("N-3 — a packaged build never attaches to a foreign engine on the fal
     // The ready-state chrome (topbar, engine chip) never mounts at all while
     // `boot !== "ready"` — a structural check, not just absence-of-text.
     assert.equal(document.querySelector(".topbar"), null);
-    assert.equal(screen.queryByText("Engine · live"), null);
+    assert.equal(screen.queryByText("Grok · live"), null);
     // The decisive proof: the "foreign" engine was never asked for
     // /api/state at all — the shell never got far enough to read (let alone
     // paint) its workspace.

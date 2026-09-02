@@ -65,7 +65,7 @@ describe("AC6 — Code: workspace + tools + permission + staged diff", () => {
 
     // Workspace chrome present (SPEC AC6's "workspace" clause).
     await waitFor(() => {
-      assert.ok(document.querySelector('.workspace-label[title="C:\\\\repo"]'));
+      assert.ok(document.querySelector('.ws[title="C:\\\\repo"]'));
       assert.ok(screen.getAllByText(/repo/).length > 0);
     });
 

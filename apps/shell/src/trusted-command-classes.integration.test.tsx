@@ -86,7 +86,7 @@ async function openSettingsApp(opts?: {
   globalThis.fetch = host.fetchImpl;
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
-  await screen.findByText(/Engine · (live|reconnecting)/);
+  await screen.findByText(/Grok · (live|reconnecting)/);
   const settings = screen
     .getAllByRole("button", { name: "Settings" })
     .find((button) => button.className.includes("ghost"));

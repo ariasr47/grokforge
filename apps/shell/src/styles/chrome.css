@@ -64,14 +64,13 @@ button:disabled {
 
 .topbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  min-height: 52px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
-  background: rgba(3, 4, 10, 0.72);
-  backdrop-filter: blur(24px) saturate(1.25);
+  gap: 10px;
+  height: 52px;
+  padding: 0 0 0 14px;
+  border-bottom: 1px solid var(--stroke);
+  background: rgba(5, 5, 8, 0.72);
+  backdrop-filter: blur(20px) saturate(1.2);
 }
 
 .brand {
@@ -234,17 +233,6 @@ html[data-motion="calm"] .brand-mark {
   }
 }
 
-.brand-mode {
-  font-style: normal;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  font-weight: 500;
-  background: linear-gradient(90deg, var(--plasma), var(--mind));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 .brand-word {
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -253,20 +241,129 @@ html[data-motion="calm"] .brand-mark {
   opacity: 0.95;
 }
 
-.workspace-label {
-  flex: 1;
-  min-width: 0;
+/* Workspace switcher — folder icon, name, branch, chevron. Opens the
+   command palette (same target the Ctrl+K button opens). */
+.ws {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  font-family: var(--mono);
+  flex: none;
+}
+.ws:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--stroke);
+}
+.ws .name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text);
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Not `.ws .branch` — a bare `.branch` already exists in run.css (colored
+   pill + a "⎇" ::before glyph, for sidebar session rows) and a descendant
+   override would still inherit its padding/border/background/::before. A
+   dedicated class sidesteps that collision entirely. */
+.ws-branch {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
 
-.workspace-label strong {
+.spacer {
+  flex: 1;
+}
+
+/* Engine pill — dot pulses only while genuinely live (hostOk and no missed
+   health poll); "reconnecting" text pairs with a still, muted dot. */
+.engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 12px;
+  flex: none;
+}
+.engine .dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 0;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+.engine .dot.live {
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+html:not([data-motion="calm"]) .engine .dot.live {
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+html[data-motion="calm"] .engine .dot.live {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .engine .dot.live {
+    animation: none !important;
+  }
+}
+
+.kbd-btn {
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 9px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.kbd-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  font-weight: 500;
+}
+
+/* Frameless-window caption buttons (WindowControls.tsx) — fill the full
+   52px bar height via flex stretch, so no explicit height is set here. */
+.win {
+  display: flex;
+  align-self: stretch;
+  margin-left: 8px;
+  flex: none;
+}
+.cap {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cap:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.cap.close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 .chip {
@@ -299,26 +396,6 @@ html[data-motion="calm"] .brand-mark {
   border-color: color-mix(in srgb, var(--attention) 45%, transparent);
   background: color-mix(in srgb, var(--attention) 12%, transparent);
   color: var(--attention);
-}
-
-.chip.api {
-  color: var(--plasma);
-  border-color: var(--border-strong);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: var(--glow);
-}
-
-.chip.channel-badge {
-  color: #041016;
-  border-color: transparent;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-.chip.channel-dev {
-  background: linear-gradient(135deg, var(--plasma), var(--mind));
-}
-.chip.channel-tst {
-  background: linear-gradient(135deg, #f0b45a, #c4b5fd);
 }
 
 /* Full-width channel strip — impossible to miss on DEV/TST */
@@ -368,20 +445,6 @@ html[data-motion="calm"] .brand-mark {
 }
 .channel-banner-tst strong {
   background: linear-gradient(135deg, #f0b45a, #c4b5fd);
-}
-
-.chip.signed-out {
-  color: var(--accent3);
-  border-color: rgba(240, 180, 90, 0.35);
-  background: rgba(240, 180, 90, 0.08);
-  box-shadow: none;
-}
-
-.chip.sub {
-  color: var(--mind);
-  border-color: color-mix(in srgb, var(--accent2) 40%, transparent);
-  background: color-mix(in srgb, var(--accent2) 10%, transparent);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--accent2) 12%, transparent);
 }
 
 .btn {
@@ -2218,6 +2281,14 @@ html[data-density="compact"] .hooks-row {
   color: #d8d0f0;
   font-size: 13px;
   margin-bottom: 18px;
+}
+
+/* The channel badge + auth source that used to sit as topbar chips —
+   demoted to one quiet status line under the version/installer facts. */
+.settings-meta {
+  margin: -10px 0 18px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .nav-tabs {

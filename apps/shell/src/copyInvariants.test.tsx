@@ -238,7 +238,7 @@ describe("F9/GATE-Z-round-3 — AC-U14 'every surface': Settings and the command
     render(<App />);
     // Ready state renders the topbar's engine chip — proof boot resolved
     // past the starting card into the surfaces this block targets.
-    await screen.findByText(/Engine · (live|reconnecting)/);
+    await screen.findByText(/Grok · (live|reconnecting)/);
     return restoreTauri;
   }
 

@@ -31,7 +31,7 @@ test("Settings reports that a workspace is required before choosing a permission
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
   const user = userEvent.setup();
-  await screen.findByText(/Engine · (live|reconnecting)/);
+  await screen.findByText(/Grok · (live|reconnecting)/);
   const settings = screen.getAllByRole("button", { name: "Settings" }).find(button => button.className.includes("ghost"));
   assert.ok(settings);
   await user.click(settings);

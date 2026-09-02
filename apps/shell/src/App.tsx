@@ -363,8 +363,6 @@ export function App() {
   const dragOver = useChromeStore((s) => s.dragOver);
   const setDragOver = useChromeStore((s) => s.setDragOver);
   const toast = useToast();
-  const sessionWrite = useSessionFlagsStore((s) => s.sessionWrite);
-  const sessionShell = useSessionFlagsStore((s) => s.sessionShell);
   const setSessionWrite = useSessionFlagsStore((s) => s.setSessionWrite);
   const setSessionShell = useSessionFlagsStore((s) => s.setSessionShell);
   const [fileIndex, setFileIndex] = useState<string[]>([]);
@@ -4294,9 +4292,6 @@ export function App() {
         onSwitchMode={(m) => void switchMode(m)}
         state={state}
         branchMap={branchMap}
-        chip={chip}
-        sessionWrite={sessionWrite}
-        sessionShell={sessionShell}
         hostOk={hostOk}
         healthFailStreak={healthFailStreak}
         wsOk={wsOk}
@@ -4418,6 +4413,11 @@ export function App() {
                   Logs:{" "}
                   <code>{state?.logHint || "%USERPROFILE%\\.grokforge\\logs"}</code>
                 </div>
+                <p className="settings-meta">
+                  {channelBadge() ? `${channelBadge()} · ` : ""}
+                  {chip.text}
+                  {state?.authSource ? ` · ${state.authSource}` : ""}
+                </p>
                 {(() => {
                   const policy = (state as PublicState & { permissionPolicy?: { effectiveMode?: string; fallbackReason?: string | null; status?: string } })?.permissionPolicy;
                   const bypass = (state as PublicState & { bypassPermissions?: { unlocked?: boolean; available?: boolean; activeForSession?: boolean; blockedReason?: string | null } })?.bypassPermissions;
