@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import {
+  clearSessionNeedsYouEverywhere,
   createSession,
   listNeedsYou,
   loadSession,
@@ -48,6 +49,7 @@ describe("needsYou", () => {
             messages: [],
             updatedAt: 1000,
             needsYou: true,
+            status: "busy",
             open: true,
           },
           {
@@ -66,6 +68,7 @@ describe("needsYou", () => {
             messages: [],
             updatedAt: 2000,
             needsYou: true,
+            status: "busy",
             open: true,
           },
         ],
@@ -102,5 +105,58 @@ describe("needsYou", () => {
   it("listNeedsYou is empty when nothing is flagged", () => {
     createSession(WS, "Plain session");
     assert.deepEqual(listNeedsYou(WS), []);
+  });
+
+  it("clearSessionNeedsYouEverywhere clears a flag set in a different workspace", () => {
+    const inWs = createSession(WS, "Session in WS");
+    setSessionNeedsYou(WS, inWs.id, true);
+    const inOther = createSession(OTHER_WS, "Session in OTHER_WS");
+    setSessionNeedsYou(OTHER_WS, inOther.id, true);
+
+    // Clearing by id alone must find the session regardless of which
+    // workspace it actually lives in — the caller can't assume "the
+    // current workspace" is still the one the flagged session is in.
+    clearSessionNeedsYouEverywhere(inOther.id);
+
+    assert.equal(loadSession(OTHER_WS, inOther.id)?.needsYou, false);
+    // A same-id-shaped lookup in an unrelated workspace is untouched.
+    assert.equal(loadSession(WS, inWs.id)?.needsYou, true);
+  });
+
+  it("loading from disk resets needsYou to false unless the session is still busy", () => {
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        [WS]: [
+          {
+            id: "idle-stuck",
+            workspace: WS,
+            title: "Idle but flagged from before a restart",
+            messages: [],
+            updatedAt: 1000,
+            needsYou: true,
+            status: "idle",
+            open: true,
+          },
+          {
+            id: "still-busy",
+            workspace: WS,
+            title: "Still busy, decision still pending",
+            messages: [],
+            updatedAt: 2000,
+            needsYou: true,
+            status: "busy",
+            open: true,
+          },
+        ],
+      },
+      activeId: {},
+      pinned: [WS],
+      expanded: [WS],
+    });
+
+    // A pending decision cannot survive a restart unless the run is still
+    // marked busy.
+    assert.equal(loadSession(WS, "idle-stuck")?.needsYou, false);
+    assert.equal(loadSession(WS, "still-busy")?.needsYou, true);
   });
 });

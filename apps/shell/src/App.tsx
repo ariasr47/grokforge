@@ -110,6 +110,7 @@ import {
 } from "./promptSendHistory";
 import {
   clearPackMembers,
+  clearSessionNeedsYouEverywhere,
   commitHomeName,
   createSession,
   defaultSessionTitle,
@@ -2780,7 +2781,10 @@ export function App() {
     }
     for (const id of prevIds) {
       if (!nextIds.has(id)) {
-        setSessionNeedsYou(sessionPartition, id, false);
+        // Decision settled / run reached terminal / run cancelled — clear in
+        // whichever workspace the session lives in, not necessarily the one
+        // active right now (the operator may have already switched away).
+        clearSessionNeedsYouEverywhere(id);
         changed = true;
       }
     }

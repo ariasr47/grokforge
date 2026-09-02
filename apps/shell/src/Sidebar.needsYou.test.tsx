@@ -80,6 +80,17 @@ describe("Sidebar — Needs you group", () => {
     assert.ok(within(group as HTMLElement).getByText("Fix typecheck in apps/shell"));
     assert.ok(within(group as HTMLElement).getByText("approve"));
     assert.equal(group!.querySelectorAll(".row").length, 1);
+
+    // Nested under the workspace header, a session row is indented (.sub);
+    // the Needs-you row stays at the base indent.
+    const plainRow = screen
+      .getByText("Installer SHA-256 in Settings")
+      .closest(".row");
+    assert.ok(plainRow?.classList.contains("sub"));
+    const needsRow = within(group as HTMLElement)
+      .getByText("Fix typecheck in apps/shell")
+      .closest(".row");
+    assert.equal(needsRow?.classList.contains("sub"), false);
   });
 
   it("omits the Needs you group entirely when no session needs you", () => {

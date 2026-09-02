@@ -1106,6 +1106,9 @@ textarea:focus:not(:focus-visible) {
   border-color: var(--stroke);
   color: var(--text);
 }
+.rail .row.sub {
+  padding-left: 24px;
+}
 .rail .row .t {
   flex: 1;
   min-width: 0;

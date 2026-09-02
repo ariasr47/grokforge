@@ -120,21 +120,36 @@ function migrateLegacy(): Store | null {
   }
 }
 
+/**
+ * A pending decision cannot survive a restart: only a session whose run is
+ * still marked "busy" can plausibly still be waiting on one. Applied on every
+ * load from disk so a stale `needsYou: true` never sticks past a reload.
+ */
+function resetStaleNeedsYou(store: Store): Store {
+  const byWorkspace: Record<string, ChatSession[]> = {};
+  for (const ws of Object.keys(store.byWorkspace)) {
+    byWorkspace[ws] = (store.byWorkspace[ws] ?? []).map((s) =>
+      s.needsYou === true && s.status !== "busy" ? { ...s, needsYou: false } : s,
+    );
+  }
+  return { ...store, byWorkspace };
+}
+
 function readDisk(): Store {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
       const migrated = migrateLegacy();
-      if (migrated) return migrated;
+      if (migrated) return resetStaleNeedsYou(migrated);
       return emptyStore();
     }
     const s = JSON.parse(raw) as Store;
-    return {
+    return resetStaleNeedsYou({
       byWorkspace: s.byWorkspace ?? {},
       activeId: s.activeId ?? {},
       pinned: s.pinned ?? [],
       expanded: s.expanded ?? [],
-    };
+    });
   } catch {
     return emptyStore();
   }
@@ -201,12 +216,12 @@ export function reloadSessionsFromDisk(store?: {
   }
   dirty = false;
   if (store) {
-    memory = {
+    memory = resetStaleNeedsYou({
       byWorkspace: store.byWorkspace ?? {},
       activeId: store.activeId ?? {},
       pinned: store.pinned ?? [],
       expanded: store.expanded ?? [],
-    };
+    });
   } else {
     memory = readDisk();
   }
@@ -491,6 +506,23 @@ export function setSessionNeedsYou(
 /** Sessions in `workspace` currently flagged Needs-you, most recently updated first. */
 export function listNeedsYou(workspace: string): ChatSession[] {
   return listSessions(workspace).filter((s) => s.needsYou === true);
+}
+
+/**
+ * Clear the Needs-you flag on the session with this id, in whichever
+ * workspace holds it (session ids are unique per session). A clear must not
+ * be scoped to "the current workspace" — the operator may have switched away
+ * from the flagged session's workspace before its decision settled, which
+ * would otherwise leave `needsYou: true` stuck forever.
+ */
+export function clearSessionNeedsYouEverywhere(id: string): void {
+  const store = loadStore();
+  for (const ws of Object.keys(store.byWorkspace)) {
+    const list = store.byWorkspace[ws] ?? [];
+    if (list.some((s) => s.id === id && s.needsYou === true)) {
+      updateSessionMeta(ws, id, { needsYou: false });
+    }
+  }
 }
 
 export function setWorkspaceBranchAll(

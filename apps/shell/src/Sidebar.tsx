@@ -174,6 +174,9 @@ interface CodeSessionRowProps {
    * "question" (recovery_confirmation/plan). Falls back to "approve" if the
    * live run projection hasn't caught up yet on a freshly reloaded flag. */
   reason?: "approve" | "question";
+  /** True when this row sits nested under a workspace header — indents it
+   * to match the design's `.row.sub`. Needs-you rows stay at the base indent. */
+  sub?: boolean;
   onSelect: () => void;
   onRename?: (title: string) => void;
   onDelete?: () => void;
@@ -184,6 +187,7 @@ const CodeSessionRow = memo(function CodeSessionRow({
   sess,
   active,
   reason,
+  sub,
   onSelect,
   onRename,
   onDelete,
@@ -230,7 +234,7 @@ const CodeSessionRow = memo(function CodeSessionRow({
     <div className={`session-row-wrap ${active ? "active" : ""}`}>
       <button
         type="button"
-        className={`row ${active ? "active" : ""}`}
+        className={`row ${active ? "active" : ""}${sub ? " sub" : ""}`}
         onClick={onSelect}
         onDoubleClick={() => {
           if (onRename) {
@@ -576,6 +580,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                           ws.path === props.activeWorkspace &&
                           sess.id === props.activeSessionId
                         }
+                        sub
                         onSelect={() =>
                           props.onSelectCodeSession(ws.path, sess.id)
                         }
