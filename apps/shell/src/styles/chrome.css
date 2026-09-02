@@ -69,7 +69,7 @@ button:disabled {
   gap: 12px;
   padding: 10px 16px;
   min-height: 52px;
-  border-bottom: 1px solid rgba(125, 255, 232, 0.1);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
   background: rgba(3, 4, 10, 0.72);
   backdrop-filter: blur(24px) saturate(1.25);
 }
@@ -130,7 +130,7 @@ button:disabled {
   cursor: pointer;
 }
 .connector-head:hover {
-  background: rgba(125, 255, 232, 0.05);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 .connector-name {
   font-weight: 600;
@@ -154,13 +154,13 @@ button:disabled {
 }
 .badge-configured {
   color: var(--plasma);
-  border-color: rgba(125, 255, 232, 0.35);
-  background: rgba(125, 255, 232, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .badge-paste_workflow {
   color: var(--mind);
-  border-color: rgba(196, 181, 253, 0.35);
-  background: rgba(196, 181, 253, 0.08);
+  border-color: color-mix(in srgb, var(--accent2) 35%, transparent);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
 }
 .connector-body {
   padding: 0 14px 14px;
@@ -192,15 +192,15 @@ button:disabled {
   pointer-events: none;
   /* Static base glow (always); animation only when Full motion */
   filter:
-    drop-shadow(0 0 6px rgba(125, 255, 232, 0.28))
-    drop-shadow(0 0 10px rgba(196, 181, 253, 0.18));
+    drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 28%, transparent))
+    drop-shadow(0 0 10px color-mix(in srgb, var(--accent2) 18%, transparent));
 }
 .brand-mark-lg {
   width: 44px;
   height: 44px;
   filter:
-    drop-shadow(0 0 10px rgba(125, 255, 232, 0.32))
-    drop-shadow(0 0 16px rgba(196, 181, 253, 0.22));
+    drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 32%, transparent))
+    drop-shadow(0 0 16px color-mix(in srgb, var(--accent2) 22%, transparent));
 }
 
 /* Full motion only: 5.2s breathe, scale ≤ 1.04, transform+filter only */
@@ -213,14 +213,14 @@ html:not([data-motion="calm"]) .brand-mark {
   100% {
     transform: translateZ(0) scale(1);
     filter:
-      drop-shadow(0 0 6px rgba(125, 255, 232, 0.28))
-      drop-shadow(0 0 10px rgba(196, 181, 253, 0.18));
+      drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 28%, transparent))
+      drop-shadow(0 0 10px color-mix(in srgb, var(--accent2) 18%, transparent));
   }
   50% {
     transform: translateZ(0) scale(1.04);
     filter:
-      drop-shadow(0 0 10px rgba(125, 255, 232, 0.48))
-      drop-shadow(0 0 16px rgba(196, 181, 253, 0.32));
+      drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 48%, transparent))
+      drop-shadow(0 0 16px color-mix(in srgb, var(--accent2) 32%, transparent));
   }
 }
 
@@ -286,7 +286,7 @@ html[data-motion="calm"] .brand-mark {
 .chip.api {
   color: var(--plasma);
   border-color: var(--border-strong);
-  background: rgba(125, 255, 232, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   box-shadow: var(--glow);
 }
 
@@ -313,7 +313,7 @@ html[data-motion="calm"] .brand-mark {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid rgba(125, 255, 232, 0.25);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   z-index: 5;
   flex-shrink: 0;
 }
@@ -332,8 +332,8 @@ html[data-motion="calm"] .brand-mark {
 .channel-banner-dev {
   background: linear-gradient(
     90deg,
-    rgba(125, 255, 232, 0.2),
-    rgba(196, 181, 253, 0.16)
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    color-mix(in srgb, var(--accent2) 16%, transparent)
   );
   color: var(--text);
 }
@@ -344,7 +344,7 @@ html[data-motion="calm"] .brand-mark {
   background: linear-gradient(
     90deg,
     rgba(240, 180, 90, 0.22),
-    rgba(196, 181, 253, 0.14)
+    color-mix(in srgb, var(--accent2) 14%, transparent)
   );
   color: var(--text);
 }
@@ -361,9 +361,9 @@ html[data-motion="calm"] .brand-mark {
 
 .chip.sub {
   color: var(--mind);
-  border-color: rgba(196, 181, 253, 0.4);
-  background: rgba(196, 181, 253, 0.1);
-  box-shadow: 0 0 24px rgba(196, 181, 253, 0.12);
+  border-color: color-mix(in srgb, var(--accent2) 40%, transparent);
+  background: color-mix(in srgb, var(--accent2) 10%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent2) 12%, transparent);
 }
 
 .btn {
@@ -447,7 +447,7 @@ html[data-motion="calm"] .brand-mark {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  border-right: 1px solid rgba(125, 255, 232, 0.1);
+  border-right: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
   background: rgba(3, 4, 10, 0.45);
   min-height: 0;
   overflow: auto;
@@ -1744,7 +1744,7 @@ html[data-density="compact"] .hooks-row {
   gap: 6px;
   overflow: hidden;
   padding: 8px 14px;
-  border: 1px solid rgba(125, 255, 232, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 14px;
   background: var(--bg);
   box-shadow:
@@ -1981,11 +1981,11 @@ html[data-density="compact"] .hooks-row {
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
-  border: 1px solid rgba(125, 255, 232, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   background: linear-gradient(
     135deg,
-    rgba(125, 255, 232, 0.07),
-    rgba(196, 181, 253, 0.09)
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    color-mix(in srgb, var(--accent2) 9%, transparent)
   );
   backdrop-filter: blur(20px);
   border-radius: var(--radius-thought);
@@ -1998,10 +1998,10 @@ html[data-density="compact"] .hooks-row {
   border-radius: 28px 28px 10px 28px;
   background: linear-gradient(
     135deg,
-    rgba(125, 255, 232, 0.1),
-    rgba(125, 255, 232, 0.04)
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--accent) 4%, transparent)
   );
-  border-color: rgba(125, 255, 232, 0.22);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .msg.assistant {
@@ -2045,13 +2045,13 @@ html[data-density="compact"] .hooks-row {
   max-height: 160px;
   resize: vertical;
   border-radius: 999px;
-  border: 1px solid rgba(125, 255, 232, 0.28);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   background: rgba(8, 12, 20, 0.75);
   padding: 8px 16px;
   outline: none;
   box-shadow:
-    0 0 40px rgba(125, 255, 232, 0.08),
-    inset 0 0 20px rgba(125, 255, 232, 0.04);
+    0 0 40px color-mix(in srgb, var(--accent) 8%, transparent),
+    inset 0 0 20px color-mix(in srgb, var(--accent) 4%, transparent);
   backdrop-filter: blur(24px);
 }
 
@@ -2076,7 +2076,7 @@ html[data-density="compact"] .hooks-row {
   height: 40px;
   border-radius: 999px;
   padding: 0 16px;
-  box-shadow: 0 0 22px rgba(125, 255, 232, 0.45);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .composer > .btn.primary:disabled {
   box-shadow: none;
@@ -2152,7 +2152,7 @@ html[data-density="compact"] .hooks-row {
 
 .callout {
   border-left: 3px solid var(--accent2);
-  background: linear-gradient(90deg, rgba(196, 181, 253, 0.12), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent2) 12%, transparent), transparent);
   padding: 12px 14px;
   border-radius: 0 12px 12px 0;
   color: #d8d0f0;
@@ -2212,7 +2212,7 @@ html[data-density="compact"] .hooks-row {
 
 .msg.tool {
   align-self: stretch;
-  background: rgba(196, 181, 253, 0.05);
+  background: color-mix(in srgb, var(--accent2) 5%, transparent);
   border-color: transparent;
   border-left: 2px solid var(--accent2);
   border-radius: 0 12px 12px 0;
@@ -2324,8 +2324,8 @@ html[data-density="compact"] .hooks-row {
 }
 
 .oauth-box {
-  border: 1px solid rgba(196, 181, 253, 0.35);
-  background: rgba(196, 181, 253, 0.08);
+  border: 1px solid color-mix(in srgb, var(--accent2) 35%, transparent);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
   border-radius: var(--radius);
   padding: 14px;
   margin-bottom: 16px;
@@ -2343,7 +2343,7 @@ html[data-density="compact"] .hooks-row {
   letter-spacing: 0.12em;
   color: var(--accent);
   margin: 10px 0;
-  text-shadow: 0 0 20px rgba(125, 255, 232, 0.35);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .check-row {
@@ -2423,10 +2423,10 @@ html[data-density="compact"] .hooks-row {
   width: min(420px, 100%);
   background: linear-gradient(
     145deg,
-    rgba(125, 255, 232, 0.08),
-    rgba(196, 181, 253, 0.1)
+    color-mix(in srgb, var(--accent) 8%, transparent),
+    color-mix(in srgb, var(--accent2) 10%, transparent)
   );
-  border: 1px solid rgba(125, 255, 232, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 28px;
   padding: 32px 28px;
   text-align: center;
@@ -2558,8 +2558,8 @@ html[data-density="compact"] .hooks-row {
 }
 
 .onboarding-steps li.done {
-  border-color: rgba(125, 255, 232, 0.3);
-  background: rgba(125, 255, 232, 0.06);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .step-n {
@@ -2577,7 +2577,7 @@ html[data-density="compact"] .hooks-row {
 }
 
 .onboarding-steps li.done .step-n {
-  background: rgba(125, 255, 232, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-color: var(--border-strong);
   color: var(--accent);
   box-shadow: var(--glow);
@@ -2737,7 +2737,7 @@ a {
 .palette-option[data-selected],
 .palette-list button.active,
 .palette-list button:hover {
-  background: rgba(125, 255, 232, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .palette-label {
   font-weight: 500;

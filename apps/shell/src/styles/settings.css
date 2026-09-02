@@ -102,14 +102,14 @@ html[data-density="compact"] .transcript {
   font-family: var(--mono);
   color: var(--muted);
   border-bottom: 1px solid var(--border);
-  background: rgba(125, 255, 232, 0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 .oauth-dock {
   margin: 8px 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(196, 181, 253, 0.35);
-  background: rgba(196, 181, 253, 0.08);
+  border: 1px solid color-mix(in srgb, var(--accent2) 35%, transparent);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
 }
 .oauth-dock-head {
   display: flex;
@@ -198,13 +198,13 @@ html[data-density="compact"] .run-footer {
 }
 .side-mode-pill.chat {
   color: var(--accent2);
-  border-color: rgba(196, 181, 253, 0.35);
-  background: rgba(196, 181, 253, 0.1);
+  border-color: color-mix(in srgb, var(--accent2) 35%, transparent);
+  background: color-mix(in srgb, var(--accent2) 10%, transparent);
 }
 .side-mode-pill.code {
   color: var(--accent);
-  border-color: rgba(125, 255, 232, 0.35);
-  background: rgba(125, 255, 232, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .side-mode-hint {
   font-size: 11px;
@@ -238,7 +238,7 @@ html[data-density="compact"] .run-footer {
 .chat-files-panel {
   border-top: 1px solid var(--border);
   padding: 10px 12px 12px;
-  background: rgba(196, 181, 253, 0.04);
+  background: color-mix(in srgb, var(--accent2) 4%, transparent);
 }
 .chat-files-copy {
   margin: 0 0 10px;
@@ -254,13 +254,13 @@ html[data-density="compact"] .run-footer {
   transition: box-shadow 0.12s ease;
 }
 .mode-switch:focus-within {
-  box-shadow: 0 0 0 1px rgba(125, 255, 232, 0.25);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* —— Mode switch + effort (dual-mode-shell) —— */
 .mode-switch {
   display: inline-flex;
-  border: 1px solid rgba(125, 255, 232, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 999px;
   background: rgba(8, 12, 20, 0.55);
   padding: 2px;
@@ -285,10 +285,10 @@ html[data-density="compact"] .run-footer {
   gap: 6px;
 }
 .mode-seg.active {
-  background: rgba(125, 255, 232, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
-  border: 1px solid rgba(125, 255, 232, 0.32);
-  box-shadow: 0 0 16px rgba(125, 255, 232, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .mode-seg:disabled {
   opacity: 0.5;
@@ -344,9 +344,9 @@ html[data-density="compact"] .run-footer {
 }
 .effort-chip.active {
   color: var(--text);
-  border-color: rgba(125, 255, 232, 0.4);
-  background: rgba(125, 255, 232, 0.12);
-  box-shadow: 0 0 12px rgba(125, 255, 232, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 /* Active state must not be colour-only (SPEC §4): a small filled mark. */
 .effort-chip-mark {
@@ -391,9 +391,9 @@ html[data-density="compact"] .run-footer {
 }
 .plan-arm-chip.active {
   color: var(--text);
-  border-color: rgba(125, 255, 232, 0.4);
-  background: rgba(125, 255, 232, 0.12);
-  box-shadow: 0 0 12px rgba(125, 255, 232, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .plan-arm-chip-mark {
   width: 4px;
@@ -533,8 +533,8 @@ html[data-density="compact"] .run-footer {
 .rich-card:hover,
 .sample-chip:hover {
   transform: translateY(-2px) scale(1.02);
-  border-color: rgba(125, 255, 232, 0.45);
-  box-shadow: 0 0 28px rgba(125, 255, 232, 0.15);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .rich-root {
@@ -564,8 +564,8 @@ html[data-density="compact"] .run-footer {
   background: rgba(255, 255, 255, 0.03);
 }
 .rich-callout.tone-info {
-  border-color: rgba(125, 255, 232, 0.35);
-  background: rgba(125, 255, 232, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .rich-callout.tone-success {
   border-color: rgba(80, 220, 140, 0.4);
@@ -608,7 +608,7 @@ html[data-density="compact"] .run-footer {
   letter-spacing: 0.06em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(125, 255, 232, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 .rich-card-body {
@@ -675,8 +675,8 @@ html[data-density="compact"] .run-footer {
   transition: border-color 0.15s, background 0.15s;
 }
 .rich-choice:hover {
-  border-color: rgba(125, 255, 232, 0.4);
-  background: rgba(125, 255, 232, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .rich-choice-label {
   display: flex;
@@ -714,7 +714,7 @@ html[data-density="compact"] .run-footer {
   justify-content: center;
   font-size: 11px;
   font-family: var(--mono);
-  background: rgba(125, 255, 232, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 .rich-kv dl {
@@ -807,8 +807,8 @@ html[data-density="compact"] .run-footer {
 }
 .rich-tab.active {
   color: var(--text);
-  border-color: rgba(125, 255, 232, 0.4);
-  background: rgba(125, 255, 232, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .rich-tab-panel {
   padding: 12px;
@@ -930,13 +930,13 @@ html[data-theme="light"] .tok-plain {
 
 /* Tool live polish */
 .tool-row-live {
-  border-color: rgba(125, 255, 232, 0.25);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .tool-spinner {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border: 1.5px solid rgba(125, 255, 232, 0.35);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
   margin-right: 6px;
@@ -1254,8 +1254,8 @@ h2,
     transform var(--dur) var(--ease-out);
 }
 .msg.streaming {
-  border-color: rgba(125, 255, 232, 0.32);
-  box-shadow: 0 0 36px rgba(125, 255, 232, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 0 36px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Live activity owns only its bounded body; the transcript remains the page
@@ -1356,10 +1356,10 @@ h2,
   color: var(--text);
 }
 .btn.active-toggle {
-  border-color: rgba(125, 255, 232, 0.4);
-  background: rgba(125, 255, 232, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--plasma);
-  box-shadow: 0 0 16px rgba(125, 255, 232, 0.12);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Mode / effort microinteractions */
@@ -1386,7 +1386,7 @@ h2,
     transform var(--dur-fast) var(--ease-out);
 }
 .effort-chip:hover:not(:disabled):not(.active) {
-  border-color: rgba(196, 181, 253, 0.35);
+  border-color: color-mix(in srgb, var(--accent2) 35%, transparent);
   color: var(--text);
 }
 .effort-chip.active {
@@ -1438,12 +1438,12 @@ html[data-motion="calm"] .chip.api::before {
     rgba(12, 18, 28, 0.94),
     rgba(8, 10, 18, 0.96)
   );
-  border: 1px solid rgba(125, 255, 232, 0.2);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 22px;
   box-shadow:
     0 28px 80px rgba(0, 0, 0, 0.55),
-    0 0 48px rgba(125, 255, 232, 0.08),
-    0 0 64px rgba(196, 181, 253, 0.06);
+    0 0 48px color-mix(in srgb, var(--accent) 8%, transparent),
+    0 0 64px color-mix(in srgb, var(--accent2) 6%, transparent);
   animation: aeon-rise var(--dur-slow) var(--ease-out);
 }
 .palette-option,
@@ -1459,10 +1459,10 @@ html[data-motion="calm"] .chip.api::before {
 .palette-list button:hover {
   background: linear-gradient(
     90deg,
-    rgba(125, 255, 232, 0.12),
-    rgba(196, 181, 253, 0.08)
+    color-mix(in srgb, var(--accent) 12%, transparent),
+    color-mix(in srgb, var(--accent2) 8%, transparent)
   );
-  box-shadow: inset 0 0 0 1px rgba(125, 255, 232, 0.15);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .palette-option[data-selected],
 .palette-list button.active {
@@ -1479,7 +1479,7 @@ html[data-motion="calm"] .chip.api::before {
     rgba(12, 18, 28, 0.94),
     rgba(8, 12, 22, 0.96)
   );
-  border: 1px solid rgba(125, 255, 232, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 16px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), var(--glow);
   backdrop-filter: blur(16px);
@@ -1518,10 +1518,10 @@ html[data-motion="calm"] .chip.api::before {
 .onboarding {
   background: linear-gradient(
     145deg,
-    rgba(125, 255, 232, 0.06),
-    rgba(196, 181, 253, 0.08)
+    color-mix(in srgb, var(--accent) 6%, transparent),
+    color-mix(in srgb, var(--accent2) 8%, transparent)
   );
-  border: 1px solid rgba(125, 255, 232, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 24px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35), var(--glow-mind);
   backdrop-filter: blur(18px);
@@ -1535,7 +1535,7 @@ html[data-motion="calm"] .chip.api::before {
 }
 .sample-chip {
   border-radius: 999px;
-  border: 1px solid rgba(125, 255, 232, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   background: rgba(8, 12, 20, 0.55);
   font-size: var(--text-xs);
   line-height: 1.35;
@@ -1545,8 +1545,8 @@ html[data-motion="calm"] .chip.api::before {
 }
 .sample-chip:hover {
   color: var(--text);
-  border-color: rgba(125, 255, 232, 0.4);
-  box-shadow: 0 0 24px rgba(125, 255, 232, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .sample-chip:active {
   transform: scale(0.98);
@@ -1556,15 +1556,15 @@ html[data-motion="calm"] .chip.api::before {
   background: var(--void);
 }
 .boot-spinner {
-  border-color: rgba(125, 255, 232, 0.15);
+  border-color: color-mix(in srgb, var(--accent) 15%, transparent);
   border-top-color: var(--plasma);
-  box-shadow: 0 0 20px rgba(125, 255, 232, 0.25);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* Sidebar / sessions / tree */
 .sidebar-stack {
   background: rgba(3, 4, 10, 0.4);
-  border-right-color: rgba(125, 255, 232, 0.1);
+  border-right-color: color-mix(in srgb, var(--accent) 10%, transparent);
   backdrop-filter: blur(12px);
 }
 .recent-list button,
@@ -1578,8 +1578,8 @@ html[data-motion="calm"] .chip.api::before {
 .recent-list button:hover,
 .session-row:hover,
 .tree-row:hover {
-  background: rgba(125, 255, 232, 0.06);
-  border-color: rgba(125, 255, 232, 0.15);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .recent-list button:active,
 .session-row:active {
@@ -1591,14 +1591,14 @@ html[data-motion="calm"] .chip.api::before {
 .perm-card,
 .diff-pane {
   border-radius: var(--radius-md);
-  border-color: rgba(125, 255, 232, 0.16);
+  border-color: color-mix(in srgb, var(--accent) 16%, transparent);
   transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 .perm-card {
   background: linear-gradient(
     135deg,
-    rgba(125, 255, 232, 0.08),
-    rgba(196, 181, 253, 0.08)
+    color-mix(in srgb, var(--accent) 8%, transparent),
+    color-mix(in srgb, var(--accent2) 8%, transparent)
   );
   animation: aeon-rise var(--dur) var(--ease-out);
 }
@@ -1636,8 +1636,8 @@ html[data-motion="calm"] .chip.api::before {
 }
 .rich-choice:hover {
   transform: translateY(-2px) scale(1.015);
-  border-color: rgba(125, 255, 232, 0.45);
-  box-shadow: 0 0 28px rgba(125, 255, 232, 0.14);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .rich-choice:active {
   transform: scale(0.99);
@@ -1771,10 +1771,10 @@ html[data-theme="light"] .btn.primary {
   filter: none;
 }
 .composer-wrap.drag-over {
-  box-shadow: inset 0 0 0 1px rgba(125, 255, 232, 0.45);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
   background: linear-gradient(
     180deg,
-    rgba(125, 255, 232, 0.08),
+    color-mix(in srgb, var(--accent) 8%, transparent),
     rgba(3, 4, 10, 0.9)
   );
 }
@@ -1782,8 +1782,8 @@ html[data-theme="light"] .btn.primary {
 /* Think-aloud */
 .think-aloud {
   border-radius: 14px;
-  border: 1px solid rgba(196, 181, 253, 0.25);
-  background: rgba(196, 181, 253, 0.06);
+  border: 1px solid color-mix(in srgb, var(--accent2) 25%, transparent);
+  background: color-mix(in srgb, var(--accent2) 6%, transparent);
   padding: 8px 12px;
   margin-bottom: 10px;
 }
@@ -1824,12 +1824,12 @@ html[data-motion="calm"] .msg.assistant .role::before {
 /* Settings callout Aeon */
 .callout {
   border-left-color: var(--mind);
-  background: linear-gradient(90deg, rgba(196, 181, 253, 0.14), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent2) 14%, transparent), transparent);
   color: var(--text-secondary);
 }
 .oauth-box {
-  border-color: rgba(196, 181, 253, 0.4);
-  background: rgba(196, 181, 253, 0.08);
+  border-color: color-mix(in srgb, var(--accent2) 40%, transparent);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
 }
 
 /* Reduce expensive filters on low power */
