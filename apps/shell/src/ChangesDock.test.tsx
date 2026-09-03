@@ -205,6 +205,20 @@ describe("ChangesDock — Files tab rows", () => {
     assert.ok(within(dock).getByText("Accepted"));
     assert.equal(within(dock).queryByRole("button", { name: "Accept" }), null);
   });
+
+  it("rejected settlement shows a Rejected label, not action buttons", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{ state: "ready", members: [member({ settlement: "rejected", requestId: "req-1" })] }}
+        diffQueue={[{ id: "req-1", path: "src/OverviewStrip.tsx", diff: "+x" }]}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.ok(within(dock).getByText("Rejected"));
+    assert.equal(within(dock).queryByRole("button", { name: "Accept" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Reject" }), null);
+  });
 });
 
 describe("ChangesDock — hunk preview", () => {
@@ -346,6 +360,87 @@ describe("ChangesDock — revert / applied note", () => {
     const dock = screen.getByRole("region", { name: "Changes" });
     assert.equal(within(dock).queryByRole("button", { name: "Restore file" }), null);
     assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
+  });
+
+  it("a content-kind member offers Revert edit, not Restore file or Revert rename", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [member({ kind: "content", settlement: "applied", recoveryAvailable: true })],
+        }}
+        onRevert={noop}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.ok(within(dock).getByRole("button", { name: "Revert edit" }));
+    assert.equal(within(dock).queryByRole("button", { name: "Restore file" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert rename" }), null);
+  });
+
+  it("settlement conflict shows the kind's conflict copy as an alert and hides the revert control", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [member({ kind: "content", settlement: "conflict", recoveryAvailable: true })],
+        }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    const alert = within(dock).getByRole("alert");
+    assert.ok(within(alert).getByText("Edit not reverted"));
+    assert.match(alert.textContent ?? "", /changed after Forge applied this edit/);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
+  });
+
+  it("recoveryFlash reverted overrides settlement to show the kind's success copy, keyed by editId", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [
+            member({ editId: "e-flash", kind: "content", settlement: "applied", recoveryAvailable: true }),
+          ],
+        }}
+        recoveryFlash={{ "e-flash": "reverted" }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    const status = within(dock).getByRole("status");
+    assert.ok(within(status).getByText("Edit reverted"));
+    assert.match(status.textContent ?? "", /restored to its state immediately before this edit/);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
+    assert.equal(within(dock).queryByText(/Applied automatically/), null);
+  });
+
+  it("recoveryFlash falls back to the activityId key when the editId is not flashed", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [
+            member({
+              editId: "e-2",
+              activityId: "act-2",
+              kind: "delete",
+              settlement: "applied",
+              recoveryAvailable: true,
+              diff: null,
+              diffUnavailable: true,
+            }),
+          ],
+        }}
+        recoveryFlash={{ "act-2": "conflict" }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.ok(within(dock).getByRole("alert"));
+    assert.ok(within(dock).getByText("File not restored"));
   });
 });
 

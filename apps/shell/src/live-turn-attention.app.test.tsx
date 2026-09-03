@@ -8,6 +8,7 @@ import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
 import { api } from "./api";
+import { CHANGES_DOCK_LABEL } from "./ChangesDock";
 import type { ActivityRecord, DecisionRequest, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -273,7 +274,10 @@ describe("live-turn-attention App wiring", () => {
 
     const dock = await screen.findByRole("region", { name: "Pending agent actions" });
     assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
-    assert.ok(within(dock).getByRole("button", { name: "Accept" }));
+    // Task 9: the diff decision's Accept/Reject render in the (separate)
+    // Changes dock now, not inside "Pending agent actions".
+    const changesDock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    assert.ok(within(changesDock).getByRole("button", { name: "Accept" }));
     await waitFor(() => {
       assert.ok(screen.getByText("Permission requested: shell"));
       assert.ok(screen.getByText("Diff proposed: notes.md"));

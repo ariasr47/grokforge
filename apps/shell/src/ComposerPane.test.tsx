@@ -66,21 +66,21 @@ describe("ComposerPane empty-draft placeholder", () => {
     assert.equal(composer.rows, 1);
   });
 
-  it("keeps Code continuum copy while Send stays disabled", () => {
+  it("keeps Code placeholder copy while Send stays disabled", () => {
     render(
       <ComposerPane {...base} sendDisabledReason="Type a message to send" />,
     );
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(
       composer.placeholder,
-      "Speak into the continuum… @file · attach · Enter send",
+      "Reply to Grok… @file · attach · Enter send",
     );
     const send = screen.getByRole("button", { name: "Send" });
     assert.equal(send.hasAttribute("disabled"), true);
     assert.equal(send.getAttribute("title"), "Type a message to send");
   });
 
-  it("keeps Chat continuum copy while Send stays disabled", () => {
+  it("keeps Chat placeholder copy while Send stays disabled", () => {
     render(
       <ComposerPane
         {...base}
@@ -91,7 +91,7 @@ describe("ComposerPane empty-draft placeholder", () => {
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(
       composer.placeholder,
-      "Speak into the continuum… paste text, attach .txt/.md",
+      "Reply to Grok… paste text, attach .txt/.md",
     );
   });
 

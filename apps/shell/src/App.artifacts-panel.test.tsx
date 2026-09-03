@@ -569,7 +569,10 @@ describe("artifacts-panel App journeys", () => {
     fireEvent.click(codeOpen!);
     await waitFor(() => assert.ok(document.querySelector(".artifact-panel")));
     assert.ok(screen.getByLabelText(CHANGES_DOCK_LABEL));
-    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/a.ts"));
+    // The dock splits a row's path into a muted dir span and a filename span
+    // (see ChangesDock.tsx's FileRow) — "src/a.ts" is never one text node.
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/"));
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("a.ts"));
     assert.equal(
       host.callsTo("/api/chat-pack").some((c) => c.body?.action === "pin_file"),
       false,

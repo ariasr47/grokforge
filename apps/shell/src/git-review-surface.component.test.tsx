@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RunSurface } from "./RunSurface";
-import { CHANGES_DOCK_LABEL, ChangesDock, type ChangesDockMember } from "./ChangesDock";
+import { CHANGES_DOCK_LABEL, ChangesDock } from "./ChangesDock";
 import { projectRunChangeList } from "./runChangeList";
 import { projectRunVerifyList } from "./runVerifyList";
 import { projectRunGitReviewList } from "./runGitReviewList";
@@ -137,6 +137,16 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
   const filesProjection = projectRunChangeList(fixture, catchUp);
   const verifyProjection = projectRunVerifyList(fixture, catchUp);
   const gitProjection = projectRunGitReviewList(fixture, catchUp);
+  // Mirrors App.tsx's own changesActivityStatusById/changesActivityLifecycleById
+  // derivation — GitTab's chrome (Running/Not run/Failed/unavailable) reads the
+  // real activity status/lifecycle, not just the RunGitReviewMember shape
+  // (which deliberately can't distinguish "executed+failed" on its own).
+  const activityStatusById = new Map<string, ActivityRecord["status"]>();
+  const activityLifecycleById = new Map<string, ActivityRecord["lifecycle"]>();
+  for (const activity of Object.values(fixture.activities)) {
+    activityStatusById.set(activity.activityId, activity.status);
+    activityLifecycleById.set(activity.activityId, activity.lifecycle);
+  }
   render(
     <ChangesDock
       files={
@@ -147,6 +157,8 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
       verify={verifyProjection.state === "ready" ? { state: "ready", members: verifyProjection.members } : { state: "ready", members: [] }}
       git={gitProjection.state === "ready" ? { state: "ready", members: gitProjection.members } : { state: "ready", members: [] }}
       diffQueue={[]}
+      activityStatusById={activityStatusById}
+      activityLifecycleById={activityLifecycleById}
       onAccept={() => undefined}
       onReject={() => undefined}
       onCollapse={() => undefined}
@@ -402,9 +414,14 @@ test("log and show appear on the same Git tab (AC-29)", async () => {
 });
 
 test("multi-statement && and ; stay off the Git list", async () => {
+  // A companion write activity keeps the dock itself visible (Task 9's
+  // ChangesDock hides entirely when Files/Verify/Git are all empty — see
+  // AC-08's own "Files/Verify stay" pattern above) so this test can assert
+  // the Git tab specifically stays empty for a rejected multi-statement shape.
   renderChangesDock(
     run({
       activities: {
+        "a-edit": writeActivity(),
         a1: shellActivity({
           activityId: "a1",
           invocationId: "i1",
@@ -422,6 +439,7 @@ test("multi-statement && and ; stay off the Git list", async () => {
   renderChangesDock(
     run({
       activities: {
+        "a-edit": writeActivity(),
         a1: shellActivity({
           activityId: "a1",
           invocationId: "i1",

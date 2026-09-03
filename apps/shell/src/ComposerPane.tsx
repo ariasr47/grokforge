@@ -63,9 +63,9 @@ export function composerBlockReasonVisible(
   return true;
 }
 export const COMPOSER_PLACEHOLDER_CHAT =
-  "Speak into the continuum… paste text, attach .txt/.md";
+  "Reply to Grok… paste text, attach .txt/.md";
 export const COMPOSER_PLACEHOLDER_CODE =
-  "Speak into the continuum… @file · attach · Enter send";
+  "Reply to Grok… @file · attach · Enter send";
 
 export function composerPlaceholder(opts: {
   lockedReason?: string | null;

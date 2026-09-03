@@ -1,5 +1,12 @@
 // Journey tests: FakeHost WS + GET /api/runs catch-up for Verify membership.
 // Live-host Trusted/Review deny paths remain verification-track V4 after B1.
+//
+// Verify moved from an in-stream RunSurface section into the (tabbed) Changes
+// dock in Task 9 — see ChangesDock.tsx. These journeys were rewritten against
+// the dock: query the single "Changes" region, click into its "Verify" tab
+// instead of expanding an in-stream accordion, and drop the old "View output"
+// affordance (jumping from a Verify row to its Activity receipt), which the
+// Task 9 redesign removed — the dock is a rows-only surface now.
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -8,8 +15,7 @@ import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
-import { VERIFY_HEADER, VERIFY_LIVE_GROWING, VERIFY_LOADING, VERIFY_VIEW_OUTPUT } from "./VerifySection";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
+import { CHANGES_DOCK_LABEL } from "./ChangesDock";
 import type { ActivityRecord, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -146,7 +152,7 @@ afterEach(() => {
 });
 
 describe("structured-test-panel App wiring", () => {
-  it("live WS verify activities fill one Verify list without hunting activity rows (AC-01/11)", async () => {
+  it("live WS verify activities fill the Changes dock's Verify tab without hunting activity rows (AC-01/11)", async () => {
     const host = createFakeHost({
       mode: "code",
       workspace: WORKSPACE,
@@ -169,10 +175,12 @@ describe("structured-test-panel App wiring", () => {
       activity: verifyActivity(),
     }, 2) as unknown as Record<string, unknown>);
 
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Verify/i }));
     await waitFor(() => {
-      assert.ok(screen.getByRole("region", { name: VERIFY_HEADER }));
+      assert.ok(within(dock).getByText("npm test"));
     });
-    assert.ok(screen.getByText(VERIFY_LIVE_GROWING));
 
     ws.emit(envelope({
       kind: "activity_update",
@@ -185,15 +193,9 @@ describe("structured-test-panel App wiring", () => {
     }, 3) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
-      const section = screen.getByRole("region", { name: VERIFY_HEADER });
-      assert.ok(within(section).getByText("2"));
+      assert.ok(within(dock).getByText("npm run typecheck"));
     });
-
-    const user = userEvent.setup();
-    const section = screen.getByRole("region", { name: VERIFY_HEADER });
-    await user.click(within(section).getByRole("button", { name: /Verify/i }));
-    assert.ok(within(section).getByText("npm test"));
-    assert.ok(within(section).getByText("npm run typecheck"));
+    assert.ok(within(dock).getByText("npm test"));
     assert.equal(host.callsTo("/api/diff").length, 0);
     assert.equal(host.callsTo("/api/edit-recovery").length, 0);
   });
@@ -230,21 +232,14 @@ describe("structured-test-panel App wiring", () => {
 
     render(<App />);
 
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Verify/i }));
     await waitFor(() => {
-      const section = document.querySelector('[aria-label="Verify"]');
-      assert.ok(section);
-      assert.equal(section.className.includes("loading"), false);
-      assert.ok(section.textContent?.includes("2"));
+      assert.ok(within(dock).getByText("npm test"));
+      assert.ok(within(dock).getByText("npm run typecheck"));
     });
     assert.ok(host.callsTo("/api/runs").length >= 1);
-    const user = userEvent.setup();
-    const section = screen.getByRole("region", { name: VERIFY_HEADER });
-    await user.click(within(section).getByRole("button", { name: /Verify/i }));
-    await user.click(within(section).getAllByRole("button", { name: VERIFY_VIEW_OUTPUT })[0]!);
-    const row = document.querySelector('[data-activity-id="a-test"]') as HTMLElement | null;
-    assert.ok(row);
-    assert.ok(row.closest("[data-tool-activity]"));
-    assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
   });
 
   it("health-poll reconcile does not open Loading over a ready Verify list (W3)", async () => {
@@ -276,12 +271,15 @@ describe("structured-test-panel App wiring", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      const section = document.querySelector('[aria-label="Verify"]');
-      assert.ok(section);
-      assert.ok(!section.className.includes("verify-loading-state"));
+      assert.equal(within(dock).queryByText("Loading file changes…"), null);
     });
+
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Verify/i }));
+    assert.ok(within(dock).getByText("npm test"));
 
     const runsBefore = host.callsTo("/api/runs").length;
     assert.ok(poll, "health-poll scheduler must be installed");
@@ -289,9 +287,7 @@ describe("structured-test-panel App wiring", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(screen.queryByText(VERIFY_LOADING), null);
-    const section = screen.getByRole("region", { name: VERIFY_HEADER });
-    assert.ok(within(section).getByText("1"));
+    assert.equal(within(dock).queryByText("Loading verify results…"), null);
+    assert.ok(within(dock).getByText("npm test"));
   });
-
 });

@@ -585,7 +585,10 @@ describe("browser-panel App journeys", () => {
     });
     assert.ok(within(screen.getByLabelText(CHILD_AGENTS_HEADER)).getByText("Researcher"));
     assert.ok(within(screen.getByLabelText(CHILD_AGENTS_HEADER)).getByText(CHILD_AGENTS_STATUS_RUNNING));
-    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/a.ts"));
+    // The dock splits a row's path into a muted dir span and a filename span
+    // (see ChangesDock.tsx's FileRow) — "src/a.ts" is never one text node.
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/"));
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("a.ts"));
     assert.ok(within(browserSection()!).getByText("Docs"));
   });
 

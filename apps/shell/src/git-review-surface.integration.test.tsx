@@ -10,12 +10,13 @@ import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";
 import { flushSessions, reloadSessionsFromDisk } from "./sessions";
 import { WebSocket as BrowserWebSocket } from "ws";
+import { CHANGES_DOCK_LABEL, GIT_REVIEW_LOADING } from "./ChangesDock";
 
-// "View output" (jumping from the dock to a command's real Receipts entry)
-// was dropped in the Task 9 redesign — see ChangesDock.tsx. This constant
-// only feeds tests below that are skipped without the BE fixture agent
-// (git-review-surface-agent.mjs is not present in this environment).
-const GIT_REVIEW_VIEW_OUTPUT = "View output";
+// Git review moved from an in-stream RunSurface section into the (tabbed)
+// Changes dock in Task 9 — see ChangesDock.tsx. "View output" (jumping from
+// a row to its Activity receipt) was dropped in that redesign; the dock is a
+// rows-only surface now, so these journeys open the dock's Git tab instead
+// of expanding an in-stream accordion, and no longer click through to a row.
 
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -104,15 +105,14 @@ async function sendPrompt(text: string) {
   await user.click(screen.getByRole("button", { name: "Send" }));
 }
 
-async function waitForGitReview() {
+async function waitForGitReview(): Promise<HTMLElement> {
+  const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL }, { timeout: 15_000 });
+  const user = userEvent.setup();
+  await user.click(within(dock).getByRole("tab", { name: /Git/i }));
   await waitFor(() => {
-    const section = document.querySelector('[aria-label="Git review"]');
-    assert.ok(section);
-    assert.equal(section.className.includes("git-review-loading-state"), false);
+    assert.equal(within(dock).queryByText(GIT_REVIEW_LOADING), null);
   }, { timeout: 15_000 });
-  const section = document.querySelector('[aria-label="Git review"]');
-  assert.ok(section);
-  return section as HTMLElement;
+  return dock;
 }
 
 const present = await agentAvailable();
@@ -126,18 +126,10 @@ test("Trusted-shaped status+diff list on Code Git review (AC-01/02/31)", { skip:
   await mountApp(h);
   await sendPrompt("inspect git status and diff");
   await waitForRunEvent(h.ws, (event) => event.type === "activity_update" && event.payload?.activity?.command === "git diff", 15_000);
-  const section = await waitForGitReview();
-  assert.ok(within(section).getByText(/status/i));
-  assert.ok(within(section).getByText(/diff/i));
-  const user = userEvent.setup();
-  await user.click(within(section).getByRole("button", { name: /Git review/i }));
-  assert.ok(within(section).getByText("Status"));
-  assert.ok(within(section).getByText("Diff"));
-  await user.click(within(section).getAllByRole("button", { name: GIT_REVIEW_VIEW_OUTPUT })[0]!);
-  const row = document.querySelector('[data-activity-id="gr-status"]') as HTMLElement | null;
-  assert.ok(row);
-  assert.ok(row.closest("[data-tool-activity]"));
-  const text = (section.textContent ?? "").toLowerCase();
+  const dock = await waitForGitReview();
+  assert.ok(within(dock).getByText("Status"));
+  assert.ok(within(dock).getByText("Diff"));
+  const text = (dock.textContent ?? "").toLowerCase();
   assert.equal(text.includes("dirty"), false);
   assert.equal(text.includes("open link"), false);
 });
@@ -147,11 +139,9 @@ test("fixed-inspection Status member is listed (AC-32)", { skip: !present, timeo
   await mountApp(h);
   await sendPrompt("fixed-status");
   await waitForRunEvent(h.ws, (event) => event.type === "activity_update" && String(event.payload?.activity?.command ?? "").includes("git status"), 15_000);
-  const section = await waitForGitReview();
-  const user = userEvent.setup();
-  await user.click(within(section).getByRole("button", { name: /Git review/i }));
-  assert.ok(within(section).getByText("Status"));
-  assert.ok(within(section).getByText("git status --short"));
+  const dock = await waitForGitReview();
+  assert.ok(within(dock).getByText("Status"));
+  assert.ok(within(dock).getByText("git status --short"));
 });
 
 test("Review-shaped Diff member is listed (AC-31)", { skip: !present, timeout: 60_000 }, async () => {
@@ -159,11 +149,9 @@ test("Review-shaped Diff member is listed (AC-31)", { skip: !present, timeout: 6
   await mountApp(h);
   await sendPrompt("review-diff");
   await waitForRunEvent(h.ws, (event) => event.type === "activity_update" && String(event.payload?.activity?.command ?? "").includes("git diff"), 15_000);
-  const section = await waitForGitReview();
-  const user = userEvent.setup();
-  await user.click(within(section).getByRole("button", { name: /Git review/i }));
-  assert.ok(within(section).getByText("Diff"));
-  assert.ok(within(section).getByText("git diff --stat"));
+  const dock = await waitForGitReview();
+  assert.ok(within(dock).getByText("Diff"));
+  assert.ok(within(dock).getByText("git diff --stat"));
 });
 
 test("executed gh pr is a PR member by durable command (AC-05)", { skip: !present, timeout: 60_000 }, async () => {
@@ -171,12 +159,10 @@ test("executed gh pr is a PR member by durable command (AC-05)", { skip: !presen
   await mountApp(h);
   await sendPrompt("gh-pr");
   await waitForRunEvent(h.ws, (event) => event.type === "activity_update" && String(event.payload?.activity?.command ?? "").startsWith("gh pr"), 15_000);
-  const section = await waitForGitReview();
-  const user = userEvent.setup();
-  await user.click(within(section).getByRole("button", { name: /Git review/i }));
-  assert.ok(within(section).getByText("PR"));
-  assert.ok(within(section).getByText("gh pr view"));
-  const text = (section.textContent ?? "").toLowerCase();
+  const dock = await waitForGitReview();
+  assert.ok(within(dock).getByText("PR"));
+  assert.ok(within(dock).getByText("gh pr view"));
+  const text = (dock.textContent ?? "").toLowerCase();
   assert.equal(text.includes("open link"), false);
   assert.equal(text.includes("pr ready"), false);
 });
@@ -207,14 +193,9 @@ test("reconnect restores the same Git review membership (AC-11/12)", { skip: !pr
   await mountApp(first);
   await sendPrompt("inspect git status and diff");
   await waitForRunEvent(first.ws, (event) => event.type === "activity_update" && event.payload?.activity?.command === "git diff", 15_000);
-  const before = await waitFor(() => {
-    const section = document.querySelector('[aria-label="Git review"]') as HTMLElement | null;
-    assert.ok(section);
-    assert.equal(section.className.includes("git-review-loading-state"), false);
-    assert.ok(within(section).getByText("2"));
-    return section;
-  }, { timeout: 15_000 });
-  const beforeCount = within(before).getByText("2").textContent;
+  const before = await waitForGitReview();
+  assert.ok(within(before).getByText("Status"));
+  assert.ok(within(before).getByText("Diff"));
   const port = Number(new URL(first.baseUrl).port);
   await first.killPreservingData();
   const replacement = await startReliableRunHost("git-review-surface", port, {
@@ -227,14 +208,9 @@ test("reconnect restores the same Git review membership (AC-11/12)", { skip: !pr
   cleanup();
   reloadSessionsFromDisk();
   await mountApp(replacement, true);
-  const after = await waitFor(() => {
-    const section = document.querySelector('[aria-label="Git review"]') as HTMLElement | null;
-    assert.ok(section);
-    assert.equal(section.className.includes("git-review-loading-state"), false);
-    assert.ok(within(section).getByText("2"));
-    return section;
-  }, { timeout: 15_000 });
-  assert.equal(within(after).getByText("2").textContent, beforeCount);
+  const after = await waitForGitReview();
+  assert.ok(within(after).getByText("Status"));
+  assert.ok(within(after).getByText("Diff"));
 });
 
 test("git-review reachable spine waits on BE fixture agent when missing", { skip: present }, () => {

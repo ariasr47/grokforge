@@ -416,6 +416,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
           className="you-meta"
           aria-label={[
             codeRunProvenance.state === "absent" ? null : codeRunProvenanceCopy(codeRunProvenance),
+            `Model: ${model.appliedModel || model.requestedModel || "unspecified"}`,
             `Policy: ${policy.effectiveMode || "unspecified"}`,
           ]
             .filter(Boolean)
@@ -423,6 +424,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
         >
           <CodeRunProvenanceChip projection={codeRunProvenance} />
           <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
+          <span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>
           {model.selectionProvenance && model.selectionProvenance !== "inherited" ? <span>Selection: {model.selectionProvenance}</span> : null}
           <span>Policy: {policy.effectiveMode || "unspecified"}</span>
           {policy.source && policy.source !== "fallback" ? <span>Policy source: {policy.source}</span> : null}

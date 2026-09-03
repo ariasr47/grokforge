@@ -1,4 +1,11 @@
 // Journey tests: FakeHost WS + GET /api/runs catch-up for Git review membership.
+//
+// Git review moved from an in-stream RunSurface section into the (tabbed)
+// Changes dock in Task 9 — see ChangesDock.tsx. These journeys were rewritten
+// against the dock: query the single "Changes" region, click into its "Git"
+// tab instead of expanding an in-stream accordion, and drop the old
+// "View output" affordance (jumping from a Git row to its Activity receipt),
+// which the Task 9 redesign removed — the dock is a rows-only surface now.
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -7,15 +14,7 @@ import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
-import {
-  GIT_REVIEW_HEADER,
-  GIT_REVIEW_LIVE_GROWING,
-  GIT_REVIEW_LOAD_FAILURE,
-  GIT_REVIEW_LOADING,
-  GIT_REVIEW_VIEW_OUTPUT,
-} from "./GitReviewSection";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
-import { VERIFY_HEADER } from "./VerifySection";
+import { CHANGES_DOCK_LABEL, GIT_REVIEW_LOAD_FAILURE } from "./ChangesDock";
 import type { ActivityRecord, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -152,7 +151,7 @@ afterEach(() => {
 });
 
 describe("git-review-surface App wiring", () => {
-  it("live WS git activities fill one Git review list without hunting activity rows", async () => {
+  it("live WS git activities fill the Changes dock's Git tab without hunting activity rows", async () => {
     const host = createFakeHost({
       mode: "code",
       workspace: WORKSPACE,
@@ -175,10 +174,12 @@ describe("git-review-surface App wiring", () => {
       activity: gitActivity(),
     }, 2) as unknown as Record<string, unknown>);
 
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Git/i }));
     await waitFor(() => {
-      assert.ok(screen.getByRole("region", { name: GIT_REVIEW_HEADER }));
+      assert.ok(within(dock).getByText("git status -sb"));
     });
-    assert.ok(screen.getByText(GIT_REVIEW_LIVE_GROWING));
 
     ws.emit(envelope({
       kind: "activity_update",
@@ -192,19 +193,13 @@ describe("git-review-surface App wiring", () => {
     }, 3) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
-      const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
-      assert.ok(within(section).getByText("2"));
+      assert.ok(within(dock).getByText("git diff"));
     });
-
-    const user = userEvent.setup();
-    const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
-    await user.click(within(section).getByRole("button", { name: /Git review/i }));
-    assert.ok(within(section).getByText("git status -sb"));
-    assert.ok(within(section).getByText("git diff"));
+    assert.ok(within(dock).getByText("git status -sb"));
     assert.equal(host.callsTo("/api/diff").length, 0);
     assert.equal(host.callsTo("/api/edit-recovery").length, 0);
     assert.equal(host.callsTo("/api/permission").length, 0);
-    const text = (section.textContent ?? "").toLowerCase();
+    const text = (dock.textContent ?? "").toLowerCase();
     assert.equal(text.includes("working tree clean"), false);
     assert.equal(text.includes("pr ready"), false);
   });
@@ -242,22 +237,14 @@ describe("git-review-surface App wiring", () => {
 
     render(<App />);
 
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Git/i }));
     await waitFor(() => {
-      const section = document.querySelector('[aria-label="Git review"]');
-      assert.ok(section);
-      assert.equal(section.className.includes("git-review-loading-state"), false);
-      assert.ok(section.textContent?.includes("2"));
+      assert.ok(within(dock).getByText("git status -sb"));
+      assert.ok(within(dock).getByText("git diff"));
     });
     assert.ok(host.callsTo("/api/runs").length >= 1);
-    const user = userEvent.setup();
-    const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
-    await user.click(within(section).getByRole("button", { name: /Git review/i }));
-    await user.click(within(section).getAllByRole("button", { name: GIT_REVIEW_VIEW_OUTPUT })[0]!);
-    const row = document.querySelector('[data-activity-id="a-status"]') as HTMLElement | null;
-    assert.ok(row);
-    assert.ok(row.closest("[data-tool-activity]"));
-    assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
-    assert.equal(screen.queryByRole("region", { name: VERIFY_HEADER }), null);
   });
 
   it("catch-up GET failure shows load-failure copy, not empty (AC-14)", async () => {
@@ -272,6 +259,9 @@ describe("git-review-surface App wiring", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Git/i }));
     await waitFor(() => {
       assert.equal(
         (document.body?.innerHTML ?? "").includes(GIT_REVIEW_LOAD_FAILURE),
@@ -309,12 +299,15 @@ describe("git-review-surface App wiring", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      const section = document.querySelector('[aria-label="Git review"]');
-      assert.ok(section);
-      assert.equal(section.className.includes("git-review-loading-state"), false);
+      assert.equal(within(dock).queryByText("Loading file changes…"), null);
     });
+
+    const user = userEvent.setup();
+    await user.click(within(dock).getByRole("tab", { name: /Git/i }));
+    assert.ok(within(dock).getByText("git status -sb"));
 
     const runsBefore = host.callsTo("/api/runs").length;
     assert.ok(poll, "health-poll scheduler must be installed");
@@ -322,12 +315,11 @@ describe("git-review-surface App wiring", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(screen.queryByText(GIT_REVIEW_LOADING), null);
-    const section = screen.getByRole("region", { name: GIT_REVIEW_HEADER });
-    assert.ok(within(section).getByText("1"));
+    assert.equal(within(dock).queryByText("Loading git review…"), null);
+    assert.ok(within(dock).getByText("git status -sb"));
   });
 
-  it("Chat mode does not present a Git review panel", async () => {
+  it("Chat mode does not present a Changes dock", async () => {
     const chatRoot = "C:\\Users\\qa\\.grokforge\\chat-sandbox";
     reloadSessionsFromDisk({
       byWorkspace: {
@@ -363,7 +355,7 @@ describe("git-review-surface App wiring", () => {
     ws.emit(envelope({ kind: "run_started", run: gitSnapshot({ lastEventSeq: 1 }) }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "activity_update", activity: gitActivity() }, 2) as unknown as Record<string, unknown>);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(screen.queryByRole("region", { name: GIT_REVIEW_HEADER }), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
     assert.equal((document.body?.innerHTML ?? "").includes("Git review"), false);
   });
 });

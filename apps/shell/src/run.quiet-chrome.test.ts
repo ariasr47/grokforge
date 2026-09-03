@@ -106,58 +106,32 @@ describe("settled-turn chrome is quiet", () => {
     assert.doesNotMatch(css, /\.run-answered\s*\{/);
   });
 
-  it("File changes path row is not a nested inner card", () => {
-    const m = chrome.match(/\.file-changes-path-details\s*\{([^}]+)\}/);
-    assert.ok(m?.[1], "missing .file-changes-path-details");
-    assert.match(m[1]!, /background:\s*transparent/);
-    assert.match(m[1]!, /border:\s*none/);
-    assert.match(m[1]!, /padding:\s*0/);
-    assert.match(chrome, /\.run-content details\.file-changes-path-details/);
-    const head = chrome.match(/\.file-changes-row-head\s*\{([^}]+)\}/);
-    assert.ok(head?.[1], "missing .file-changes-row-head");
-    assert.match(head[1]!, /position:\s*sticky/);
-    assert.match(head[1]!, /top:\s*calc\(var\(--run-file-stick-below\) \+ 24px\)/);
-    assert.match(head[1]!, /background:\s*var\(--bg\)/);
-  });
-
-  it("File changes View/Hide diff is a text control, not a pill", () => {
-    const btn = chrome.match(
-      /\.file-changes-actions \.btn\.ghost\s*\{([^}]+)\}/,
-    );
-    assert.ok(btn?.[1], "missing .file-changes-actions .btn.ghost");
-    assert.match(btn[1]!, /border:\s*none/);
-    assert.match(btn[1]!, /background:\s*transparent/);
-    assert.match(btn[1]!, /min-height:\s*0/);
-    const extra = chrome.match(/\.activity-diff-toggle\.btn\.ghost\s*\{([^}]+)\}/);
-    assert.ok(extra?.[1], "missing .activity-diff-toggle.btn.ghost");
-    assert.match(extra[1]!, /border:\s*none/);
-    assert.match(extra[1]!, /background:\s*transparent/);
-    assert.match(extra[1]!, /min-height:\s*0/);
-  });
-
-  it("File changes diff contains nested overscroll so it does not steal the transcript", () => {
-    const m = chrome.match(/\.file-changes-diff\s*\{([^}]+)\}/);
-    assert.ok(m?.[1], "missing .file-changes-diff");
-    assert.match(m[1]!, /overscroll-behavior:\s*contain/);
-    assert.match(m[1]!, /max-width:\s*100%/);
-    const line = chrome.match(/\.file-changes-diff \.diff-line\s*\{([^}]+)\}/);
-    assert.ok(line?.[1], "missing .file-changes-diff .diff-line");
-    assert.match(line[1]!, /white-space:\s*pre-wrap/);
-    assert.match(line[1]!, /width:\s*max-content/);
-    assert.match(line[1]!, /max-width:\s*100%/);
-  });
-
-  it("collapsed Git review is a compact fold, not a padded empty card", () => {
-    // Live desktop-git-status: Git review 1 / 1 status was a full-width empty well.
-    const m = chrome.match(
-      /\.git-review:not\(:has\(\.git-review-list\)\)\s*\{([^}]+)\}/,
-    );
-    assert.ok(m?.[1], "missing collapsed .git-review rule");
-    assert.match(m[1]!, /padding:\s*4px 12px/);
-    assert.match(m[1]!, /width:\s*max-content/);
-    assert.match(m[1]!, /justify-self:\s*start/);
-    assert.doesNotMatch(m[1]!, /padding:\s*12px 14px/);
-  });
+  // Task 9 retired the in-stream File changes / Git review sections these
+  // five tests described in favor of the (tabbed) Changes dock — see
+  // ChangesDock.tsx and dock.css's .changes/.frow/.diff/.sect/.vrow rules.
+  // Their concepts don't carry over, so they were removed rather than
+  // rewritten against classes that no longer describe anything real:
+  //   - "File changes path row is not a nested inner card" — the per-row
+  //     expandable <details> path disclosure (.file-changes-path-details /
+  //     .file-changes-row-head, sticky under the You card) has no dock
+  //     equivalent; a dock file row is flat, one line, no nested disclosure.
+  //   - "File changes View/Hide diff is a text control, not a pill" — the
+  //     dock's toggle is an icon-only Eye/EyeOff button using the app's
+  //     shared, already-quiet .btn.ghost.icon-only pattern, not a File
+  //     changes-specific text link (.file-changes-actions .btn.ghost /
+  //     .activity-diff-toggle.btn.ghost no longer exist).
+  //   - "File changes diff contains nested overscroll..." — the dock's
+  //     .diff/.diff .ln rules match the design reference (Main.dc.html)
+  //     verbatim: a compact, fixed-width preview that clips a long line
+  //     (overflow: hidden, white-space: pre) rather than the old wide
+  //     in-stream panel's scrollable/overscroll-contained treatment.
+  //   - "collapsed Git review is a compact fold..." — the accordion
+  //     collapse/expand state (.git-review:not(:has(.git-review-list)))
+  //     is gone; the dock's Git tab has no collapsed state, only shown/tab.
+  //   - "File changes header sticks below the You card" — the dock is a
+  //     fixed side panel with its own scroll, not an in-stream section that
+  //     stickies under the You card as the transcript scrolls
+  //     (--run-file-stick-below no longer applies to it).
 
   it("Thought is a one-line summary, not a padded card", () => {
     const m = chrome.match(/\.thought\s*\{([^}]+)\}/);
@@ -185,29 +159,17 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(m[1]!, /overflow-wrap:\s*anywhere/);
   });
 
-  it("File changes header sticks below the You card", () => {
+  it("transcript's sticky-below offset stays 88px (the You card's own stick point)", () => {
+    // The rest of this test (--run-file-stick-below, .file-changes /
+    // .file-changes-header sticking below the You card as the transcript
+    // scrolls) went with the in-stream File changes section Task 9 retired
+    // — see the note above "Thought is a one-line summary". This one
+    // property is still real: .rhead's scroll-margin-top (tested above)
+    // and other transcript elements read --run-prompt-stick-below from
+    // .transcript, so its 88px value stays worth protecting on its own.
     const tr = chrome.match(/\.transcript\s*\{([^}]+)\}/);
     assert.ok(tr?.[1], "missing .transcript");
     assert.match(tr[1]!, /--run-prompt-stick-below:\s*88px/);
-    const runContent = chrome.match(/\.run-content\s*\{([^}]+)\}/);
-    assert.ok(runContent?.[1], "missing .run-content file-stick default");
-    assert.match(runContent[1]!, /--run-file-stick-below:\s*var\(--run-prompt-stick-below\)/);
-    assert.equal(
-      chrome.match(/\.run-content:has\(\.run-thought:not\(\[open\]\)\)\s*\{/),
-      null,
-      "collapsed Thought must not bump File changes sticky offset",
-    );
-    const section = chrome.match(/\.file-changes\s*\{([^}]+)\}/);
-    assert.ok(section?.[1], "missing .file-changes");
-    assert.match(section[1]!, /background:\s*var\(--bg\)/);
-    assert.match(section[1]!, /scroll-margin-top:\s*var\(--run-file-stick-below\)/);
-    assert.doesNotMatch(section[1]!, /background:\s*var\(--card\)/);
-    const hdr = chrome.match(/\.file-changes-header\s*\{([^}]+)\}/);
-    assert.ok(hdr?.[1], "missing .file-changes-header");
-    assert.match(hdr[1]!, /position:\s*sticky/);
-    assert.match(hdr[1]!, /top:\s*var\(--run-file-stick-below\)/);
-    assert.match(hdr[1]!, /background:\s*var\(--bg\)/);
-    assert.match(hdr[1]!, /z-index:\s*1/);
   });
 
   it("the retired turn-delimiter chip is gone from the stylesheet", () => {
