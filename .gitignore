@@ -41,3 +41,6 @@ apps/shell/src-tauri/resources/
 .spire/
 # Local ACP runtime journals (machine-specific paths)
 .grokforge-runtime/
+
+# Seeded design canvas (2.6MB, generated from docs/design/forge-next/*.dc.html)
+docs/design/forge-next/forge-redesign.html
