@@ -877,7 +877,7 @@ textarea:focus:not(:focus-visible) {
   flex: none;
   background: color-mix(in srgb, var(--muted) 45%, transparent);
 }
-.rail .dot.done {
+.rail .dot.idle {
   background: color-mix(in srgb, var(--muted) 45%, transparent);
 }
 .rail .dot.live {

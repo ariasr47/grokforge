@@ -253,6 +253,7 @@ describe("F9/Task 13 — AC-U4/AC-U14: the Home screen carries no banned token",
           installerWarning: SETTINGS_UNSIGNED_LINE,
           authLabel: "Grok · subscription",
           channel: "DEV",
+          isPackagedWindows: true,
         }}
         onFieldQuery={() => {}}
         onOpenNeedsYou={() => {}}

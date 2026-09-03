@@ -3219,6 +3219,7 @@ export function App() {
         : null,
       authLabel: railAuthLabel,
       channel: channelBadge(),
+      isPackagedWindows: isPackagedWindowsInstallerSession(),
     }),
     [buildInfo?.version, railAuthLabel],
   );
@@ -3466,7 +3467,7 @@ export function App() {
           setDiffQueue((q) => q.filter((d) => d.id !== id));
         }
       }
-      toast.push("Diff accepted", "success");
+      toast.push("File accepted", "success");
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err));
     }
@@ -3484,7 +3485,7 @@ export function App() {
           setDiffQueue((q) => q.filter((d) => d.id !== id));
         }
       }
-      toast.push("Diff rejected", "info");
+      toast.push("File rejected", "info");
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err));
     }
@@ -4854,26 +4855,20 @@ export function App() {
       {
         id: "shortcuts",
         label: "Keyboard shortcuts",
-        hint: "Ctrl+K L N · Y/N/S · A/R",
+        hint: "Ctrl+K L N · Y/N/S",
         run: () =>
           toast.push(
-            "Ctrl+K palette · Ctrl+L composer · Ctrl+N new · Y/N/S perms · A/R diffs · Esc close",
+            "Ctrl+K palette · Ctrl+L composer · Ctrl+N new · Y/N/S perms · esc close",
             "info",
           ),
       },
-      {
-        id: "jump-diff",
-        label: "Jump to diffs",
-        hint: diffQueue.length ? `${diffQueue.length} pending` : "none",
-        run: () =>
-          document.getElementById("diff-panel")?.scrollIntoView({ behavior: "smooth" }),
-      },
-      {
-        id: "jump-perm",
-        label: "Jump to permission",
-        run: () =>
-          document.getElementById("perm-card")?.scrollIntoView({ behavior: "smooth" }),
-      },
+      // W3-7: "Jump to diffs" (#diff-panel) and "Jump to permission"
+      // (#perm-card) used to live here. DiffPanel was deleted as dead code
+      // (Wave 2 DEAD-2) and PermissionCard was retired for Gate (25150d9) —
+      // neither id exists in the DOM any more, so both commands silently did
+      // nothing while still showing a live-looking pending count. Removed
+      // rather than retargeted: Changes/Review already have their own real
+      // entry points (the Review chip, Ctrl+Shift+R).
     ];
     for (const r of state?.recent ?? []) {
       acts.push({
@@ -5509,8 +5504,8 @@ export function App() {
                         previously paired Ctrl+N with "new chat", which is wrong. */}
                     <kbd>Ctrl+K</kbd> palette · <kbd>Ctrl+N</kbd> new session ·{" "}
                     <kbd>Ctrl+Shift+N</kbd> new chat · <kbd>Ctrl+L</kbd> composer ·{" "}
-                    <kbd>Y/N/S</kbd> permissions · <kbd>A/R</kbd> diffs ·{" "}
-                    <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline
+                    <kbd>Y/N/S</kbd> permissions ·{" "}
+                    <kbd>⏎</kbd> send · <kbd>⇧⏎</kbd> line, or queue while busy
                   </p>
                 </div>
                 <div className="field">

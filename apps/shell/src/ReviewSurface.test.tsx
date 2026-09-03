@@ -161,6 +161,20 @@ describe("ReviewSurface — file list and diff column", () => {
     assert.ok(screen.getByText(/turnCount: 3/));
   });
 
+  it("an auto-applied file (no permission gate) counts as accepted in the hunk sub-header, matching the header/dot/Commit button", () => {
+    // W3-5: the default test member settles as "applied" (Trusted
+    // workspace's ordinary case, no permission gate at all) — the sub-header
+    // used to require the narrower "accepted" literal and read "N accepted"
+    // as 0 while the header/Commit button already counted this file as
+    // accepted via isSettledForCommit. Both must now agree.
+    render(<ReviewSurface {...baseProps()} />);
+    assert.ok(screen.getByText("Commit 1 accepted file"));
+    assert.ok(screen.getByText(/1 hunk · 1 accepted/));
+    assert.equal(screen.queryByText(/hunks? · 0 accepted/) === null, true);
+    // The per-hunk badge (dbody) must agree too — same isSettledForCommit.
+    assert.ok(document.querySelector(".hunk.accepted"));
+  });
+
   it("clicking a different file row switches the diff column to that file", () => {
     render(
       <ReviewSurface
@@ -238,6 +252,18 @@ describe("ReviewSurface — file list and diff column", () => {
     fireEvent.click(undo);
     assert.equal(reverted.length, 1);
     assert.equal(reverted[0]!.editId, "e-1");
+  });
+
+  it("the file-list note claims only what Forge itself did, never git state it can't know", () => {
+    // W3-4: Grok can shell out to git (e.g. `git add`) during a run — Forge
+    // doesn't instrument that, so "nothing has touched git yet" is a claim
+    // Forge cannot back. What Forge CAN vouch for unconditionally is that it
+    // never runs git itself.
+    render(<ReviewSurface {...baseProps()} />);
+    assert.ok(
+      screen.getByText("Edits are on disk, so checks run against them. Forge doesn’t run git itself."),
+    );
+    assert.equal(screen.queryByText(/touched git/) === null, true);
   });
 });
 
@@ -399,11 +425,15 @@ describe("ReviewSurface — footer", () => {
     assert.deepEqual(calls, ["reject-all", "accept-all"]);
   });
 
-  it("shows the accept/reject footer summary line", () => {
+  it("shows the accept/reject footer summary line, scoped to files where recovery is actually available", () => {
+    // W3-4: recoveryAvailable is only true when the engine reports it
+    // (runChangeList.ts hardcodes false in six branches) — the default test
+    // member (recoveryAvailable: false) is exactly that common case, so an
+    // unqualified "Reject restores the copy" would already be false here.
     render(<ReviewSurface {...baseProps()} />);
     assert.ok(
       screen.getByText(
-        "Accept keeps a file as Grok wrote it. Reject restores the copy Forge kept before the run.",
+        "Accept keeps a file as Grok wrote it. Reject restores the copy Forge kept before the run, where available.",
       ),
     );
   });

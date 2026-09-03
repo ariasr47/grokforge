@@ -2,7 +2,12 @@ import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 
 const KEY = "grokforge.sessions.v2";
 const LEGACY_KEY = "grokforge.sessions.v1";
-const MAX_PER_WS = 20;
+/** W3-10: exported so callers that display a per-workspace session count
+ *  (Sidebar, HomeScreen) can tell "exactly N" from "N or more, older ones
+ *  already fell off the stored list" — createSession's .slice(0, MAX_PER_WS)
+ *  below silently drops anything past this cap, so a count that reads it
+ *  can never itself see the difference. */
+export const MAX_PER_WS = 20;
 
 export interface StoredMessage {
   id: string;

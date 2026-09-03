@@ -25,7 +25,11 @@ export function ContextRing({ usage }: { usage: UsageVoucher | null }) {
   // Warn off the rounded label, not the raw fraction: at 79.6% the label
   // already reads "80%", and a ring that stayed cyan would deny its own text.
   const amber = pctLabel >= Math.round(COMPACT_THRESHOLD * 100);
-  const title = `${pctLabel}% of context used · compacts at ${Math.round(COMPACT_THRESHOLD * 100)}%`;
+  // W3-10: "compacts at 80%" named a specific engine mechanism (compaction)
+  // that doesn't exist in apps/host or packages/grok-acp — 80% is Forge's
+  // own amber threshold (sanctioned exception, F7/Wave 1), not a promise
+  // about what the engine will do. State only the real, known percentage.
+  const title = `${pctLabel}% of context used`;
 
   return (
     <span className={`ring${amber ? " ring-amber" : ""}`} title={title}>

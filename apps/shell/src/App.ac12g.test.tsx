@@ -182,7 +182,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     // "Open a project" is gone; the Home screen's search field is the
     // stable signal that the ordinary (non-alarm) empty state is showing.
     assert.ok(
-      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+      await screen.findByPlaceholderText("Search sessions…"),
     );
     assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
 

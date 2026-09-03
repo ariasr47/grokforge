@@ -21,7 +21,7 @@ describe("ContextRing — house/guest rule: renders only real engine data", () =
     const ring = container.querySelector(".ring");
     assert.ok(ring, "expected a .ring element");
     assert.equal(ring!.textContent, "41%");
-    assert.equal(ring!.getAttribute("title"), "41% of context used · compacts at 80%");
+    assert.equal(ring!.getAttribute("title"), "41% of context used");
     const progress = container.querySelector("circle.ring-progress");
     assert.ok(progress, "expected the progress circle");
     assert.equal(progress!.getAttribute("stroke-dasharray"), "47.1");
@@ -31,7 +31,7 @@ describe("ContextRing — house/guest rule: renders only real engine data", () =
     assert.equal(ring!.classList.contains("ring-amber"), false);
   });
 
-  it("stays cyan just under the compaction threshold", () => {
+  it("stays cyan just under the 80% threshold", () => {
     const { container } = render(<ContextRing usage={{ promptTokens: 395_000, contextWindow: 500_000 }} />);
     const ring = container.querySelector(".ring");
     assert.equal(ring!.textContent, "79%");
@@ -48,13 +48,13 @@ describe("ContextRing — house/guest rule: renders only real engine data", () =
     assert.equal(container.querySelector("circle.ring-progress")!.getAttribute("stroke"), "var(--attention)");
   });
 
-  it("turns amber at exactly the 80% compaction threshold — the one place amber is not \"needs you\"", () => {
+  it("turns amber at exactly the 80% threshold — the one place amber is not \"needs you\" — without naming a compaction mechanism the engine never reported (W3-10)", () => {
     const { container } = render(<ContextRing usage={{ promptTokens: 400_000, contextWindow: 500_000 }} />);
     const ring = container.querySelector(".ring");
     assert.equal(ring!.textContent, "80%");
     assert.equal(ring!.classList.contains("ring-amber"), true);
     assert.equal(container.querySelector("circle.ring-progress")!.getAttribute("stroke"), "var(--attention)");
-    assert.equal(ring!.getAttribute("title"), "80% of context used · compacts at 80%");
+    assert.equal(ring!.getAttribute("title"), "80% of context used");
   });
 
   it("stays amber and keeps the honest (uncapped) percentage past 100% while the arc geometry clamps to a full circle", () => {

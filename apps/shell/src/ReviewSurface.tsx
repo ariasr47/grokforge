@@ -323,7 +323,7 @@ export function ReviewSurface({
               </button>
             );
           })}
-          <p className="fnote">Edits are on disk, so checks run against them. Nothing has touched git yet.</p>
+          <p className="fnote">Edits are on disk, so checks run against them. Forge doesn’t run git itself.</p>
         </div>
 
         <div className="diffcol">
@@ -333,7 +333,7 @@ export function ReviewSurface({
                 <span>{selectedMember.path}</span>
                 <span className="sub">
                   {hunks.length} hunk{hunks.length === 1 ? "" : "s"} ·{" "}
-                  {selectedMember.settlement === "accepted" ? hunks.length : 0} accepted
+                  {isSettledForCommit(selectedMember.settlement) ? hunks.length : 0} accepted
                 </span>
                 <span className="spacer" />
                 {queuedRequestId ? (
@@ -360,7 +360,12 @@ export function ReviewSurface({
               </div>
               <div className="dbody">
                 {hunks.map((hunk, hunkIndex) => {
-                  const accepted = selectedMember.settlement === "accepted";
+                  // W3-5: match the sub-header and the header/dot/Commit
+                  // button's own isSettledForCommit — an "applied" file (no
+                  // permission gate, e.g. auto-applied under Trusted
+                  // workspace) is just as settled as an "accepted" one
+                  // everywhere else this surface counts on "accepted".
+                  const accepted = isSettledForCommit(selectedMember.settlement);
                   return (
                     <div className={accepted ? "hunk accepted" : "hunk"} key={hunkIndex}>
                       <div className="hh">
@@ -539,7 +544,8 @@ export function ReviewSurface({
 
       <div className="foot">
         <span className="sum">
-          Accept keeps a file as Grok wrote it. Reject restores the copy Forge kept before the run.
+          Accept keeps a file as Grok wrote it. Reject restores the copy Forge kept before the run,
+          where available.
         </span>
         <span className="spacer" />
         <Button variant="ghost" onClick={onRejectAll}>

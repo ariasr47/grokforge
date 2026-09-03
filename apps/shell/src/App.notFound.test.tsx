@@ -64,7 +64,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     // Task 13 — "Chat with Grok" (the old ready-kind EmptyStates heading) is
     // gone; the Home screen renders instead.
     assert.ok(
-      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+      await screen.findByPlaceholderText("Search sessions…"),
     );
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
@@ -216,7 +216,7 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     // signal that Code's ordinary (non-alarm, non-welcome) empty state is
     // showing.
     assert.ok(
-      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+      await screen.findByPlaceholderText("Search sessions…"),
     );
     assert.equal(
       screen.queryByText("Forge didn't find your earlier conversations.") === null, true,
@@ -263,7 +263,7 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     // signal that Code's ordinary (non-alarm, non-welcome) empty state is
     // showing.
     assert.ok(
-      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+      await screen.findByPlaceholderText("Search sessions…"),
     );
     assert.equal(screen.queryByText("Welcome to Forge") === null, true);
     assert.equal(
@@ -313,7 +313,7 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     assert.equal(screen.queryByText("Welcome to Forge") === null, true);
     // Task 13 — "Code continuum" (the old ready-kind EmptyStates heading) is
     // gone; the Home screen renders instead, regardless of product mode.
-    assert.ok(screen.getByPlaceholderText("Open a folder, jump to a session, or ask Grok…"));
+    assert.ok(screen.getByPlaceholderText("Search sessions…"));
     assert.equal(screen.getAllByText("New session").length >= 1, true);
     assert.equal(screen.queryByText("New chat") === null, true);
   });

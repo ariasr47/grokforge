@@ -24,11 +24,21 @@ export const POLICY_CHIP_LABEL: Record<EffectivePolicyKind, string> = {
 /** The composer meta line's left-most fact. Plain descriptive copy, not a
  *  fabricated number or state — each sentence names what the active mode
  *  actually does, mirroring the fuller copy in PermissionPolicyControl /
- *  BypassPermissionsControl. */
+ *  BypassPermissionsControl.
+ *
+ *  W3-1: verified against the actual gate — packages/grok-acp/src/
+ *  authorization-broker.ts's AuthorizationBroker.authorize(). In "review"
+ *  mode, text_edit only auto-applies when mode === "trusted_workspace", and
+ *  shell only auto-applies for bypass or a matched trusted command class in
+ *  trusted_workspace — so review always falls through to `decision: "decision"`
+ *  (asks) for BOTH edits and shell, never auto-writing to disk. Independently
+ *  confirmed by TrustedCommandClassesControl.tsx's own shipped copy ("Review
+ *  still asks" / "it does not skip approvals while Policy is Review"). */
 export const POLICY_SENTENCE: Record<EffectivePolicyKind, string> = {
-  review: "Review writes edits to disk and asks before shell",
-  trusted_workspace: "Trusted workspace auto-applies edits and asks before shell",
-  bypass: "Bypass runs edits and shell without asking",
+  review: "Review asks before edits and shell",
+  trusted_workspace: "Trusted workspace auto-applies eligible edits and asks before shell",
+  bypass:
+    "Bypass runs edits and shell without asking — OS permissions and destructive-operation circuit breakers still apply",
 };
 
 /**

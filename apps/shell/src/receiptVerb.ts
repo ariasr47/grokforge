@@ -168,7 +168,11 @@ export function receiptVerb(record: ActivityRecord): Receipt {
       const code = parseExitCode(record.output);
       tail = code != null ? `exit ${code}` : record.error ? truncateTail(record.error) : "";
     } else if (tone === "ok") {
-      tail = "clean";
+      // W3-10: tone "ok" only means status !== "failed"/"rejected" — it is
+      // NOT itself a verified exit code. Read the real one, same as the
+      // fail branch above, rather than asserting "clean" from an inference.
+      const code = parseExitCode(record.output);
+      tail = code === 0 ? "clean" : code != null ? `exit ${code}` : "";
     } else if (tone === "muted" && record.error) {
       tail = truncateTail(record.error);
     }

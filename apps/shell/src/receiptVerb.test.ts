@@ -79,6 +79,32 @@ test("shell command clean: Ran, tail says clean without inventing a duration", (
   assert.equal(r.tail, "clean");
 });
 
+test("shell command succeeded with a non-zero exit code on record: tail reports the real code, not clean", () => {
+  const r = receiptVerb(
+    record({
+      name: "run_shell",
+      command: "npx eslint . --max-warnings 0",
+      status: "succeeded",
+      output: JSON.stringify({ exit_code: 1, stdout: "", stderr: "" }),
+    }),
+  );
+  assert.equal(r.tone, "ok");
+  assert.equal(r.tail, "exit 1");
+});
+
+test("W3-10: shell command succeeded with no exit code captured: tail is omitted, never guessed as clean", () => {
+  const r = receiptVerb(
+    record({
+      name: "run_shell",
+      command: "npx tsc -p tsconfig.json --noEmit",
+      status: "succeeded",
+      output: null,
+    }),
+  );
+  assert.equal(r.tone, "ok");
+  assert.equal(r.tail, "");
+});
+
 test("write with +/-: Edited, tail carries real added/removed counts from the diff", () => {
   const r = receiptVerb(
     record({

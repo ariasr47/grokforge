@@ -4,7 +4,6 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { Gate } from "./Gate";
 import {
   GATE_ALLOW,
-  GATE_ASK_ELSE,
   GATE_DENY,
   GATE_EDIT_COMMAND,
   GATE_TRUST_FOLDER,
@@ -267,7 +266,7 @@ test("plan tier: a decision failure shows the error and a Try again in place of 
 
 // —— Ask tier (cyan, recovery_confirmation) ——
 
-test("ask tier: numbered options, a recommended pick, and esc on Ask something else", () => {
+test("ask tier: numbered options, a recommended pick, and no dismiss affordance", () => {
   let chosen: number | null = null;
   render(
     <Gate
@@ -281,7 +280,6 @@ test("ask tier: numbered options, a recommended pick, and esc on Ask something e
       onChoose={(i) => {
         chosen = i;
       }}
-      onAskSomethingElse={() => {}}
     />,
   );
   const gate = screen.getByRole("region", { name: "Grok has a question" });
@@ -292,6 +290,10 @@ test("ask tier: numbered options, a recommended pick, and esc on Ask something e
   assert.equal(chosen, 0);
   const opt3 = within(gate).getByRole("button", { name: /Keep both, migrate later/ });
   assert.equal(within(opt3).getByText("3").tagName, "KBD");
-  const elseBtn = within(gate).getByRole("button", { name: GATE_ASK_ELSE });
-  assert.equal(within(elseBtn).getByText("esc").tagName, "KBD");
+  // W3-2: recovery_confirmation has exactly one real server action and no
+  // decline param (api.editRecovery) — an "esc" hint here would either lie
+  // about what Escape does (App.tsx has no per-gate recovery branch; it
+  // falls through to cancelling the whole run) or invent a capability the
+  // host doesn't have. No such kbd should ever render on this tier.
+  assert.equal(within(gate).queryByText("esc") === null, true);
 });

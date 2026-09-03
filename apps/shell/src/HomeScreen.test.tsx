@@ -25,6 +25,7 @@ function baseProps(overrides: Partial<HomeScreenProps> = {}): HomeScreenProps {
       installerWarning: null,
       authLabel: "Grok · subscription",
       channel: null,
+      isPackagedWindows: false,
     },
     onFieldQuery: () => undefined,
     onOpenNeedsYou: () => undefined,
@@ -170,6 +171,58 @@ test("Recent workspace row: sessions count, last title, branch, time-ago; click 
   assert.deepEqual(opened, [["C:\\Dev\\grokforge", "sess-9"]]);
 });
 
+// W3-10: sessions.ts stamps a session's branch once and never overwrites an
+// already-set value, so this chip is the branch as of the last session
+// opened here, not a live git read — the title says so rather than let the
+// chip pass as current state.
+test("Recent workspace row's branch chip says it's last-known, not live, in its title", () => {
+  render(
+    <HomeScreen
+      {...baseProps({
+        recentWorkspaces: [
+          {
+            path: "C:\\Dev\\grokforge",
+            name: "grokforge",
+            branch: "master",
+            sessionCount: 4,
+            lastSessionId: "sess-9",
+            lastTitle: "Installer SHA-256 in Settings finished",
+            updatedAt: Date.now(),
+          },
+        ],
+      })}
+    />,
+  );
+  const branchChip = screen.getByText("master");
+  assert.match(branchChip.getAttribute("title") ?? "", /not a live git read/);
+});
+
+// W3-10: the local store caps each workspace at MAX_PER_WS (20) sessions —
+// createSession's .slice silently drops the oldest once full, so a count
+// that reads exactly 20 cannot be told apart from "20 or more, some already
+// gone". A bare "20" would understate that; "20+" says what's actually known.
+test("Recent workspace row marks a saturated session count as N+, not a bare count that undersells it", () => {
+  render(
+    <HomeScreen
+      {...baseProps({
+        recentWorkspaces: [
+          {
+            path: "C:\\Dev\\grokforge",
+            name: "grokforge",
+            branch: "master",
+            sessionCount: 20,
+            lastSessionId: "sess-9",
+            lastTitle: "Installer SHA-256 in Settings finished",
+            updatedAt: Date.now(),
+          },
+        ],
+      })}
+    />,
+  );
+  const row = screen.getByRole("button", { name: /grokforge/ });
+  assert.match(row.textContent ?? "", /20\+ sessions · Installer SHA-256 in Settings finished/);
+});
+
 test("Recent workspace row omits branch when the workspace has none on record", () => {
   render(
     <HomeScreen
@@ -262,17 +315,37 @@ test("typing in the field reports the query to the caller", async () => {
   render(<HomeScreen {...baseProps({ onFieldQuery: (q) => queries.push(q) })} />);
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+    screen.getByPlaceholderText("Search sessions…"),
     "auth",
   );
   assert.deepEqual(queries, ["a", "au", "aut", "auth"]);
+});
+
+// W3-6: the field is wired to openPalette("sessions", text) only — sessions
+// mode can only select a session (CommandPalette.tsx), never open a folder
+// or send Grok a message. "Search sessions" is the palette's own established
+// name for that exact feature (INPUT_PLACEHOLDER.sessions in
+// CommandPalette.tsx). @ file and / command hints have meaning only in the
+// composer, so this field describes only what it does and drops them.
+test("field describes only what it does — no @ file / command hints that belong to the composer", () => {
+  render(<HomeScreen {...baseProps()} />);
+  assert.ok(screen.getByPlaceholderText("Search sessions…"));
+  assert.ok(screen.getByLabelText("Search sessions"));
+  assert.equal(screen.queryByText("file") === null, true);
+  assert.equal(screen.queryByText("command") === null, true);
 });
 
 test("footer: version + Windows, auth label, and channel badge only when non-prod", () => {
   const { rerender } = render(
     <HomeScreen
       {...baseProps({
-        footer: { version: "0.7.0", installerWarning: null, authLabel: "Grok · subscription", channel: null },
+        footer: {
+          version: "0.7.0",
+          installerWarning: null,
+          authLabel: "Grok · subscription",
+          channel: null,
+          isPackagedWindows: true,
+        },
       })}
     />,
   );
@@ -283,7 +356,13 @@ test("footer: version + Windows, auth label, and channel badge only when non-pro
   rerender(
     <HomeScreen
       {...baseProps({
-        footer: { version: "0.7.0", installerWarning: null, authLabel: "Grok · API key", channel: "DEV" },
+        footer: {
+          version: "0.7.0",
+          installerWarning: null,
+          authLabel: "Grok · API key",
+          channel: "DEV",
+          isPackagedWindows: true,
+        },
       })}
     />,
   );
@@ -291,11 +370,39 @@ test("footer: version + Windows, auth label, and channel badge only when non-pro
   assert.ok(screen.getByText("Grok · API key"));
 });
 
+// W3-10: "· Windows" used to be a bare string literal, asserted regardless
+// of the real environment. isPackagedWindowsInstallerSession() (Tauri +
+// user-agent) is the same real check the installer-honesty warning already
+// uses — when it says no, the footer omits the claim rather than fake it.
+test("footer: the Windows suffix is omitted, not hardcoded, when the session can't verify it's a packaged Windows build", () => {
+  render(
+    <HomeScreen
+      {...baseProps({
+        footer: {
+          version: "0.7.0",
+          installerWarning: null,
+          authLabel: "Grok · subscription",
+          channel: null,
+          isPackagedWindows: false,
+        },
+      })}
+    />,
+  );
+  assert.ok(screen.getByText("Forge 0.7.0"));
+  assert.equal(screen.queryByText(/Windows/) === null, true);
+});
+
 test("footer: installer honesty warning renders only when the caller says the build is unsigned", () => {
   const { rerender } = render(
     <HomeScreen
       {...baseProps({
-        footer: { version: "0.7.0", installerWarning: null, authLabel: "Grok · subscription", channel: null },
+        footer: {
+          version: "0.7.0",
+          installerWarning: null,
+          authLabel: "Grok · subscription",
+          channel: null,
+          isPackagedWindows: false,
+        },
       })}
     />,
   );
@@ -310,6 +417,7 @@ test("footer: installer honesty warning renders only when the caller says the bu
             "This Windows installer is not Authenticode-signed. Windows may show an unknown-publisher or SmartScreen warning.",
           authLabel: "Grok · subscription",
           channel: null,
+          isPackagedWindows: true,
         },
       })}
     />,

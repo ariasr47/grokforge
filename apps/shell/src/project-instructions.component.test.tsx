@@ -133,7 +133,7 @@ test("Code composer: Plan, Expert, Review chips beside the field in order; meta 
   assert.ok(plan < expert && expert < review);
 
   const meta = document.querySelector(".cmeta")?.textContent ?? "";
-  const policy = meta.indexOf("Review writes edits to disk and asks before shell");
+  const policy = meta.indexOf("Review asks before edits and shell");
   const instructions = meta.indexOf(PI_COMPOSER_LOADED_LABEL);
   assert.ok(policy >= 0 && instructions >= 0);
   assert.ok(policy < instructions);

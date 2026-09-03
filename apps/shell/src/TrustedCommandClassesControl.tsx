@@ -35,7 +35,7 @@ const COPY = {
   helper: "Applies only when Policy is Trusted workspace. Review still asks. Commands stay unsandboxed after they run.",
   trustedStatus: "List is active for this workspace under Trusted workspace.",
   reviewStatus: "List is saved; it does not skip approvals while Policy is Review.",
-  empty: "No Trusted command classes yet. Add ordinary verification classes (for example npm or cargo) so Trusted runs can skip the approval card for matches.",
+  empty: "No Trusted command classes yet. Add ordinary verification classes (for example npm or cargo) so Trusted runs can skip the gate for matches.",
   loadFailure: "Trusted command classes couldn’t be loaded. Matching shell will still ask until a valid list is saved.",
   saveError: "Couldn’t save Trusted command classes. The last confirmed list remains active.",
   midRun: "Couldn’t save Trusted command classes while a run is in progress. The last confirmed list remains active.",
@@ -160,7 +160,7 @@ export function TrustedCommandClassesControl({
           {emptyHappy && status === "confirmed" && (
             <p role="status">
               No Trusted command classes yet. Add ordinary verification classes (for example{" "}
-              <code>npm</code> or <code>cargo</code>) so Trusted runs can skip the approval card for
+              <code>npm</code> or <code>cargo</code>) so Trusted runs can skip the gate for
               matches.
             </p>
           )}

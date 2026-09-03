@@ -21,7 +21,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ChatSession } from "./sessions";
-import { chatListTitle, defaultSessionTitle, workspaceDisplayName } from "./sessions";
+import { MAX_PER_WS, chatListTitle, defaultSessionTitle, workspaceDisplayName } from "./sessions";
 import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 import { timeAgo } from "./timeAgo";
 import type { ProductMode } from "./api";
@@ -220,11 +220,17 @@ const CodeSessionRow = memo(function CodeSessionRow({
     );
   }
 
+  // W3-9: SessionStatus is only ever "idle" | "live" | "busy" (sessions.ts) —
+  // there is no "done"/finished-successfully state the engine reports for a
+  // session. The old fallthrough painted an absent/idle status as "done"
+  // while the title right below independently rendered the same value as
+  // "idle" — two different invented meanings for one unknown. Both now say
+  // the one real thing: idle.
   const dotClass = sess.needsYou
     ? "needs"
     : sess.status === "busy" || sess.status === "live"
       ? "live"
-      : "done";
+      : "idle";
 
   return (
     <div className={`session-row-wrap ${active ? "active" : ""}`}>
@@ -599,9 +605,21 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                       <Icon icon={ws.expanded ? ChevronDown : ChevronRight} size={12} />
                     </span>
                     <span>{ws.name || workspaceDisplayName(ws.path)}</span>
-                    <span className="br mono">{ws.branch || "no-git"}</span>
+                    {/* W3-3: git.ts's getGitBranch returns null on ANY failure
+                        (git missing, timeout, permission error, no HEAD, or
+                        genuinely not a repo) — "no-git" asserted a specific
+                        cause the host never reported. Omit like every sibling
+                        surface (AppTopbar, HomeScreen, CommandPalette) does. */}
+                    {ws.branch ? <span className="br mono">{ws.branch}</span> : null}
                     {anyLive && <span className="dot live" />}
-                    <span className="count">{ws.sessions.length}</span>
+                    {/* W3-10: the stored list itself is capped at MAX_PER_WS
+                        (createSession slices it on write) — at the cap, an
+                        older session already silently fell off the list, so
+                        "N" alone can't be told apart from "N or more". */}
+                    <span className="count">
+                      {ws.sessions.length}
+                      {ws.sessions.length >= MAX_PER_WS ? "+" : ""}
+                    </span>
                   </button>
                   {ws.expanded &&
                     ws.sessions.map((sess) => (

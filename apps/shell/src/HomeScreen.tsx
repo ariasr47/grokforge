@@ -33,6 +33,7 @@ import { FolderOpen, MessageSquarePlus, Plus, Search, ArrowUp } from "lucide-rea
 import { BrandMark } from "./BrandMark";
 import { Icon } from "./ui/Icon";
 import { timeAgo } from "./timeAgo";
+import { MAX_PER_WS } from "./sessions";
 
 export interface HomeNeedsYouItem {
   workspace: string;
@@ -72,6 +73,10 @@ export interface HomeFooterFacts {
   authLabel: string;
   /** channelBadge() — "DEV" / "TST", or null on prod. */
   channel: string | null;
+  /** W3-10: isPackagedWindowsInstallerSession() (installerHonesty.ts) — real
+   *  Tauri + user-agent check, not an assumption. The "· Windows" suffix
+   *  below is omitted, not hardcoded, when this session can't verify it. */
+  isPackagedWindows: boolean;
 }
 
 export interface HomeScreenProps {
@@ -216,8 +221,8 @@ export const HomeScreen = memo(function HomeScreen(props: HomeScreenProps) {
             setFieldValue(e.target.value);
             onFieldQuery(e.target.value);
           }}
-          placeholder="Open a folder, jump to a session, or ask Grok…"
-          aria-label="Open a folder, jump to a session, or ask Grok"
+          placeholder="Search sessions…"
+          aria-label="Search sessions"
         />
         <button
           type="button"
@@ -229,12 +234,14 @@ export const HomeScreen = memo(function HomeScreen(props: HomeScreenProps) {
         </button>
       </div>
 
+      {/* W3-6: @ file and / command hints lived here but only mean anything
+          in the composer — this field only searches sessions (onFieldQuery
+          → openPalette("sessions", …)). Dropped rather than left to promise
+          composer behavior this field doesn't have. */}
       <div className="home-hints">
         <span><kbd>Ctrl+O</kbd> open folder</span>
         <span><kbd>Ctrl+N</kbd> new session</span>
         <span><kbd>Ctrl+Shift+N</kbd> new chat</span>
-        <span><kbd>@</kbd> file</span>
-        <span><kbd>/</kbd> command</span>
       </div>
 
       <div className="home-grid">
@@ -306,10 +313,28 @@ export const HomeScreen = memo(function HomeScreen(props: HomeScreenProps) {
                   <span className="home-tx">
                     <span className="home-t">
                       {w.name}
-                      {w.branch && <span className="mono home-branch">{w.branch}</span>}
+                      {/* W3-10: sessions.ts only stamps a session's branch
+                          once and never overwrites an already-set value
+                          (ensureActiveSession/setWorkspaceBranchAll both
+                          check `!found.branch` first) — this is the branch
+                          as of the last session opened here, not a live git
+                          read. The title says so; the chip stays compact. */}
+                      {w.branch && (
+                        <span
+                          className="mono home-branch"
+                          title={`${w.branch} — as of the last session opened here, not a live git read`}
+                        >
+                          {w.branch}
+                        </span>
+                      )}
                     </span>
                     <span className="home-s">
-                      {w.sessionCount} session{w.sessionCount === 1 ? "" : "s"} · {w.lastTitle}
+                      {/* W3-10: the stored list is capped at MAX_PER_WS — at
+                          the cap an older session already silently fell off,
+                          so "N" alone can't be told apart from "N or more". */}
+                      {w.sessionCount}
+                      {w.sessionCount >= MAX_PER_WS ? "+" : ""} session
+                      {w.sessionCount === 1 ? "" : "s"} · {w.lastTitle}
                     </span>
                   </span>
                   <span className="home-when">{timeAgo(w.updatedAt)}</span>
@@ -378,7 +403,9 @@ export const HomeScreen = memo(function HomeScreen(props: HomeScreenProps) {
       </div>
 
       <div className="home-foot">
-        <span>{footer.version ? `Forge ${footer.version} · Windows` : "Forge · Windows"}</span>
+        <span>
+          {`Forge${footer.version ? ` ${footer.version}` : ""}${footer.isPackagedWindows ? " · Windows" : ""}`}
+        </span>
         {footer.installerWarning && <span className="home-warn">{footer.installerWarning}</span>}
         <span className="home-foot-spacer" />
         <span>{footer.authLabel}</span>

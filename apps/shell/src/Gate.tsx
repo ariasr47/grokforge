@@ -4,7 +4,6 @@ import { matchTrustedCommandClassId, trustedCommandClassLabel } from "./trustedC
 import { Button } from "./ui/Button";
 import {
   GATE_ALLOW,
-  GATE_ASK_ELSE,
   GATE_ASK_POLICY,
   GATE_ASK_TITLE,
   GATE_DENY,
@@ -69,7 +68,6 @@ export type GateProps =
       question: string;
       options: readonly GateAskOption[];
       onChoose: (index: number) => void;
-      onAskSomethingElse?: () => void;
     };
 
 const GATE_DOT_COLOR: Record<"needs" | "plan" | "ask", string> = {
@@ -224,14 +222,6 @@ function AskGate(props: Extract<GateProps, { tier: "ask" }>) {
           </button>
         ))}
       </div>
-      {props.onAskSomethingElse ? (
-        <div className="acts">
-          <Button variant="ghost" onClick={props.onAskSomethingElse}>
-            <span>{GATE_ASK_ELSE}</span>
-            <kbd aria-hidden="true">esc</kbd>
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -239,10 +229,13 @@ function AskGate(props: Extract<GateProps, { tier: "ask" }>) {
 /**
  * Three tiers, three colors. Amber (shell/write) asks for permission, violet
  * (plan) asks you to judge a plan, cyan (ask/recovery_confirmation) asks a
- * question. Replaces PermissionCard — the shell/write tiers are today's only
- * live callers (ActionDock); plan is folded in from the former .plan-dock;
- * ask exists for recovery_confirmation but is not wired into the dock yet
- * (that decision still renders inline in RunSurface).
+ * question. Replaces PermissionCard — all three tiers are live in ActionDock
+ * (shell/write, plan, and the recovery_confirmation ask). The ask tier
+ * offers no dismiss: recovery_confirmation has exactly one real server
+ * action (Recover), and Escape has no per-gate recovery branch (App.tsx
+ * falls through to cancelling the run), so a "dismiss" affordance here
+ * would either invent a capability the host doesn't have or mislabel what
+ * the key actually does — see ActionDock's own comment on activeRecovery.
  */
 export function Gate(props: GateProps): ReactNode {
   switch (props.tier) {

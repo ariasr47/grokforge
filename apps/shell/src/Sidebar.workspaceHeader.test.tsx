@@ -70,3 +70,54 @@ describe("Sidebar — workspace header selects the workspace", () => {
     assert.deepEqual(toggled, ["C:\\repo"]);
   });
 });
+
+// W3-3: git.ts's getGitBranch returns null on ANY failure (git missing, a 5s
+// timeout, a permission error, an empty repo with no HEAD, or genuinely not
+// a repo) — the header used to turn that null into the specific assertion
+// "no-git", which is true for only one of those causes. Every sibling
+// surface (AppTopbar, HomeScreen, CommandPalette) omits instead.
+describe("Sidebar — workspace header branch", () => {
+  it("a real branch renders", () => {
+    const { container } = renderSidebar([workspace({ branch: "master" })]);
+    const branchEl = container.querySelector(".wshead .br");
+    assert.ok(branchEl, "expected a .br branch element");
+    assert.equal(branchEl!.textContent, "master");
+  });
+
+  it("a null branch is omitted, never rendered as 'no-git'", () => {
+    const { container } = renderSidebar([workspace({ branch: null })]);
+    assert.equal(container.querySelector(".wshead .br") === null, true);
+    assert.equal(/no-git/.test(container.querySelector(".wshead")!.textContent ?? ""), false);
+  });
+});
+
+// W3-10: the store caps each workspace at 20 (MAX_PER_WS) stored sessions —
+// at the cap, an older one has already silently fallen off, so a bare "20"
+// can't be told apart from "20 or more".
+describe("Sidebar — workspace header session count", () => {
+  it("a count under the cap renders as a bare number", () => {
+    const sessions = Array.from({ length: 5 }, (_, i) => ({
+      id: `s${i}`,
+      workspace: "C:\\repo",
+      title: `Session ${i}`,
+      messages: [],
+      updatedAt: Date.now(),
+      open: true,
+    }));
+    const { container } = renderSidebar([workspace({ sessions })]);
+    assert.equal(container.querySelector(".wshead .count")!.textContent, "5");
+  });
+
+  it("a count at the MAX_PER_WS cap renders as N+, not a bare count that undersells it", () => {
+    const sessions = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`,
+      workspace: "C:\\repo",
+      title: `Session ${i}`,
+      messages: [],
+      updatedAt: Date.now(),
+      open: true,
+    }));
+    const { container } = renderSidebar([workspace({ sessions })]);
+    assert.equal(container.querySelector(".wshead .count")!.textContent, "20+");
+  });
+});
