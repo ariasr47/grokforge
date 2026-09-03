@@ -5,6 +5,7 @@ import {
   deriveGitReviewMember,
   gitReviewRowChrome,
   bodyRestored,
+  draftCommitMessageFromGitReview,
   projectRunGitReviewList,
 } from "./runGitReviewList";
 import { isVerifyCommand } from "./runVerifyList";
@@ -243,4 +244,53 @@ test("sibling exclusion: verify commands and edits stay out; git stays out of ve
   assert.equal(isVerifyCommand("git status"), false);
   assert.equal(isVerifyCommand("npm test"), true);
   assert.equal(classifyGitReviewCommand("npm test"), null);
+});
+
+test("draftCommitMessageFromGitReview: real gh pr view evidence, never invented", () => {
+  const pr = deriveGitReviewMember(
+    act({ activityId: "a-pr", invocationId: "i-pr", command: "gh pr view", output: "title:\tRename turns -> turnCount\n" }),
+    "pr",
+  );
+  const draft = draftCommitMessageFromGitReview([pr], new Map([["a-pr", "title:\tRename turns -> turnCount\n"]]));
+  assert.deepEqual(draft, { subject: "Rename turns -> turnCount", body: "" });
+
+  // No pr-kind member at all → null, not a fabricated message.
+  const status = deriveGitReviewMember(
+    act({ activityId: "a-status", invocationId: "i-status", command: "git status", output: "clean" }),
+    "status",
+  );
+  assert.equal(
+    draftCommitMessageFromGitReview([status], new Map([["a-status", "clean"]])),
+    null,
+  );
+
+  // pr member present but its evidence is unavailable (null output) → null.
+  const prNoOutput = deriveGitReviewMember(
+    act({ activityId: "a-pr2", invocationId: "i-pr2", command: "gh pr view", output: null }),
+    "pr",
+  );
+  assert.equal(draftCommitMessageFromGitReview([prNoOutput], new Map()), null);
+
+  // pr member with real output that has no "title:" line → null, never guessed.
+  const prNoTitle = deriveGitReviewMember(
+    act({ activityId: "a-pr3", invocationId: "i-pr3", command: "gh pr view", output: "state:\tOPEN\n" }),
+    "pr",
+  );
+  assert.equal(
+    draftCommitMessageFromGitReview([prNoTitle], new Map([["a-pr3", "state:\tOPEN\n"]])),
+    null,
+  );
+
+  // pr member still pending (not executed) → null even if a title line exists in a stale/racy output.
+  const prPending = deriveGitReviewMember(
+    act({
+      activityId: "a-pr4", invocationId: "i-pr4", command: "gh pr view",
+      lifecycle: "pending", execution: null, status: "running", output: null,
+    }),
+    "pr",
+  );
+  assert.equal(
+    draftCommitMessageFromGitReview([prPending], new Map([["a-pr4", "title:\tShould not be used\n"]])),
+    null,
+  );
 });

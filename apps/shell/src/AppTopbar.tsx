@@ -37,7 +37,7 @@ export function AppTopbar({
   wsOk: boolean;
   engineRetryAllowed: boolean;
   onRetryHost: () => void;
-  view: "chat" | "settings";
+  view: "chat" | "settings" | "review";
   onToggleSettings: () => void;
   onOpenPalette: () => void;
 }) {

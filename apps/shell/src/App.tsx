@@ -107,15 +107,13 @@ import {
 } from "./ChangesDock";
 import { ThreadHeader } from "./ThreadHeader";
 import { projectRunVerifyList } from "./runVerifyList";
-import { projectRunGitReviewList } from "./runGitReviewList";
+import { projectRunGitReviewList, draftCommitMessageFromGitReview } from "./runGitReviewList";
+import { ReviewSurface } from "./ReviewSurface";
+import { inEditable } from "./inEditable";
 
 /** Legacy per-run phase label — superseded by derivedLivePhase's phaseCopy for
  *  display, but still threaded through several socket-event handlers below. */
 type RunPhase = "waiting_model" | "reasoning" | "tools" | "writing" | "done" | null;
-
-// TODO(Task 10): the Review surface doesn't exist yet — a stable module-level
-// no-op keeps ChangesDock's memo() from re-rendering on every App render.
-function noopOpenReview() {}
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
   cancelledDoneShouldPaint,
@@ -249,7 +247,7 @@ import { BypassPermissionsControl } from "./BypassPermissionsControl";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
 
-type View = "chat" | "settings";
+type View = "chat" | "settings" | "review";
 type BootPhase = "booting" | "ready" | "error";
 
 interface OAuthPending {
@@ -2057,7 +2055,26 @@ export function App() {
     s.state === "loading" || s.state === "error" || (s.state === "ready" && (s.members?.length ?? 0) > 0);
   const changesAvailable =
     changesNonEmpty(changesDockFiles) || changesNonEmpty(changesDockVerify) || changesNonEmpty(changesDockGit);
-  const changesDockVisible = changesAvailable && changesOpen;
+  // Review surface owns this same footprint (main + the changes panel) while
+  // open, so the dock steps aside rather than the two competing for space.
+  const changesDockVisible = changesAvailable && changesOpen && view !== "review";
+  // Review surface's raw verify output block and its git-evidence commit
+  // draft both read real activity.output — the same field paintEnvelopeActivity
+  // already formats for the transcript's tool bubbles, just keyed for lookup.
+  const changesActivityOutputById = useMemo(() => {
+    const map = new Map<string, unknown>();
+    for (const run of sessionRuns) {
+      for (const a of Object.values(run.activities)) map.set(a.activityId, a.output);
+    }
+    return map;
+  }, [sessionRuns]);
+  const reviewCommitDraft = useMemo(
+    () =>
+      changesDockGit.state === "ready"
+        ? draftCommitMessageFromGitReview(changesDockGit.members, changesActivityOutputById)
+        : null,
+    [changesDockGit, changesActivityOutputById],
+  );
   const recoverChangeMember = useCallback(async (member: ChangesDockMember) => {
     const run = runProjectionRef.current.runsById[member.runId];
     if (!run) return;
@@ -3169,6 +3186,15 @@ export function App() {
     [recoverChangeMember],
   );
   const onChangesDockCollapse = useCallback(() => setChangesOpen(false), [setChangesOpen]);
+  const onOpenReview = useCallback(() => setView("review"), []);
+  // DiffPanel's inline queue is gone, but its "settle everything currently
+  // queued" shape is exactly what the Review surface's footer/Ctrl+⇧A need.
+  const acceptAllDiffs = useCallback(() => {
+    for (const d of diffQueue) void acceptDiff(d.id);
+  }, [diffQueue, acceptDiff]);
+  const rejectAllDiffs = useCallback(() => {
+    for (const d of diffQueue) void rejectDiff(d.id);
+  }, [diffQueue, rejectDiff]);
 
 
   const openToolPath = useCallback(async (path: string) => {
@@ -3655,6 +3681,16 @@ export function App() {
     await sendText(draft);
   }, [draft, sendText]);
 
+  // The Review surface's line comments, "Ask Grok to change this file…"
+  // field, and "Commit accepted files" all go through this same composer
+  // send path — never a separate api call, and never git run by Forge itself.
+  const onReviewSendToGrok = useCallback(
+    (text: string) => {
+      void sendText(text);
+    },
+    [sendText],
+  );
+
   const settlePlan = useCallback(
     async (action: "accept" | "keep_planning") => {
       if (!pendingPlanDecision) return;
@@ -3967,15 +4003,6 @@ export function App() {
 
   // Global keys: palette, composer, sessions, permissions, diffs
   useEffect(() => {
-    const inEditable = (t: EventTarget | null) => {
-      const el = t as HTMLElement | null;
-      return Boolean(
-        el &&
-          (el.tagName === "INPUT" ||
-            el.tagName === "TEXTAREA" ||
-            el.isContentEditable),
-      );
-    };
     const unbind = tinykeys(window, {
       "$mod+KeyK": (e) => {
         if (!e.ctrlKey && !e.metaKey) return;
@@ -3997,6 +4024,12 @@ export function App() {
         if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         void browseFolder();
+      },
+      "$mod+Shift+KeyR": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        if (!changesAvailable) return;
+        e.preventDefault();
+        setView((v) => (v === "review" ? "chat" : "review"));
       },
       Escape: (e) => {
         if (peek) {
@@ -4072,6 +4105,10 @@ export function App() {
       },
       KeyA: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
+        // The Review surface owns A/R itself (accept/reject the selected
+        // file) while it's open — see ReviewSurface.tsx's own keydown
+        // handler — so this legacy inline-queue shortcut steps aside here.
+        if (view === "review") return;
         if (diffQueue.length === 0) return;
         if (inEditable(e.target)) return;
         e.preventDefault();
@@ -4079,6 +4116,7 @@ export function App() {
       },
       KeyR: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (view === "review") return;
         if (diffQueue.length === 0) return;
         if (inEditable(e.target)) return;
         e.preventDefault();
@@ -4103,6 +4141,8 @@ export function App() {
     pendingPlanDecision,
     planSettling,
     settlePlan,
+    view,
+    changesAvailable,
   ]);
 
   const saveSettings = async () => {
@@ -5064,6 +5104,25 @@ export function App() {
                 </div>
               </div>
             </div>
+          ) : view === "review" ? (
+            <ReviewSurface
+              threadTitle={activeHome?.title ?? ""}
+              files={changesDockFiles}
+              verify={changesDockVerify}
+              git={changesDockGit}
+              diffQueue={diffQueue}
+              verifyOutputByActivityId={changesActivityOutputById}
+              commitMessageDraft={reviewCommitDraft}
+              onAccept={onChangesDockAccept}
+              onReject={onChangesDockReject}
+              onAcceptAll={acceptAllDiffs}
+              onRejectAll={rejectAllDiffs}
+              onRevert={onChangesDockRevert}
+              revertPendingEditId={changeRevertPendingEditId}
+              recoveryFlash={changeRecoveryFlash}
+              onBack={() => setView("chat")}
+              onSendToGrok={onReviewSendToGrok}
+            />
           ) : (
             <div className="panel-chat">
               <ThreadHeader
@@ -5482,8 +5541,7 @@ export function App() {
                 revertPendingEditId={changeRevertPendingEditId}
                 recoveryFlash={changeRecoveryFlash}
                 onCollapse={onChangesDockCollapse}
-                // TODO(Task 10): wire to the Review surface once it exists.
-                onOpenReview={noopOpenReview}
+                onOpenReview={onOpenReview}
               />
             </Panel>
           </>

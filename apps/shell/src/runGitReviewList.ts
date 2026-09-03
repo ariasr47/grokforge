@@ -166,6 +166,35 @@ export function gitReviewRowChrome(
   return "ok";
 }
 
+/**
+ * Review surface commit-message draft — sourced only from real git review
+ * evidence, never invented. `gh pr view`'s plain-text output always leads
+ * with a `title:` line (the one stable, well-known field in that format);
+ * everything else in that output (state/author/labels/body markdown/footer)
+ * is not attempted here because this codebase has no established, tested
+ * shape for it, and guessing at section boundaries would risk surfacing
+ * text that isn't actually the intended message. Absent that line — no PR
+ * evidence, output not captured, or the line isn't present — returns null
+ * so the caller shows an empty field with a placeholder instead of
+ * fabricating a message.
+ */
+export function draftCommitMessageFromGitReview(
+  members: RunGitReviewMember[],
+  outputByActivityId: Map<string, unknown>,
+): { subject: string; body: string } | null {
+  for (const member of members) {
+    if (member.kind !== "pr") continue;
+    if (member.execution !== "executed" || member.evidenceUnavailable) continue;
+    const raw = outputByActivityId.get(member.activityId);
+    if (typeof raw !== "string") continue;
+    const match = /^title:\s*(.+)$/im.exec(raw);
+    const subject = match?.[1]?.trim();
+    if (!subject) continue;
+    return { subject, body: "" };
+  }
+  return null;
+}
+
 export function projectRunGitReviewList(
   run: RunProjectionRun,
   catchUp: CatchUpSignal,
