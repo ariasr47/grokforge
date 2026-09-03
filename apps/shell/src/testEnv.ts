@@ -4,6 +4,7 @@
 // Safe to load ahead of plain unit test files too (only defines globals that
 // are missing / configurable; never throws on Node's own getter-only globals).
 import { spawn } from "node:child_process";
+import util from "node:util";
 import { JSDOM } from "jsdom";
 import React from "react";
 
@@ -196,3 +197,120 @@ rtl.configure({
     return error;
   },
 });
+
+// Third guard in the same family as DEBUG_PRINT_LIMIT and getElementError
+// above. node:assert builds its failure message with
+// `util.inspect(value, { depth: 1000, getters: true, customInspect: false })`,
+// and React attaches the whole fiber tree to every mounted DOM node as
+// enumerable `__reactFiber$*` / `__reactProps$*` own properties. Inspecting one
+// element off the App tree therefore walks the entire component tree, every
+// hook's state and every prop, so this suite's house idiom for "that node is
+// gone" — `assert.equal(screen.queryByRole(...), null)`, ~580 call sites — did
+// not merely fail when it failed: it allocated past the RSS watchdog above and
+// the process was taskkilled with no output, no stack and no assertion text.
+// `customInspect: false` rules out a `util.inspect.custom` hook on jsdom's Node
+// prototype, so guard the assert entry points instead. When either side is a
+// DOM node, compare by identity — which is what strict equality already means
+// for nodes, and the only meaningful comparison for the deep variants here —
+// and describe the operands compactly. Assertions with no DOM node on either
+// side are delegated to the original untouched.
+{
+  type DomLike = { nodeType: number; nodeName: string };
+
+  const isDomNode = (value: unknown): value is DomLike =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as DomLike).nodeType === "number" &&
+    typeof (value as DomLike).nodeName === "string";
+
+  const NAMED_ATTRS = ["id", "name", "type", "role", "aria-label", "data-testid", "class"];
+
+  const describeDomNode = (node: DomLike): string => {
+    if (node.nodeType === 9) return "#document";
+    if (node.nodeType === 11) return "#document-fragment";
+    if (node.nodeType === 3 || node.nodeType === 8) {
+      const data = String((node as { data?: unknown }).data ?? "").replace(/\s+/g, " ").trim();
+      return `${node.nodeName} ${JSON.stringify(data.slice(0, 40))}`;
+    }
+    const el = node as unknown as Element;
+    const tag = node.nodeName.toLowerCase();
+    const attrs = NAMED_ATTRS.map((name) => {
+      const value = typeof el.getAttribute === "function" ? el.getAttribute(name) : null;
+      return value ? ` ${name}="${value.slice(0, 60)}"` : "";
+    }).join("");
+    const text = (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+    return text ? `<${tag}${attrs}>${text}</${tag}>` : `<${tag}${attrs}>`;
+  };
+
+  const describeOperand = (value: unknown): string => {
+    if (isDomNode(value)) return describeDomNode(value);
+    try {
+      return util
+        .inspect(value, { depth: 2, breakLength: Infinity, maxStringLength: 120 })
+        .slice(0, 200);
+    } catch {
+      return String(value);
+    }
+  };
+
+  // [method, failure headline, whether the method wants the operands identical]
+  const GUARDED: Array<[string, string, boolean]> = [
+    ["equal", "Expected values to be strictly equal:", true],
+    ["strictEqual", "Expected values to be strictly equal:", true],
+    ["deepEqual", "Expected the same DOM node:", true],
+    ["deepStrictEqual", "Expected the same DOM node:", true],
+    ["notEqual", "Expected values to be strictly unequal:", false],
+    ["notStrictEqual", "Expected values to be strictly unequal:", false],
+    ["notDeepEqual", "Expected different DOM nodes:", false],
+    ["notDeepStrictEqual", "Expected different DOM nodes:", false],
+  ];
+
+  const nodeAssert = await import("node:assert");
+  const { AssertionError } = nodeAssert;
+  // `import assert from "node:assert/strict"` resolves to this same object.
+  const strict = nodeAssert.strict as unknown as Record<string, unknown>;
+
+  // Capture every original before installing any wrapper: in strict mode
+  // `equal === strictEqual` and `deepEqual === deepStrictEqual`, so reading
+  // them lazily would let one wrapper wrap another.
+  const originals = new Map(
+    GUARDED.map(([name]) => [name, strict[name] as (...args: unknown[]) => unknown]),
+  );
+
+  for (const [name, headline, wantIdentical] of GUARDED) {
+    const original = originals.get(name);
+    if (typeof original !== "function") continue;
+    const guarded = function guarded(this: unknown, ...args: unknown[]): unknown {
+      const [actual, expected] = args;
+      // Forward the caller's arity untouched: Node rejects an explicitly
+      // passed `undefined` message, so `fn(a, b, undefined)` is not the same
+      // call as `fn(a, b)`. Anything without a DOM node, and any call too
+      // short to compare, keeps node:assert's own behaviour and messages.
+      if (args.length < 2 || (!isDomNode(actual) && !isDomNode(expected))) {
+        return original.apply(this, args);
+      }
+      const message = args[2];
+      if (Object.is(actual, expected) === wantIdentical) return undefined;
+      if (message instanceof Error) throw message;
+      throw new AssertionError({
+        message:
+          typeof message === "string" && message
+            ? message
+            : `${headline}\n\n+ actual   ${describeOperand(actual)}\n- expected ${describeOperand(expected)}\n`,
+        actual: describeOperand(actual),
+        expected: describeOperand(expected),
+        operator: name,
+        stackStartFn: guarded,
+      });
+    };
+    try {
+      Object.defineProperty(strict, name, {
+        value: guarded,
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      console.error(`[testEnv] could not guard assert.${name} against DOM-node inspection`);
+    }
+  }
+}

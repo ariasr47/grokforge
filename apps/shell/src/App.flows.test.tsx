@@ -479,8 +479,9 @@ describe("a queued draft survives a guard bail-out instead of being dropped (rev
     // Doing the termination here, before going offline, keeps this test to
     // Finding 1c's own concern (a guard bail-out must not drop the draft)
     // without also depending on how a live run-terminal WS envelope
-    // interacts with the engine-unreachable band — a separate, pre-existing
-    // interaction outside this fix's scope (flagged separately).
+    // interacts with the engine-unreachable band. That crossing — a terminal
+    // arriving *while* hostOk is false — is covered on its own in
+    // App.offlineTerminal.test.tsx.
     const bTitle = [...document.querySelectorAll(".session-title")].find(
       (el) => el.textContent === "Session B",
     );
