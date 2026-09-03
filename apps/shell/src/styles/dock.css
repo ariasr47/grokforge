@@ -385,11 +385,12 @@
   height: 40px;
   box-sizing: border-box;
   padding: 0 8px 0 14px;
-  border-radius: var(--r-float);
+  border-radius: var(--r-card);
   border: 1px solid var(--stroke);
   background: var(--surface-float);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+  /* Lighter than the palette: a toast sits close to the surface. */
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   font-size: 13px;
   color: var(--text);
 }

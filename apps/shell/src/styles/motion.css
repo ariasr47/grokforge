@@ -50,16 +50,16 @@
   background: var(--border-strong);
 }
 
+/* A hover hint is not a modal: near-opaque and flat, per the design's .tip.
+   The blur and deep shadow belong to the palette-weight surfaces only. */
 .ui-tooltip {
   max-width: 240px;
-  padding: 6px 8px;
-  border-radius: var(--r-float);
-  background: var(--surface-float);
-  backdrop-filter: blur(20px);
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(22, 25, 35, 0.98);
   border: 1px solid var(--stroke);
   color: var(--text);
   font-size: var(--text-xs);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
   z-index: 200;
   pointer-events: none;
 }
