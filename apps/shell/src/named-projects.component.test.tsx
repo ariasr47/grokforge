@@ -169,7 +169,15 @@ test("Code with a pinned workspace shows the gradient New session CTA, not Open 
   // Folder opening moves off the sidebar entirely once a workspace is
   // pinned (command palette / Ctrl+O instead) — no compact icon button.
   assert.equal(screen.queryByRole("button", { name: "Open folder…" }) === null, true);
-  assert.equal(document.querySelector(".open-folder-btn-compact"), null);
+  // DEAD-4: the class-based check here used to look for
+  // ".open-folder-btn-compact", which exists nowhere — it could never fail.
+  // Cast a wider net so a differently-classed compact/icon-only variant
+  // would still be caught: nothing in the rendered sidebar may claim to
+  // open a folder, under any name.
+  const openFolderIsh = screen.queryAllByRole("button").find((b) =>
+    /open folder/i.test(b.getAttribute("aria-label") || b.getAttribute("title") || b.textContent || ""),
+  );
+  assert.equal(openFolderIsh === undefined, true);
 
   const newSession = screen.getByRole("button", { name: "New session" });
   assert.ok(newSession.className.includes("cta"));

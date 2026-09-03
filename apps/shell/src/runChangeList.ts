@@ -1,6 +1,15 @@
-import type { PendingDiff } from "./DiffPanel";
 import type { ActivityRecord, DecisionRequest, MutationKind, RunProjectionRun } from "./runReducer";
 export type { MutationKind };
+
+// DEAD-2: home for PendingDiff — DiffPanel.tsx (the component this queue was
+// originally built for) was orphaned once the Changes dock replaced it and
+// has been deleted; ChangesDock/ReviewSurface/App.tsx read this same queue.
+export interface PendingDiff {
+  id: string;
+  path: string;
+  diff: string;
+  runId?: string;
+}
 
 export interface PermissionReq {
   id: string;

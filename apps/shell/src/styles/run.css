@@ -189,11 +189,6 @@
   flex-wrap: wrap;
 }
 
-/* Legacy single-card hooks (if any remain) */
-.tool-card {
-  align-self: stretch;
-}
-
 .msg.system .who {
   color: var(--whisper);
 }
@@ -299,67 +294,6 @@
   border-color: rgba(255, 160, 100, 0.4);
   color: #ffb080;
 }
-/* —— Diff panel extras —— */
-.diff-queue {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-.diff-queue button {
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  color: var(--muted);
-  border-radius: 8px;
-  padding: 6px 10px;
-  min-height: 28px;
-  font-size: 11px;
-  font-family: var(--mono);
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.diff-queue button.active {
-  color: var(--accent);
-  border-color: var(--border-strong);
-}
-.diff-path {
-  padding: 6px 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-.diff-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 120px;
-  max-height: 36vh;
-  overflow: auto;
-}
-.diff-col {
-  margin: 0;
-  padding: 10px 12px;
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow: auto;
-}
-.diff-col.before {
-  border-right: 1px solid var(--border);
-  background: rgba(255, 122, 144, 0.04);
-}
-.diff-col.after {
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
-}
-.diff-line.minus {
-  color: #ff9aab;
-}
-.diff-line.plus {
-  color: #8cf0c8;
-}
 .btn.active-toggle {
   border-color: var(--border-strong);
   color: var(--accent);
@@ -426,11 +360,36 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
+/* A11Y-4: the mention option itself — was a nested <button>, now the option
+   row's own primary click target (see .at-row above). Same look, no
+   :focus-visible state since this never takes real DOM focus (the textarea
+   does; arrow keys move aria-activedescendant instead). */
+.at-menu [role="option"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.at-menu [role="option"]:hover,
+.at-menu [role="option"].is-active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
 
 /* —— Overview strip —— */
 .overview-strip {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   flex-shrink: 0;
   gap: 10px 14px;
   padding: 6px 14px;
@@ -455,6 +414,9 @@
 }
 .overview-strip .ov-files {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-sm);
   margin: 0;
   padding: 0;
   border: none;
@@ -462,12 +424,6 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-}
-
-/* —— Sessions —— */
-.session-list button.session-active {
-  border-color: var(--border-strong) !important;
-  background: color-mix(in srgb, var(--accent) 6%, transparent) !important;
 }
 
 /* —— Empty cards —— */
@@ -545,14 +501,6 @@ textarea:focus:not(:focus-visible) {
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.015);
 }
-.tree-sidebar {
-  flex: 1;
-  min-height: 0;
-  border-right: none;
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-}
 .open-folder-btn {
   width: 100%;
 }
@@ -566,33 +514,6 @@ textarea:focus:not(:focus-visible) {
   font-size: 12px;
   color: var(--muted);
   line-height: 1.45;
-}
-.session {
-  margin: 4px 0 4px 6px;
-  border-left: 1px solid var(--border);
-  padding-left: 6px;
-}
-.session-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 14px 1fr;
-  gap: 6px;
-  align-items: start;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text);
-  border-radius: 10px;
-  padding: 8px;
-  cursor: pointer;
-  text-align: left;
-}
-.session-row:hover {
-  background: var(--bg3);
-  border-color: var(--border);
-}
-.session-row.active {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 .dot {
   width: 8px;
@@ -619,32 +540,6 @@ textarea:focus:not(:focus-visible) {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.session-sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  align-items: center;
-}
-.branch {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ok, #7ee0a8);
-  background: rgba(126, 224, 168, 0.08);
-  border: 1px solid rgba(126, 224, 168, 0.25);
-  border-radius: 6px;
-  padding: 2px 6px;
-}
-.branch::before {
-  content: "⎇";
-  opacity: 0.8;
-}
-.top-branch {
-  vertical-align: middle;
-}
 .badge {
   font-family: var(--mono);
   font-size: 9px;
@@ -662,28 +557,6 @@ textarea:focus:not(:focus-visible) {
   border: none;
   background: none;
 }
-.subagents {
-  margin: 2px 0 6px 18px;
-  border-left: 1px dashed color-mix(in srgb, var(--accent2) 35%, transparent);
-  padding-left: 6px;
-}
-.subagent {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 12px 1fr;
-  gap: 6px;
-  align-items: start;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  border-radius: 8px;
-  padding: 6px 8px;
-  cursor: pointer;
-  text-align: left;
-}
-.subagent:hover {
-  background: color-mix(in srgb, var(--accent2) 8%, transparent);
-}
 .sub-ico {
   width: 8px;
   height: 8px;
@@ -699,24 +572,6 @@ textarea:focus:not(:focus-visible) {
   /* Violet = thought and plan, not amber (F7) — amber stays reserved for
      "needs you". */
   background: var(--accent2);
-}
-.sub-name {
-  font-size: 11px;
-  font-weight: 500;
-  color: #d4d8e4;
-}
-.sub-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 3px;
-}
-.sub-role {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--accent2);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 /* —— Code sessions rail: one level deep + Needs-you (canvas values) —— */
 .rail {
@@ -837,6 +692,9 @@ textarea:focus:not(:focus-visible) {
   gap: 4px;
 }
 .rail .label .act {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-sm);
   letter-spacing: 0;
   text-transform: none;
   font-weight: 400;

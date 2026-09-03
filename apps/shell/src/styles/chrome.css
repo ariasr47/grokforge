@@ -247,10 +247,6 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Not `.ws .branch` — a bare `.branch` already exists in run.css (colored
-   pill + a "⎇" ::before glyph, for sidebar session rows) and a descendant
-   override would still inherit its padding/border/background/::before. A
-   dedicated class sidesteps that collision entirely. */
 .ws-branch {
   font-family: var(--mono);
   font-size: 11.5px;
@@ -563,43 +559,6 @@ html:not([data-motion="calm"]) .engine .dot.live {
   opacity: 0.85;
 }
 
-.recent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.recent-list button {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text);
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.recent-list button:hover {
-  background: var(--bg3);
-  border-color: var(--border);
-}
-
-.recent-list .path {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  font-family: var(--mono);
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .main-panel {
   height: 100%;
   min-height: 0;
@@ -714,7 +673,6 @@ html:not([data-motion="calm"]) .overview-popover {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  --run-file-stick-below: var(--run-prompt-stick-below);
 }
 /* —— Spine thread anatomy: one continuous rail behind the whole Code
    thread (every run), with one node per turn. .stream is the per-
@@ -792,7 +750,9 @@ html:not([data-motion="calm"]) .node--amber {
 }
 .run-content details { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; }
 .activity-diff-toggle.btn.ghost {
-  min-height: 0;
+  /* A11Y-1: 28px floor (var(--h-sm)) for the hit area; padding/font stay
+     tiny so it still reads as a compact inline text link. */
+  min-height: var(--h-sm);
   padding: 2px 4px;
   border: none;
   border-radius: 0;
@@ -1409,23 +1369,6 @@ html[data-density="compact"] .hooks-row {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent) 14%, var(--card));
 }
-.plan-dock {
-  display: grid;
-  gap: 8px;
-  margin: 8px 12px 12px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent3) 35%, var(--border));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent3) 8%, var(--card));
-}
-.plan-dock-title {
-  font-size: 13px;
-}
-.plan-dock-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .plan-dock-settling,
 .plan-dock-error {
   margin: 0;
@@ -1535,7 +1478,6 @@ html[data-density="compact"] .hooks-row {
 }
 .policy-control { display:grid; gap:10px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--card); }
 .policy-heading { display:flex; justify-content:space-between; gap:8px; align-items:center; }
-.policy-radios { display:grid; gap:8px; }
 .policy-option { display:grid; grid-template-columns:auto 1fr; gap:4px 8px; padding:8px; }
 .policy-option[data-selected],
 .policy-option:has(input:checked) { border: 1px solid var(--border-strong); border-radius: 10px; }
@@ -1561,9 +1503,7 @@ html[data-density="compact"] .hooks-row {
 .trusted-classes-control .class-remove { color:var(--danger); min-height:0; padding:2px 8px; }
 .trusted-classes-catalog { border:0; margin:0; padding:0; min-inline-size:0; }
 .activity-command { margin:8px 0 0; }
-.activity-command code,
-.tool-list-auto { font-family:var(--mono); }
-.tool-list-auto { margin:4px 12px 0; }
+.activity-command code { font-family:var(--mono); }
 
 .transcript {
   --run-prompt-stick-below: 88px;
@@ -1641,7 +1581,9 @@ html[data-density="compact"] .hooks-row {
   text-overflow: unset;
 }
 .you-more {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-sm);
   margin: 4px 0 0;
   padding: 0;
   border: none;
@@ -1943,6 +1885,9 @@ html[data-density="compact"] .hooks-row {
   font-weight: 500;
 }
 .home-act {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-sm);
   margin: -6px -8px -6px auto;
   padding: 6px 8px;
   border: none;
@@ -2627,36 +2572,6 @@ html:not([data-motion="calm"]) .menu {
   overflow: auto;
 }
 
-.diff-pane {
-  border-bottom: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.35);
-  max-height: 40vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.diff-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  font-family: var(--mono);
-}
-
-.diff-body {
-  margin: 0;
-  padding: 12px 14px;
-  overflow: auto;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.45;
-  color: #9fb0c8;
-  white-space: pre;
-}
-
 .sidebar .field input {
   width: 100%;
   border: 1px solid var(--border);
@@ -3072,8 +2987,7 @@ a {
   max-height: 320px;
   overflow: auto;
 }
-.palette-option,
-.palette-list button {
+.palette-option {
   width: 100%;
   height: 36px;
   box-sizing: border-box;
@@ -3090,10 +3004,11 @@ a {
   font-size: 13px;
   cursor: pointer;
 }
-.palette-option[data-focused],
+/* A11Y-4: the option row is a plain div (no nested <button> — an option must
+   not have an interactive descendant), so its selected/hover chrome hangs
+   off data-selected and :hover directly instead of a button's .active class. */
 .palette-option[data-selected],
-.palette-list button.active,
-.palette-list button:hover {
+.palette-option:hover {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .palette-label {
@@ -3348,7 +3263,12 @@ a {
   background: rgba(92, 225, 255, 0.08);
   outline: none;
 }
-.at-menu [role="option"] {
+/* A11Y-4: this used to lay out an [role="option"] wrapper's two buttons
+   (the mention + the optional Pin to pack) side by side. The option is now
+   the primary click target itself (no nested button), so this layout moved
+   one level out to .at-row, the plain wrapper that still holds the option
+   next to Pin to pack. */
+.at-row {
   display: flex;
   align-items: center;
   gap: 6px;

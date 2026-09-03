@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from "react";
+import { memo, useId, useState, type ReactNode } from "react";
 import { Button } from "./ui/Button";
 import type { RichBlock, RichDocument, RichTone } from "./richUi";
 
@@ -65,7 +65,7 @@ const Carousel = memo(function Carousel({
           >
             ←
           </Button>
-          <span className="rich-carousel-dots" aria-hidden>
+          <span className="rich-carousel-dots">
             {block.items.map((_, di) => (
               <button
                 key={di}
@@ -222,24 +222,51 @@ const Tabs = memo(function Tabs({
   block: Extract<RichBlock, { type: "tabs" }>;
 }) {
   const [i, setI] = useState(0);
-  const tab = block.tabs[Math.min(i, block.tabs.length - 1)]!;
+  const activeIndex = Math.min(i, block.tabs.length - 1);
+  const tab = block.tabs[activeIndex]!;
+  // A11Y-4: useId scopes these ids per instance — a chat turn can render
+  // more than one tabs block, and ids must not collide across them.
+  const uid = useId();
+  const tabId = (idx: number) => `${uid}-rt-tab-${idx}`;
+  const panelId = (idx: number) => `${uid}-rt-panel-${idx}`;
   return (
     <div className="rich-tabs">
-      <div className="rich-tabs-bar" role="tablist">
+      <div
+        className="rich-tabs-bar"
+        role="tablist"
+        onKeyDown={(e) => {
+          // Roving tabindex + arrow keys, automatic activation (same
+          // activation the existing click already does).
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const dir = e.key === "ArrowRight" ? 1 : -1;
+          const next = (activeIndex + dir + block.tabs.length) % block.tabs.length;
+          setI(next);
+          document.getElementById(tabId(next))?.focus();
+        }}
+      >
         {block.tabs.map((t, ti) => (
           <button
             key={ti}
             type="button"
+            id={tabId(ti)}
             role="tab"
-            aria-selected={ti === i}
-            className={`rich-tab${ti === i ? " active" : ""}`}
+            aria-selected={ti === activeIndex}
+            aria-controls={panelId(ti)}
+            tabIndex={ti === activeIndex ? 0 : -1}
+            className={`rich-tab${ti === activeIndex ? " active" : ""}`}
             onClick={() => setI(ti)}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <div className="rich-tab-panel" role="tabpanel">
+      <div
+        className="rich-tab-panel"
+        role="tabpanel"
+        id={panelId(activeIndex)}
+        aria-labelledby={tabId(activeIndex)}
+      >
         {tab.body}
       </div>
     </div>

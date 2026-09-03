@@ -41,6 +41,9 @@ export const EffortControl = memo(function EffortControl({
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
   const showFallback = Boolean(applied && applied !== value);
 
   useEffect(() => {
@@ -59,11 +62,26 @@ export const EffortControl = memo(function EffortControl({
     };
   }, [open]);
 
+  // A11Y-3: focus the menu on open; return focus to the trigger on close —
+  // but only when focus fell out to <body> (an outside click, or picking a
+  // level, already sent it somewhere real / is about to reclaim it below).
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      menuRef.current?.focus({ preventScroll: true });
+    } else if (!open && wasOpenRef.current) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        triggerRef.current?.focus({ preventScroll: true });
+      }
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
   const triggerLabel = LABELS[showFallback ? (applied as EffortLevel) : value];
 
   return (
     <div className="effort-control" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="chip effort-trigger"
         disabled={disabled}
@@ -76,7 +94,7 @@ export const EffortControl = memo(function EffortControl({
         <Icon icon={ChevronDown} size={11} className="chip-ch" />
       </button>
       {open ? (
-        <div className="menu effort-menu" role="menu" aria-label="Effort">
+        <div className="menu effort-menu" role="menu" aria-label="Effort" ref={menuRef} tabIndex={-1}>
           {LEVELS.map((level) => (
             <button
               key={level}

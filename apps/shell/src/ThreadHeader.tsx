@@ -73,6 +73,9 @@ export function ThreadHeader({
 }: ThreadHeaderProps) {
   const [overviewOpen, setOverviewOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const overviewTriggerRef = useRef<HTMLButtonElement>(null);
+  const overviewPanelRef = useRef<HTMLDivElement>(null);
+  const wasOverviewOpenRef = useRef(false);
 
   useEffect(() => {
     if (!overviewOpen) return;
@@ -88,6 +91,20 @@ export function ThreadHeader({
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("mousedown", onPointerDown);
     };
+  }, [overviewOpen]);
+
+  // A11Y-3: the popover opened without moving focus in, and closed without
+  // restoring it. Only reclaim focus on close if it fell out to <body> — an
+  // outside click already sent it somewhere real; don't fight that.
+  useEffect(() => {
+    if (overviewOpen && !wasOverviewOpenRef.current) {
+      overviewPanelRef.current?.focus({ preventScroll: true });
+    } else if (!overviewOpen && wasOverviewOpenRef.current) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        overviewTriggerRef.current?.focus({ preventScroll: true });
+      }
+    }
+    wasOverviewOpenRef.current = overviewOpen;
   }, [overviewOpen]);
 
   const meta = [model, effortLabel, elapsedMinutes != null ? `${elapsedMinutes} min` : null]
@@ -118,6 +135,7 @@ export function ThreadHeader({
         </Button>
       ) : null}
       <Button
+        ref={overviewTriggerRef}
         variant="ghost"
         className="icon-only"
         title="Overview"
@@ -153,7 +171,13 @@ export function ThreadHeader({
         </Chip>
       ) : null}
       {overviewOpen ? (
-        <div className="overview-popover" role="dialog" aria-label="Run overview">
+        <div
+          className="overview-popover"
+          role="dialog"
+          aria-label="Run overview"
+          ref={overviewPanelRef}
+          tabIndex={-1}
+        >
           {overview}
         </div>
       ) : null}

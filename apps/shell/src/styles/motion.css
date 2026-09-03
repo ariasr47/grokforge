@@ -239,8 +239,7 @@
   .btn:hover:not(:disabled),
   .composer > .btn.primary:hover:not(:disabled),
   .rich-choice:hover,
-  .rich-card:hover,
-  .sample-chip:hover {
+  .rich-card:hover {
     transform: none;
   }
 }

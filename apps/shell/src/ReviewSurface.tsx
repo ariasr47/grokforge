@@ -4,7 +4,7 @@ import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { inEditable } from "./inEditable";
 import { countDiffLines, splitDiffHunks, type DiffHunk } from "./diffUtil";
-import type { PendingDiff } from "./DiffPanel";
+import type { PendingDiff } from "./runChangeList";
 import {
   FILES_EMPTY,
   FILE_CHANGES_LOADING,
@@ -140,6 +140,21 @@ export function ReviewSurface({
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
   const [activeComment, setActiveComment] = useState<ActiveComment | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
+  // A11Y-3: the line-comment editor autofocuses its textarea on open (the
+  // `autoFocus` prop below) but neither Send nor Discard returned focus to
+  // the line that opened it — closing dropped focus to <body>. Captured on
+  // click (below) and restored here on the active->null transition.
+  const activeLineTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const prevActiveCommentRef = useRef<ActiveComment | null>(null);
+  useEffect(() => {
+    if (!activeComment && prevActiveCommentRef.current) {
+      const trigger = activeLineTriggerRef.current;
+      if (trigger?.focus && (!document.activeElement || document.activeElement === document.body)) {
+        trigger.focus({ preventScroll: true });
+      }
+    }
+    prevActiveCommentRef.current = activeComment;
+  }, [activeComment]);
   const [askFileDraft, setAskFileDraft] = useState("");
   const [commitDraft, setCommitDraft] = useState(() =>
     commitMessageDraft ? [commitMessageDraft.subject, commitMessageDraft.body].filter(Boolean).join("\n\n") : "",
@@ -364,7 +379,9 @@ export function ReviewSurface({
                             <button
                               type="button"
                               className={line.kind === "context" ? "ln" : `ln ${line.kind}`}
-                              onClick={() => {
+                              aria-label={`Comment on line ${line.no}`}
+                              onClick={(e) => {
+                                if (!isActiveLine) activeLineTriggerRef.current = e.currentTarget;
                                 setActiveComment(
                                   isActiveLine ? null : { hunkIndex, lineNo: line.no },
                                 );

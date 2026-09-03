@@ -13,6 +13,17 @@ html[data-theme="light"] {
   --accent3: #b87512;
   --danger: #c23b55;
   --glow: 0 0 40px rgba(10, 140, 175, 0.08);
+  /* F2: the redesign's surface/stroke tokens (tokens.css:32-36) were only
+     ever defined on :root, so every floating panel built on --surface-float
+     rendered near-black with dark --text on top. Mirror the --bg2/--bg3/
+     --border relationship this theme already established, and give the
+     floating layer a near-opaque light backdrop so .menu, .skills-palette,
+     .overview-popover and .at-menu read correctly. */
+  --surface-1: rgba(0, 0, 0, 0.03);
+  --surface-2: rgba(0, 0, 0, 0.05);
+  --surface-float: rgba(248, 250, 253, 0.96);
+  --stroke: rgba(0, 0, 0, 0.08);
+  --stroke-live: color-mix(in srgb, var(--accent) 35%, transparent);
   color-scheme: light;
 }
 html[data-theme="light"] body {
@@ -26,8 +37,7 @@ html[data-theme="light"] .composer-wrap {
   background: rgba(255, 255, 255, 0.82);
 }
 html[data-theme="light"] .sidebar,
-html[data-theme="light"] .sidebar-stack,
-html[data-theme="light"] .tree-sidebar {
+html[data-theme="light"] .sidebar-stack {
   background: rgba(255, 255, 255, 0.72);
   border-right-color: var(--border);
 }
@@ -164,9 +174,6 @@ html[data-theme="light"] .transcript-offline {
 }
 
 /* Compact density: shrink dock chrome */
-html[data-density="compact"] .action-dock-label {
-  padding-top: 4px;
-}
 html[data-density="compact"] .run-footer {
   padding: 2px 12px;
   font-size: 10px;
@@ -178,11 +185,6 @@ html[data-density="compact"] .run-footer {
   flex-direction: column;
   min-height: 0;
   height: 100%;
-}
-.side-body {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
 }
 .side-shell.mode-chat .session-title {
   font-size: 13px;
@@ -206,7 +208,11 @@ html[data-density="compact"] .run-footer {
   backdrop-filter: blur(12px);
 }
 .mode-seg {
-  border: none;
+  /* A11Y-1: border is transparent (not none) so .active's real border
+     doesn't change the box size — without this, the inactive segments'
+     hit target was smaller than the active one. min-height is the 28px
+     floor regardless of font metrics. */
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -214,6 +220,7 @@ html[data-density="compact"] .run-footer {
   padding: 6px 14px;
   border-radius: 999px;
   cursor: pointer;
+  min-height: var(--h-sm);
 }
 .mode-seg {
   position: relative;
@@ -251,52 +258,6 @@ html[data-density="compact"] .run-footer {
   gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
-}
-.effort-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-family: var(--mono);
-}
-.effort-chips {
-  display: inline-flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.effort-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  font-family: var(--mono);
-  padding: 6px 10px;
-  min-height: 32px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-.effort-chip.active {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-/* Active state must not be colour-only (SPEC §4): a small filled mark. */
-.effort-chip-mark {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  display: inline-block;
-}
-.effort-fallback {
-  font-size: 10px;
-  color: var(--accent3);
-  font-family: var(--mono);
 }
 .plan-arm {
   display: flex;
@@ -354,12 +315,6 @@ html[data-density="compact"] .run-footer {
 .plan-arm-error {
   color: var(--accent3);
 }
-.composer-footer {
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
 .project-instructions-status {
   display: inline-flex;
   align-items: center;
@@ -460,16 +415,14 @@ html[data-density="compact"] .run-footer {
 /* —— Rich UI blocks (allowlisted, not raw HTML) —— */
 /* Decision orbs: soft lift on hover (Aeon) */
 .rich-choice,
-.rich-card,
-.sample-chip {
+.rich-card {
   transition:
     transform 0.35s ease,
     border-color 0.25s ease,
     box-shadow 0.25s ease;
 }
 .rich-choice:hover,
-.rich-card:hover,
-.sample-chip:hover {
+.rich-card:hover {
   transform: translateY(-2px) scale(1.02);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 15%, transparent);
@@ -486,14 +439,6 @@ html[data-density="compact"] .run-footer {
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text);
-}
-.rich-pending {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px dashed var(--border);
-  color: var(--muted);
-  font-size: 12px;
-  font-family: var(--mono);
 }
 .rich-callout {
   border-radius: 12px;
@@ -576,16 +521,29 @@ html[data-density="compact"] .run-footer {
   flex: 1;
   justify-content: center;
 }
+/* A11Y-1: the click target is 28px (var(--h-sm)) but the visual dot stays
+   8px — an ::before keeps the original weight while the button itself
+   grows to a comfortable, centered hit area. */
 .rich-dot {
-  width: 8px;
-  height: 8px;
+  width: var(--h-sm);
+  height: var(--h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   border: none;
   padding: 0;
-  background: rgba(255, 255, 255, 0.15);
+  background: none;
   cursor: pointer;
 }
-.rich-dot.active {
+.rich-dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+}
+.rich-dot.active::before {
   background: var(--accent);
   box-shadow: var(--glow);
 }
@@ -735,6 +693,9 @@ html[data-density="compact"] .run-footer {
   margin-bottom: 8px;
 }
 .rich-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-sm);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
@@ -1107,8 +1068,6 @@ h2,
   text-transform: uppercase;
 }
 .chip,
-.effort-label,
-.effort-chip,
 .msg .role,
 .sidebar h2,
 .field label,
@@ -1276,25 +1235,6 @@ h2,
 .mode-seg.active {
   transform: scale(1.02);
 }
-.effort-chip {
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-.effort-chip:hover:not(:disabled):not(.active) {
-  border-color: color-mix(in srgb, var(--accent2) 35%, transparent);
-  color: var(--text);
-}
-.effort-chip.active {
-  transform: scale(1.04);
-}
-.effort-chip:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
 /* Chips pulse presence when online */
 .chip.api {
   transition: box-shadow var(--dur) var(--ease-out);
@@ -1340,17 +1280,14 @@ h2,
     0 0 48px color-mix(in srgb, var(--accent) 8%, transparent),
     0 0 64px color-mix(in srgb, var(--accent2) 6%, transparent);
 }
-.palette-option,
-.palette-list button {
+.palette-option {
   transition:
     background var(--dur-fast) var(--ease-out),
     transform var(--dur-fast) var(--ease-out);
   border-radius: 12px;
 }
-.palette-option[data-focused],
 .palette-option[data-selected],
-.palette-list button.active,
-.palette-list button:hover {
+.palette-option:hover {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 12%, transparent),
@@ -1358,8 +1295,7 @@ h2,
   );
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
 }
-.palette-option[data-selected],
-.palette-list button.active {
+.palette-option[data-selected] {
   transform: translateX(2px);
 }
 
@@ -1407,25 +1343,6 @@ h2,
   background-clip: text;
   color: transparent;
 }
-.sample-chip {
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  background: rgba(8, 12, 20, 0.55);
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  padding: 8px 12px;
-  text-align: left;
-  color: var(--text-secondary);
-}
-.sample-chip:hover {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-.sample-chip:active {
-  transform: scale(0.98);
-}
-
 .boot-screen {
   background: var(--void);
 }
@@ -1441,51 +1358,6 @@ h2,
   border-right-color: color-mix(in srgb, var(--accent) 10%, transparent);
   backdrop-filter: blur(12px);
 }
-.recent-list button,
-.session-row,
-.tree-row {
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-.recent-list button:hover,
-.session-row:hover,
-.tree-row:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 15%, transparent);
-}
-.recent-list button:active,
-.session-row:active {
-  transform: scale(0.99);
-}
-
-/* Diff / dock */
-.diff-pane {
-  border-radius: var(--radius-md);
-  border-color: color-mix(in srgb, var(--accent) 16%, transparent);
-  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
-}
-/* Dock stays amber = attention gravity (not plasma chrome) */
-.action-dock {
-  border-top: 1px solid rgba(240, 180, 90, 0.35);
-  background: linear-gradient(
-    180deg,
-    rgba(240, 180, 90, 0.1),
-    rgba(8, 12, 20, 0.92)
-  );
-  box-shadow: 0 -8px 32px rgba(240, 180, 90, 0.08);
-  backdrop-filter: blur(16px);
-  transform: translateZ(0);
-}
-.action-dock-label {
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  color: var(--accent3);
-  font-weight: var(--weight-semibold);
-}
-
 /* Rich blocks as orbs */
 .rich-callout,
 .rich-card,
@@ -1589,14 +1461,6 @@ html[data-theme="light"] .toast {
   border-color: var(--border-strong);
   color: var(--text);
   box-shadow: 0 12px 40px rgba(16, 20, 28, 0.12);
-}
-html[data-theme="light"] .action-dock {
-  background: linear-gradient(
-    180deg,
-    rgba(184, 117, 18, 0.1),
-    rgba(255, 255, 255, 0.92)
-  );
-  box-shadow: 0 -8px 24px rgba(16, 20, 28, 0.08);
 }
 html[data-theme="light"] .peek-body {
   color: var(--text);

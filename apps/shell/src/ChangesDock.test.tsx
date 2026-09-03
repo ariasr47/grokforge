@@ -8,7 +8,7 @@ import {
   type ChangesDockMember,
   type ChangesDockVerifyState,
 } from "./ChangesDock";
-import type { PendingDiff } from "./DiffPanel";
+import type { PendingDiff } from "./runChangeList";
 import type { RunGitReviewMember } from "./runGitReviewList";
 import type { RunVerifyMember } from "./runVerifyList";
 

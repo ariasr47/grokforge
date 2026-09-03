@@ -207,8 +207,10 @@
 }
 .hunk .ln {
   display: flex;
+  align-items: center;
   gap: 14px;
   width: 100%;
+  min-height: var(--h-sm);
   padding: 0 12px;
   border: 0;
   background: transparent;

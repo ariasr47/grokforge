@@ -9,7 +9,7 @@ import {
   type ReviewSurfaceProps,
 } from "./ReviewSurface";
 import type { ChangesDockFilesState, ChangesDockGitState, ChangesDockMember, ChangesDockVerifyState } from "./ChangesDock";
-import type { PendingDiff } from "./DiffPanel";
+import type { PendingDiff } from "./runChangeList";
 import { splitDiffHunks } from "./diffUtil";
 
 afterEach(() => cleanup());

@@ -97,7 +97,6 @@ import {
   formatToolInput,
   formatToolOutput,
 } from "./toolFormat";
-import { type PendingDiff } from "./DiffPanel";
 import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
 import {
   ChangesDock,
@@ -230,6 +229,7 @@ import {
   projectRunChangeList,
   railEvidenceFromRun,
   settledRailIdentities,
+  type PendingDiff,
   type PermissionReq,
 } from "./runChangeList";
 import {
@@ -4491,8 +4491,17 @@ export function App() {
           closeArtifact();
           return;
         }
+        // A11Y-3: the review view had no Escape path at all — this falls
+        // through to "cancel the run" below otherwise. Leaving review is far
+        // less destructive than a cancel, so it goes before that fallback
+        // (same tier as closing the artifact panel above).
+        if (view === "review") {
+          e.preventDefault();
+          setView("chat");
+          return;
+        }
         // Composer's "Stop esc" hint, lowest priority — only once no gate,
-        // palette, peek, or open artifact wants Escape first.
+        // palette, peek, open artifact, or review view wants Escape first.
         if (busy) {
           e.preventDefault();
           requestCancel();

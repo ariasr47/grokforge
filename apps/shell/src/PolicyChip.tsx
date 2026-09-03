@@ -51,6 +51,9 @@ export function PolicyChip({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -68,9 +71,24 @@ export function PolicyChip({
     };
   }, [open]);
 
+  // A11Y-3: focus the menu on open; return focus to the trigger on close —
+  // but only when focus fell out to <body> (an outside click already sent
+  // it somewhere real, so don't fight that).
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      menuRef.current?.focus({ preventScroll: true });
+    } else if (!open && wasOpenRef.current) {
+      if (!document.activeElement || document.activeElement === document.body) {
+        triggerRef.current?.focus({ preventScroll: true });
+      }
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
   return (
     <div className="policy-chip-wrap" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="chip policy-trigger"
         disabled={disabled}
@@ -84,7 +102,7 @@ export function PolicyChip({
         <Icon icon={ChevronDown} size={11} className="chip-ch" />
       </button>
       {open ? (
-        <div className="menu policy-menu" role="dialog" aria-label="Permission policy">
+        <div className="menu policy-menu" role="dialog" aria-label="Permission policy" ref={menuRef} tabIndex={-1}>
           {content}
         </div>
       ) : null}

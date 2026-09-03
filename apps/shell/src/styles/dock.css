@@ -10,12 +10,6 @@
   gap: 10px;
   padding: 10px 12px;
 }
-.action-dock .diff-pane {
-  border-bottom: none;
-  max-height: none;
-  background: transparent;
-}
-
 /* —— Gate —— three tiers, three colors. Amber (shell/write) asks for
    permission, violet (plan) asks you to judge a plan, cyan (ask) asks a
    question. Rises from the composer edge when Grok needs you. */
@@ -187,79 +181,6 @@
   color: var(--muted);
 }
 
-.diff-collapse {
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 0 4px 0 0;
-  white-space: nowrap;
-}
-.diff-path {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-  flex-wrap: wrap;
-}
-.diff-file {
-  color: var(--text);
-  font-weight: 600;
-}
-.diff-fullpath {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.diff-keys {
-  color: var(--accent3);
-  font-size: 10px;
-}
-.diff-body.unified {
-  white-space: normal;
-}
-.diff-line {
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre;
-  padding: 0 4px;
-}
-.diff-line.plus {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: #9ee9f8;
-}
-.diff-line.minus {
-  background: rgba(255, 122, 144, 0.08);
-  /* GATE Z round 3 sibling sweep: same hardcoded-pink defect as
-     .boot-msg.error — themed token instead. */
-  color: var(--danger);
-}
-.diff-line.hunk {
-  color: var(--accent2);
-}
-.diff-line.meta {
-  color: var(--muted);
-}
-.diff-line .ln {
-  display: inline-block;
-  width: 36px;
-  margin-right: 8px;
-  color: var(--muted);
-  opacity: 0.7;
-  user-select: none;
-}
-.diff-header {
-  flex-wrap: wrap;
-}
-
 /* —— Composer affordances —— */
 .composer-wrap.drag-over {
   outline: 1px dashed var(--accent);
@@ -325,35 +246,6 @@
   font-size: 12px;
   color: var(--text);
 }
-.session-time {
-  font-size: 10px;
-  color: var(--muted);
-  opacity: 0.85;
-}
-
-/* —— Sample prompts —— */
-.sample-prompts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-  text-align: left;
-}
-.sample-chip {
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: 12px;
-  padding: 10px 12px;
-  color: var(--text);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.sample-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-
 /* —— Toasts —— */
 .toast-stack {
   position: fixed;

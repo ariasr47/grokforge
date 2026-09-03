@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -213,9 +214,16 @@ export function ComposerPane({
 }) {
   useLayoutEffect(() => {
     if (!atSuggestions.length) return;
-    const el = document.querySelector(".at-menu button.is-active");
+    const el = document.querySelector('.at-menu [role="option"].is-active');
     if (el instanceof HTMLElement) el.scrollIntoView({ block: "nearest" });
   }, [atActiveIndex, atSuggestions]);
+
+  // A11Y-4: the textarea keeps real focus while arrow keys move a virtual
+  // "active" suggestion (atMenuKeyAction below) — aria-activedescendant is
+  // how that reaches assistive tech. Ids only matter while the menu shows.
+  const atUid = useId();
+  const atMenuId = `${atUid}-at-menu`;
+  const atOptionId = (i: number) => `${atUid}-at-opt-${i}`;
 
   const [grown, setGrown] = useState(() => draft.includes("\n"));
   const baseHeightRef = useRef<number | null>(null);
@@ -246,21 +254,32 @@ export function ComposerPane({
       onDrop={onDrop}
     >
       {atSuggestions.length > 0 ? (
-        <div className="at-menu" role="listbox" aria-label="File mentions">
+        <div
+          className="at-menu"
+          role="listbox"
+          id={atMenuId}
+          aria-label="File mentions"
+        >
           {atSuggestions.map((f, i) => (
-            <div
-              key={f}
-              role="option"
-              aria-selected={i === atActiveIndex}
-              tabIndex={-1}
-            >
-              <button
-                type="button"
+            // A11Y-4: role="option" sits on the row's own primary click
+            // target now, not a wrapper around it — an option must not have
+            // an interactive descendant. "Pin to pack" is a genuinely
+            // separate action, so it stays a real, independent <button>
+            // beside the option rather than nested inside it. Keyboard
+            // selection stays on the textarea (onKeyDown + activedescendant
+            // below); this onClick is mouse-only by design.
+            <div key={f} className="at-row">
+              {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
+              <div
+                id={atOptionId(i)}
+                role="option"
+                aria-selected={i === atActiveIndex}
+                tabIndex={-1}
                 className={i === atActiveIndex ? "is-active" : undefined}
                 onClick={() => onInsertAt(f)}
               >
                 @{f}
-              </button>
+              </div>
               {onPinToPack && productMode === "chat" ? (
                 <button
                   type="button"
@@ -298,6 +317,16 @@ export function ComposerPane({
             onComposerKeyDown(e);
           }}
           aria-label="Message to agent"
+          // role="combobox" isn't valid on a multi-line textarea (biome's
+          // useAriaPropsSupportedByRole agrees) — aria-controls/
+          // activedescendant/autocomplete stay on the implicit textbox
+          // role below, which is what actually reaches assistive tech for
+          // "arrow-key movement is silent" (A11Y-4's core complaint here).
+          aria-controls={atSuggestions.length > 0 ? atMenuId : undefined}
+          aria-activedescendant={
+            atSuggestions.length > 0 ? atOptionId(atActiveIndex) : undefined
+          }
+          aria-autocomplete={atSuggestions.length > 0 ? "list" : undefined}
           placeholder={composerPlaceholder({
             lockedReason,
             sendDisabledReason,

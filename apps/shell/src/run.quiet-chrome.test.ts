@@ -297,9 +297,19 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(btn, /white-space:\s*nowrap/);
     assert.match(btn, /min-width:\s*0/);
     assert.match(btn, /flex:\s*1 1 auto/);
-    const li = chrome.match(/\.at-menu \[role="option"\]\s*\{([^}]+)\}/);
-    assert.ok(li?.[1], "missing .at-menu [role=option]");
-    assert.match(li[1]!, /min-width:\s*0/);
+    // A11Y-4: role="option" moved onto the row's own primary click target
+    // — run.css's ".at-menu [role=\"option\"]" now carries the same
+    // anti-overflow properties the nested button used to. .at-row is what
+    // stayed in chrome.css: the flex wrapper laying the option next to the
+    // optional Pin-to-pack button, still min-width 0 so a long path can't
+    // blow out the popup width.
+    const row = chrome.match(/\.at-row\s*\{([^}]+)\}/);
+    assert.ok(row?.[1], "missing .at-row");
+    assert.match(row[1]!, /min-width:\s*0/);
+    const opt = ruleBody('.at-menu [role="option"]');
+    assert.match(opt, /min-width:\s*0/);
+    assert.match(opt, /overflow:\s*hidden/);
+    assert.match(opt, /text-overflow:\s*ellipsis/);
   });
 
   it("loaded Project instructions is quiet meta, not a glowing pill", () => {

@@ -1,13 +1,12 @@
-import { memo, useEffect, useState, type ReactElement } from "react";
+import { memo, useEffect, useRef, useState, type ReactElement } from "react";
 import { Check, Eye, EyeOff, GitBranch, PanelRightClose } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Chip } from "./ui/Chip";
 import { Icon } from "./ui/Icon";
 import { countDiffLines, splitDiffHunks } from "./diffUtil";
-import type { ChangeMemberSettlement, MutationKind, RunChangeMember } from "./runChangeList";
+import type { ChangeMemberSettlement, MutationKind, PendingDiff, RunChangeMember } from "./runChangeList";
 import { chipLabel, type RunVerifyMember } from "./runVerifyList";
 import { gitReviewRowChrome, type RunGitReviewMember } from "./runGitReviewList";
-import type { PendingDiff } from "./DiffPanel";
 import type { ActivityRecord } from "./runReducer";
 
 /** A file-change member plus the run it came from — the dock aggregates across
@@ -138,6 +137,12 @@ export interface ChangesDockProps {
 
 type Tab = "files" | "verify" | "git";
 
+// A11Y-4: fixed DOM/tab order — Left/Right roving-tabindex navigation below
+// walks this list, wrapping at the ends.
+const TAB_ORDER: Tab[] = ["files", "verify", "git"];
+const tabButtonId = (id: Tab) => `changes-tab-${id}`;
+const tabPanelId = (id: Tab) => `changes-panel-${id}`;
+
 function TabButton({
   id,
   active,
@@ -154,8 +159,11 @@ function TabButton({
   return (
     <button
       type="button"
+      id={tabButtonId(id)}
       role="tab"
       aria-selected={active}
+      aria-controls={tabPanelId(id)}
+      tabIndex={active ? 0 : -1}
       className={active ? "on" : ""}
       onClick={() => onSelect(id)}
     >
@@ -494,12 +502,53 @@ export const ChangesDock = memo(function ChangesDock({
     git.state !== "loading" &&
     git.state !== "error" &&
     gitReady.length === 0;
+  const open = !empty;
+
+  // A11Y-3: the dock opened without moving focus in; its own Collapse
+  // button then unmounted it, dropping focus to <body>. `open` is a stable
+  // boolean so this only fires on the real open/close transition (not on
+  // every member-list update while already open).
+  const dockRef = useRef<HTMLElement>(null);
+  const openTriggerRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      openTriggerRef.current = document.activeElement;
+      dockRef.current?.focus({ preventScroll: true });
+    } else if (!open && wasOpenRef.current) {
+      const trigger = openTriggerRef.current as HTMLElement | null;
+      // Only reclaim focus if it fell out to <body> — an explicit click
+      // elsewhere already moved focus somewhere real; don't fight that.
+      if (trigger?.focus && (!document.activeElement || document.activeElement === document.body)) {
+        trigger.focus({ preventScroll: true });
+      }
+      openTriggerRef.current = null;
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
   if (empty) return null;
 
   const { added, removed } = totalCounts(filesReady);
 
   return (
-    <aside className="changes" role="region" aria-label={CHANGES_DOCK_LABEL}>
+    <aside
+      className="changes"
+      role="region"
+      aria-label={CHANGES_DOCK_LABEL}
+      ref={dockRef}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          // Local, not global: only fires while focus is inside the dock,
+          // and stops here so App.tsx's window-level Escape chain (which
+          // would otherwise fall through to cancelling a busy run) never
+          // sees this keystroke.
+          e.stopPropagation();
+          onCollapse();
+        }
+      }}
+    >
       <div className="chead">
         <span>{CHANGES_DOCK_LABEL}</span>
         <span className="sum">
@@ -511,12 +560,33 @@ export const ChangesDock = memo(function ChangesDock({
           <Icon icon={PanelRightClose} size={15} />
         </Button>
       </div>
-      <div className="tabs" role="tablist" aria-label="Changes sections">
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label="Changes sections"
+        onKeyDown={(e) => {
+          // A11Y-4: roving tabindex + arrow keys — Left/Right move focus
+          // between tabs and activate (automatic-activation pattern, same
+          // as the existing click-to-select behavior).
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const dir = e.key === "ArrowRight" ? 1 : -1;
+          const idx = TAB_ORDER.indexOf(tab);
+          const next = TAB_ORDER[(idx + dir + TAB_ORDER.length) % TAB_ORDER.length]!;
+          setTab(next);
+          document.getElementById(tabButtonId(next))?.focus();
+        }}
+      >
         <TabButton id="files" active={tab === "files"} onSelect={setTab} label="Files" count={filesReady.length} />
         <TabButton id="verify" active={tab === "verify"} onSelect={setTab} label="Verify" />
         <TabButton id="git" active={tab === "git"} onSelect={setTab} label="Git" />
       </div>
-      <div className="changes-body" role="tabpanel">
+      <div
+        className="changes-body"
+        role="tabpanel"
+        id={tabPanelId(tab)}
+        aria-labelledby={tabButtonId(tab)}
+      >
         {tab === "files"
           ? tabBody(files, FILE_CHANGES_LOADING, (members) => (
               <FilesTab

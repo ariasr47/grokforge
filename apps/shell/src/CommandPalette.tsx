@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -88,6 +89,13 @@ export function CommandPalette({
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // A11Y-4: the input keeps real DOM focus while arrow keys move a virtual
+  // "active" row — aria-activedescendant (below) is how that virtual focus
+  // reaches assistive tech. listboxId/optionId wire the combobox<->listbox
+  // relationship the pattern requires.
+  const uid = useId();
+  const listboxId = `${uid}-listbox`;
+  const optionId = (i: number) => `${uid}-opt-${i}`;
 
   const filteredActions = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -107,6 +115,7 @@ export function CommandPalette({
 
   const count =
     mode === "sessions" ? filteredSessions.length : filteredActions.length;
+  const activeId = count > 0 ? optionId(active) : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -174,11 +183,17 @@ export function CommandPalette({
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={onKeyDown}
         aria-label={DIALOG_TITLE[mode]}
+        role="combobox"
+        aria-expanded={count > 0}
+        aria-controls={listboxId}
+        aria-activedescendant={activeId}
+        aria-autocomplete="list"
         autoComplete="off"
       />
       <div
         className="palette-list"
         role="listbox"
+        id={listboxId}
         aria-label={mode === "sessions" ? "Sessions" : "Commands"}
       >
         {mode === "sessions" ? (
@@ -186,22 +201,24 @@ export function CommandPalette({
             <div className="palette-empty">No matches</div>
           ) : (
             filteredSessions.map((row, i) => (
+              // A11Y-4: the row IS the option now (was a wrapper around a
+              // focusable <button>, an interactive descendant an option
+              // must not have). Keyboard selection stays entirely on the
+              // input above (onKeyDown + aria-activedescendant); mouse-only
+              // onClick here is by design, same as any other listbox option.
+              // biome-ignore lint/a11y/useKeyWithClickEvents: see above
               <div
                 key={row.id}
+                id={optionId(i)}
                 role="option"
                 aria-selected={i === active}
+                data-selected={i === active ? "" : undefined}
                 tabIndex={-1}
+                className="palette-option"
+                onClick={() => selectSession(row)}
               >
-                <button
-                  type="button"
-                  className={`palette-option${i === active ? " active" : ""}`}
-                  onClick={() => selectSession(row)}
-                >
-                  <span className="palette-label">{row.title}</span>
-                  <span className="palette-hint">
-                    {paletteSessionMeta(row)}
-                  </span>
-                </button>
+                <span className="palette-label">{row.title}</span>
+                <span className="palette-hint">{paletteSessionMeta(row)}</span>
               </div>
             ))
           )
@@ -209,20 +226,21 @@ export function CommandPalette({
           <div className="palette-empty">No matches</div>
         ) : (
           filteredActions.map((a, i) => (
+            // A11Y-4: see the sessions-mode option above — mouse-only
+            // onClick by design.
+            // biome-ignore lint/a11y/useKeyWithClickEvents: see above
             <div
               key={a.id}
+              id={optionId(i)}
               role="option"
               aria-selected={i === active}
+              data-selected={i === active ? "" : undefined}
               tabIndex={-1}
+              className="palette-option"
+              onClick={() => runAction(a)}
             >
-              <button
-                type="button"
-                className={`palette-option${i === active ? " active" : ""}`}
-                onClick={() => runAction(a)}
-              >
-                <span className="palette-label">{a.label}</span>
-                {a.hint ? <span className="palette-hint">{a.hint}</span> : null}
-              </button>
+              <span className="palette-label">{a.label}</span>
+              {a.hint ? <span className="palette-hint">{a.hint}</span> : null}
             </div>
           ))
         )}

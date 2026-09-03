@@ -92,6 +92,32 @@ export function ArtifactPanel({
     [],
   );
 
+  // A11Y-3: the panel opened without moving focus in, and closed (Close
+  // button or Escape — see App.tsx's Escape chain) without returning it —
+  // focus fell to <body> either way. isOpen is a stable boolean (not
+  // body/contentKind's identity) so this only fires on the real open/close
+  // transition, not on every content update while already open.
+  const isOpen = Boolean(body && contentKind);
+  const panelRef = useRef<HTMLElement>(null);
+  const openTriggerRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      openTriggerRef.current = document.activeElement;
+      panelRef.current?.focus({ preventScroll: true });
+    } else if (!isOpen && wasOpenRef.current) {
+      const trigger = openTriggerRef.current as HTMLElement | null;
+      // Only reclaim focus if it fell out to <body> — an explicit click
+      // elsewhere (e.g. the same toggle that closed this) already moved
+      // focus somewhere real; don't fight that.
+      if (trigger?.focus && (!document.activeElement || document.activeElement === document.body)) {
+        trigger.focus({ preventScroll: true });
+      }
+      openTriggerRef.current = null;
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen]);
+
   const onCopy = useCallback(() => {
     if (!body) return;
     void writeClipboard(body)
@@ -121,7 +147,7 @@ export function ArtifactPanel({
     </div>
   );
   return (
-    <aside className="artifact-panel" aria-label="Beside">
+    <aside className="artifact-panel" aria-label="Beside" ref={panelRef} tabIndex={-1}>
       <div className="artifact-panel-head">
         <h2>
           <span className="k">Beside</span>

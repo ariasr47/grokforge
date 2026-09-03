@@ -128,7 +128,17 @@ describe("ArtifactPanel — Beside", () => {
         onClose: () => {},
       }),
     );
-    assert.equal(document.querySelector(".artifact-panel-vt") === null, true);
+    // DEAD-4: this used to check for ".artifact-panel-vt", a class that
+    // exists nowhere — the assertion could never fail. Assert against what
+    // the footer actually emits instead: ArtifactPanelProps carries no
+    // per-artifact version or timestamp, so no element anywhere in it may
+    // name itself as one.
+    const footer = document.querySelector(".artifact-panel-foot");
+    assert.ok(footer, "expected the artifact panel footer to render");
+    const versionOrTime = [...footer!.querySelectorAll("*")].find((el) =>
+      /version|timestamp/i.test(el.getAttribute("class") || ""),
+    );
+    assert.equal(versionOrTime === undefined, true);
   });
 
   it("shared renderer throw → Couldn't open this artifact. (distinct from empty)", () => {

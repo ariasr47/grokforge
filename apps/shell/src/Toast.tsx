@@ -89,7 +89,11 @@ function ToastViewport() {
   return (
     <div className="toast-stack" aria-live="polite">
       {items.map((t) => (
-        <div key={t.id} className={`toast toast-${t.kind}`} role="status">
+        // A11Y-4: role="status" here (implicitly its own aria-live="polite"
+        // region) nested inside this stack's own aria-live="polite" doubled
+        // the announcement. The stack is the one live region; individual
+        // toasts stay plain content within it.
+        <div key={t.id} className={`toast toast-${t.kind}`}>
           <span className={`dot ${toastDotClass(t.kind)}`} aria-hidden="true" />
           <span>{t.message}</span>
           {t.action ? (

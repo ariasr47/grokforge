@@ -142,8 +142,12 @@ describe("unfenced grok-ui dump renders components", () => {
       text: "Intro\n\n```grok-ui\nnot json yet",
       streaming: true,
     }));
+    // DEAD-4: a second check used to sit here for ".rich-pending", a class
+    // that exists nowhere — it could never fail. The line above already
+    // covers this test's actual intent (its title): no "Building rich
+    // layout…" placeholder, by the exact text such a placeholder would
+    // show, so the redundant class check is dropped rather than rewritten.
     assert.equal(screen.queryByText("Building rich layout…") === null, true);
-    assert.equal(document.querySelector(".rich-pending"), null);
     const pre = document.querySelector("pre");
     assert.ok(pre);
     assert.ok(pre!.textContent?.includes("not json yet"));
