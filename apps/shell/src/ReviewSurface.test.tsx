@@ -101,7 +101,10 @@ describe("ReviewSurface — header", () => {
             state: "ready",
             members: [
               member({ editId: "e-1", settlement: "accepted", diff: "--- a\n+++ b\n@@ -1,1 +1,2 @@\n+one\n+two\n" }),
-              member({ editId: "e-2", path: "src/other.ts", settlement: "applied", diff: "--- a\n+++ b\n@@ -1,1 +1,0 @@\n-gone\n" }),
+              // "rejected", not "applied" — applied is committable too (see the
+              // "every file applied" test below), so this must be a genuinely
+              // unsettled file to keep this a real 1-of-2 partial-progress case.
+              member({ editId: "e-2", path: "src/other.ts", settlement: "rejected", diff: "--- a\n+++ b\n@@ -1,1 +1,0 @@\n-gone\n" }),
             ],
           },
         })}
@@ -115,6 +118,31 @@ describe("ReviewSurface — header", () => {
     assert.match(region.textContent ?? "", /\+2/);
     assert.match(region.textContent ?? "", /−1/);
     assert.ok(within(region).getByText("1 of 2 accepted"));
+  });
+
+  it("every file applied (no decisions ever needed — the ordinary trusted-workspace case) reads as fully accepted, and Commit is enabled", () => {
+    const sent: string[] = [];
+    render(
+      <ReviewSurface
+        {...baseProps({
+          files: {
+            state: "ready",
+            members: [
+              member({ editId: "e-1", settlement: "applied" }),
+              member({ editId: "e-2", path: "src/other.ts", settlement: "applied" }),
+            ],
+          },
+          commitMessageDraft: { subject: "Rename turns → turnCount", body: "" },
+          onSendToGrok: (t) => sent.push(t),
+        })}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "Review changes" });
+    assert.ok(within(region).getByText("2 of 2 accepted"));
+    const commitBtn = screen.getByRole("button", { name: /Commit 2 accepted files/ });
+    assert.equal((commitBtn as HTMLButtonElement).disabled, false);
+    fireEvent.click(commitBtn);
+    assert.deepEqual(sent, ["Commit the accepted files with this message:\n\nRename turns → turnCount"]);
   });
 
   it("Thread back button calls onBack", () => {
@@ -300,6 +328,37 @@ describe("ReviewSurface — Verify and Git columns", () => {
     );
     const field = screen.getByRole("textbox", { name: /Commit message/ }) as HTMLTextAreaElement;
     assert.match(field.value, /Rename turns → turnCount in OverviewStrip/);
+  });
+
+  it("commitMessageDraft arriving late (git/PR evidence loads after the surface is already open) is picked up by the field", () => {
+    const { rerender } = render(<ReviewSurface {...baseProps({ commitMessageDraft: null })} />);
+    assert.equal((screen.getByRole("textbox", { name: /Commit message/ }) as HTMLTextAreaElement).value, "");
+    rerender(
+      <ReviewSurface
+        {...baseProps({
+          commitMessageDraft: { subject: "Rename turns → turnCount in OverviewStrip", body: "" },
+        })}
+      />,
+    );
+    const field = screen.getByRole("textbox", { name: /Commit message/ }) as HTMLTextAreaElement;
+    assert.match(field.value, /Rename turns → turnCount in OverviewStrip/);
+  });
+
+  it("commitMessageDraft arriving late does NOT overwrite text the operator already typed", () => {
+    const { rerender } = render(<ReviewSurface {...baseProps({ commitMessageDraft: null })} />);
+    const field = screen.getByRole("textbox", { name: /Commit message/ }) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "My own commit message" } });
+    rerender(
+      <ReviewSurface
+        {...baseProps({
+          commitMessageDraft: { subject: "Rename turns → turnCount in OverviewStrip", body: "" },
+        })}
+      />,
+    );
+    assert.equal(
+      (screen.getByRole("textbox", { name: /Commit message/ }) as HTMLTextAreaElement).value,
+      "My own commit message",
+    );
   });
 
   it("Commit accepted files sends the fixed prompt plus the current field text, labeled with the accepted count", () => {

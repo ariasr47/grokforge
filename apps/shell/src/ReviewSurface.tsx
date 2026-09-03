@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, CornerDownLeft } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
@@ -50,8 +50,16 @@ export function composeCommitMessage(message: string): string {
   return `Commit the accepted files with this message:\n\n${message}`;
 }
 
+/** A file is committable once it needs no further decision: either a real Accept was
+ *  recorded, or the edit landed with no diff/permission gate at all — the ordinary case
+ *  in a trusted workspace. Both read as settled everywhere this surface counts or gates
+ *  on "accepted": the file dot, the header progress, and the Commit button. */
+function isSettledForCommit(settlement: ChangesDockMember["settlement"]): boolean {
+  return settlement === "accepted" || settlement === "applied";
+}
+
 function fileDotClass(settlement: ChangesDockMember["settlement"]): "ok" | "conflict" | "idle" {
-  if (settlement === "accepted" || settlement === "applied") return "ok";
+  if (isSettledForCommit(settlement)) return "ok";
   if (settlement === "conflict") return "conflict";
   // pending/rejected/reverted: neutral, never amber — a pending file is not "needs you".
   return "idle";
@@ -136,6 +144,19 @@ export function ReviewSurface({
   const [commitDraft, setCommitDraft] = useState(() =>
     commitMessageDraft ? [commitMessageDraft.subject, commitMessageDraft.body].filter(Boolean).join("\n\n") : "",
   );
+  // The git/PR evidence commitMessageDraft is sourced from can still be loading when
+  // the surface opens (prop starts null). Adopt the real draft the moment it lands —
+  // but only that one null→value transition, and only while the operator hasn't
+  // already typed into the field themselves (a deliberate edit always wins).
+  const commitDraftTouchedRef = useRef(false);
+  const prevCommitMessageDraftRef = useRef(commitMessageDraft);
+  useEffect(() => {
+    const wasNull = prevCommitMessageDraftRef.current == null;
+    prevCommitMessageDraftRef.current = commitMessageDraft;
+    if (wasNull && commitMessageDraft && !commitDraftTouchedRef.current) {
+      setCommitDraft([commitMessageDraft.subject, commitMessageDraft.body].filter(Boolean).join("\n\n"));
+    }
+  }, [commitMessageDraft]);
 
   const selectedMember =
     (selectedEditId && filesReady.find((m) => m.editId === selectedEditId)) || filesReady[0] || null;
@@ -151,7 +172,7 @@ export function ReviewSurface({
     [selectedMember],
   );
 
-  const acceptedCount = filesReady.filter((m) => m.settlement === "accepted").length;
+  const acceptedCount = filesReady.filter((m) => isSettledForCommit(m.settlement)).length;
   const { added, removed } = totalCounts(filesReady);
 
   const queuedRequestId =
@@ -475,7 +496,10 @@ export function ReviewSurface({
                 className="commit-message-input"
                 value={commitDraft}
                 placeholder="No commit message drafted yet — write one, or ask Grok for one."
-                onChange={(e) => setCommitDraft(e.target.value)}
+                onChange={(e) => {
+                  commitDraftTouchedRef.current = true;
+                  setCommitDraft(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "Enter") {
                     e.preventDefault();
