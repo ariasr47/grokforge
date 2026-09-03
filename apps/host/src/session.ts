@@ -1984,6 +1984,14 @@ export class AgentSession {
           }
           return;
         }
+        if (ev.type === "usage" && this.activeRunId) {
+          await this.runCoordinator.appendOwnedEvent(
+            this.activeRunId,
+            { kind: "usage", promptTokens: ev.promptTokens, contextWindow: ev.contextWindow },
+            "usage",
+          ).catch(() => undefined);
+          return;
+        }
         if (ev.type === "tool_run") {
           toolNames.set(ev.toolCallId, ev.name ?? "tool");
           const taxonomy = classifyToolRunLog(ev);

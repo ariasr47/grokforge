@@ -91,7 +91,18 @@ export type ChatCompletionResult = {
   tool_calls?: ToolCall[];
   finish_reason?: string;
   reasoning_content?: string | null;
+  /** Real prompt-token count from the provider's own `usage` field. Absent
+   *  (never 0) when the response didn't carry one — house/guest rule: this
+   *  package never estimates a token count. */
+  usage?: { promptTokens: number };
 };
+
+function usageFromPayload(usage: unknown): { promptTokens: number } | undefined {
+  const promptTokens = (usage as { prompt_tokens?: unknown } | null | undefined)?.prompt_tokens;
+  return typeof promptTokens === "number" && Number.isFinite(promptTokens)
+    ? { promptTokens }
+    : undefined;
+}
 
 /**
  * Non-streaming completion with tools (fallback when stream fails).
@@ -144,6 +155,7 @@ export async function chatCompletion(options: {
       };
       finish_reason?: string;
     }>;
+    usage?: { prompt_tokens?: number };
   };
   const msg = data.choices?.[0]?.message;
   const reasoning =
@@ -155,6 +167,7 @@ export async function chatCompletion(options: {
     tool_calls: msg?.tool_calls,
     finish_reason: data.choices?.[0]?.finish_reason,
     reasoning_content: reasoning,
+    usage: usageFromPayload(data.usage),
   };
 }
 
@@ -188,6 +201,10 @@ export async function streamChatCompletion(options: {
     messages: options.messages,
     temperature: options.temperature ?? 0.2,
     stream: true,
+    // xAI's own streaming docs show `usage` on chunks without this flag, but
+    // it's the documented OpenAI-compatible way to guarantee a usage frame —
+    // harmless to request either way.
+    stream_options: { include_usage: true },
   };
   if (options.tools !== false) {
     body.tools = toolDefinitionsFor(options.capability);
@@ -221,6 +238,7 @@ export async function streamChatCompletion(options: {
   let sawThinking = false;
   let sawContent = false;
   let sawTools = false;
+  let usage: { promptTokens: number } | undefined;
   const toolMap = new Map<
     number,
     { id: string; name: string; arguments: string }
@@ -248,7 +266,12 @@ export async function streamChatCompletion(options: {
             };
             finish_reason?: string | null;
           }>;
+          usage?: { prompt_tokens?: number } | null;
         };
+        // A dedicated usage frame (stream_options.include_usage) carries an
+        // empty `choices` array — read usage before the no-choice `continue`
+        // below would otherwise skip it.
+        usage = usageFromPayload(json.usage) ?? usage;
         const choice = json.choices?.[0];
         if (!choice) continue;
         if (choice.finish_reason) {
@@ -310,7 +333,8 @@ export async function streamChatCompletion(options: {
     const data = tail.slice(5).trim();
     if (data !== "[DONE]") {
       try {
-        const json = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string|null; reasoning_content?: string|null; reasoning?: string|null; tool_calls?: ToolCallDelta[] }; finish_reason?: string|null }> };
+        const json = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string|null; reasoning_content?: string|null; reasoning?: string|null; tool_calls?: ToolCallDelta[] }; finish_reason?: string|null }>; usage?: { prompt_tokens?: number } | null };
+        usage = usageFromPayload(json.usage) ?? usage;
         const choice = json.choices?.[0];
         if (choice?.finish_reason) finish_reason = choice.finish_reason;
         const d = choice?.delta;
@@ -346,6 +370,7 @@ export async function streamChatCompletion(options: {
     tool_calls: tool_calls.length ? tool_calls : undefined,
     finish_reason,
     reasoning_content: reasoning || null,
+    usage,
   };
 }
 

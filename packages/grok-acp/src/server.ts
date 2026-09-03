@@ -22,6 +22,7 @@ import {
   type ToolCall,
 } from "./xai.js";
 import { bindExecutionCapability, isHostExecutionProfile, type ExecutionEnvironmentCapability } from "./executionCapability.js";
+import { contextWindowForModel } from "@grokforge/model-catalog";
 import { preflightShell } from "./shellPreflight.js";
 import { AuthorizationBroker } from "./authorization-broker.js";
 import { compileFixedInspection } from "./inspection-grammar.js";
@@ -572,6 +573,19 @@ export class GrokAcpServer {
             throw err;
           }
           }
+        }
+
+        // House/guest rule: only ever forward a real prompt-token count the
+        // provider reported on this response — never invent one when it's
+        // absent. contextWindow is whatever the model catalog actually has
+        // sourced for `model`; null when we have no real published number.
+        if (typeof result.usage?.promptTokens === "number") {
+          this.notify("usage", {
+            schemaVersion: 1,
+            type: "usage",
+            promptTokens: result.usage.promptTokens,
+            contextWindow: contextWindowForModel(model),
+          });
         }
 
         // Non-stream fallback path: emit thinking/content in one shot

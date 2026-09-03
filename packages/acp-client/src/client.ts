@@ -720,6 +720,27 @@ export class StdioAcpClient implements AcpClient {
         });
         break;
       }
+      case "usage":
+      case "agent/usage": {
+        const promptTokens = p.promptTokens;
+        const contextWindow = p.contextWindow;
+        const ok =
+          p.schemaVersion === 1 &&
+          typeof promptTokens === "number" &&
+          Number.isFinite(promptTokens) &&
+          (contextWindow === null || (typeof contextWindow === "number" && Number.isFinite(contextWindow)));
+        if (!ok) {
+          this.emit({ type: "agent_log", level: "warn", message: "Malformed usage notification ignored." });
+          break;
+        }
+        this.emit({
+          type: "usage",
+          schemaVersion: 1,
+          promptTokens,
+          contextWindow: contextWindow as number | null,
+        });
+        break;
+      }
       case "agent_log":
         this.emit({ type:"agent_log", level:(p.level === "warn" || p.level === "info" ? p.level : "debug"), message:String(p.message ?? "") });
         break;

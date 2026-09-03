@@ -170,6 +170,12 @@ export type RunChildAgentMember = {
   firstEventSeq: number;
 };
 
+/** Real prompt-token count the provider reported, plus whatever context
+ *  window the model catalog has sourced for the active model — null when
+ *  the catalog has no real published number. House/guest rule: neither
+ *  field is ever estimated. */
+export type UsageVoucher = { promptTokens: number; contextWindow: number | null };
+
 export type RunEventPayload =
   | { kind: "run_started"; run: RunSnapshot }
   | { kind: "run_state"; state: Exclude<RunState, "terminal">; liveness: string | null }
@@ -182,6 +188,7 @@ export type RunEventPayload =
   | { kind: "project_instructions"; projectInstructions: ProjectInstructionsTurnVoucher }
   | { kind: "chat_pack"; chatPack: ChatPackTurnVoucher }
   | { kind: "child_agent_update"; childId: string; identityLabel: string; status: ChildAgentStatus }
+  | ({ kind: "usage" } & UsageVoucher)
   | { kind: "run_terminal"; terminalKind: TerminalKind; finalAnswer: string | null; answerVouched: boolean; failure: RunSnapshot["failure"]; terminalAt: string };
 export interface RunEventEnvelope { schemaVersion: 1; type: RunEventPayload["kind"]; sessionId: string; runId: string; eventSeq: number; connectionGeneration: number; occurredAt: string; payload: RunEventPayload; }
 /** Token-storm kinds. Reduce immediately; paint at most once per frame. */
@@ -209,6 +216,9 @@ export interface RunProjectionRun extends RunSnapshot {
   plan?: PlanRecord | null;
   projectInstructions?: ProjectInstructionsTurnVoucher | null;
   chatPack?: ChatPackTurnVoucher | null;
+  /** Latest real usage the engine reported for this run. Null/absent until
+   *  the first model response with usage lands — never fabricated. */
+  usage?: UsageVoucher | null;
   /** Last journaled run_state.liveness. Shell-derive only — not a new wire field. */
   liveness?: string | null;
   /** Newest applied live content kind. Shell-derive only — not a run_state payload slot. */
@@ -288,8 +298,8 @@ export function mergeRunSnapshot(state: RunProjection, snapshot: RunSnapshot): R
   const codeAgentProvenance = snapshotProvenance(snapshot, existing);
   const skillHandoffProvenance = snapshotSkillHandoffProvenance(snapshot, existing);
   const run: RunProjectionRun = existing
-    ? { ...cloneRun(existing), ...snapshot, lastEventSeq: existing.lastEventSeq, plan: existing.plan, projectInstructions: existing.projectInstructions, chatPack: existing.chatPack, codeAgentProvenance, skillHandoffProvenance }
-    : { ...snapshot, ...emptyStores(), seenEventSeq: new Set(), terminalEventSeq: snapshot.state === "terminal" ? snapshot.lastEventSeq || null : null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null, codeAgentProvenance, skillHandoffProvenance };
+    ? { ...cloneRun(existing), ...snapshot, lastEventSeq: existing.lastEventSeq, plan: existing.plan, projectInstructions: existing.projectInstructions, chatPack: existing.chatPack, usage: existing.usage, codeAgentProvenance, skillHandoffProvenance }
+    : { ...snapshot, ...emptyStores(), seenEventSeq: new Set(), terminalEventSeq: snapshot.state === "terminal" ? snapshot.lastEventSeq || null : null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null, usage: null, codeAgentProvenance, skillHandoffProvenance };
   return {
     runsById: { ...state.runsById, [snapshot.runId]: run },
     runOrder: state.runOrder.includes(snapshot.runId) ? state.runOrder : [...state.runOrder, snapshot.runId],
@@ -308,6 +318,7 @@ function cloneRun(r: RunProjectionRun): RunProjectionRun {
     plan: r.plan,
     projectInstructions: r.projectInstructions ?? null,
     chatPack: r.chatPack ?? null,
+    usage: r.usage ?? null,
     liveness: r.liveness ?? null,
     lastContentKind: r.lastContentKind ?? null,
     postToolProviderWait: Boolean(r.postToolProviderWait),
@@ -330,7 +341,7 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
   if (!existing) {
     if (event.type !== "run_started") return state;
     const snap = (event.payload as Extract<RunEventPayload, { kind: "run_started" }>).run;
-    run = { ...snap, ...emptyStores(), seenEventSeq: new Set(), terminalEventSeq: null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null, codeAgentProvenance: snap.codeAgentProvenance ?? null, skillHandoffProvenance: snap.skillHandoffProvenance ?? null };
+    run = { ...snap, ...emptyStores(), seenEventSeq: new Set(), terminalEventSeq: null, lastEventSeq: 0, plan: null, projectInstructions: null, chatPack: null, usage: null, codeAgentProvenance: snap.codeAgentProvenance ?? null, skillHandoffProvenance: snap.skillHandoffProvenance ?? null };
   } else run = cloneRun(existing);
   run.seenEventSeq.add(event.eventSeq); run.lastEventSeq = event.eventSeq;
   switch (event.payload.kind) {
@@ -414,6 +425,11 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
         run.chatPack = event.payload.chatPack;
       }
       break;
+    case "usage":
+      if (event.type === "usage" && event.payload.kind === "usage") {
+        run.usage = { promptTokens: event.payload.promptTokens, contextWindow: event.payload.contextWindow };
+      }
+      break;
     case "child_agent_update": {
       const { childId, identityLabel, status } = event.payload;
       if (!childId || !identityLabel.trim() || (status !== "running" && status !== "done" && status !== "failed")) break;
@@ -468,6 +484,7 @@ export function restoreRunProjection(raw: unknown): RunProjection {
       plan: run.plan ?? null,
       projectInstructions: run.projectInstructions ?? null,
       chatPack: run.chatPack ?? null,
+      usage: run.usage ?? null,
       codeAgentProvenance: run.codeAgentProvenance ?? null,
       skillHandoffProvenance: run.skillHandoffProvenance ?? null,
       liveness: run.liveness ?? null,

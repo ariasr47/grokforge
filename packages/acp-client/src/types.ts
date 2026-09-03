@@ -49,6 +49,14 @@ export type AcpUiEvent =
       bodyByteLength: number | null;
     }
   | {
+      type: "usage";
+      schemaVersion: 1;
+      /** Real prompt-token count the provider reported — never estimated. */
+      promptTokens: number;
+      /** Model catalog's sourced context window, or null when unknown. */
+      contextWindow: number | null;
+    }
+  | {
       type: "available_commands";
       commands: Array<{ name: string; description: string | null }> | null;
       valid: boolean;

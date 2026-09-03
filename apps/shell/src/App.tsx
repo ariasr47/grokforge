@@ -40,6 +40,7 @@ import { atFileSuggestions } from "./atFileQuery";
 import { recentCrashes } from "./crashSink";
 
 import { EffortControl } from "./EffortControl";
+import { ContextRing } from "./ContextRing";
 import { PlanArmControl } from "./PlanArmControl";
 import {
   PLAN_ARM_BLOCKED_UNVOUCHED,
@@ -1921,6 +1922,14 @@ export function App() {
     .map((id) => runProjection.runsById[id])
     .find((run) => run?.sessionId === sessionId && run.state !== "terminal") ?? null,
     [runProjection, sessionId]);
+  // The ring reflects the session's last known context usage, not just the
+  // live run — a just-finished turn's reading stays valid until the next
+  // one, rather than the ring vanishing the instant a run goes terminal.
+  const latestSessionRunUsage = useMemo(() => {
+    const ids = runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId);
+    const lastId = ids[ids.length - 1];
+    return (lastId ? runProjection.runsById[lastId]?.usage : undefined) ?? null;
+  }, [runProjection, sessionId]);
   const projectedRunIds = useMemo(() => new Set(
     runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId),
   ), [runProjection, sessionId]);
@@ -4678,6 +4687,10 @@ export function App() {
     );
   }
 
+  // Task 12's mount point (see ComposerPane.tsx). Renders nothing until the
+  // engine has actually reported usage for a real, catalog-known model.
+  const contextRing = <ContextRing usage={latestSessionRunUsage} />;
+
   // Composer chips beside the field — Code: Plan, Expert, Review; Chat:
   // Pack, Expert (matches docs/design/forge-next/Main.dc.html and
   // Chat.dc.html's own composer `.bar` order).
@@ -5675,6 +5688,7 @@ export function App() {
                 decisionPending={decisionPending}
                 chatHomeLabel={chatHomeLabel}
                 chips={composerChips}
+                contextRing={contextRing}
                 metaFacts={composerMetaFacts}
                 footer={
                   <>

@@ -2028,6 +2028,12 @@ html[data-density="compact"] .hooks-row {
   color: var(--muted);
   padding: 0 6px 0 4px;
 }
+/* Compaction is near (>=80% of context used) — the one place amber means a
+   heads-up rather than "needs you". ContextRing.tsx sets the arc's own
+   stroke directly; this covers the "NN%" label beside it. */
+.composer .ring.ring-amber {
+  color: var(--attention);
+}
 
 /* —— Composer meta line (Task 11): one mono 11px row, facts left, the
    keyboard hint right. Facts are whatever App.tsx hands in via `metaFacts`

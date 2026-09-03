@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { INHERITED_DEFAULT_MODEL, migrateModelSelection } from "./index.js";
+import { contextWindowForModel, INHERITED_DEFAULT_MODEL, migrateModelSelection } from "./index.js";
 
 test("clean selection inherits grok-4.6", () => {
   assert.equal(INHERITED_DEFAULT_MODEL, "grok-4.6");
@@ -16,3 +16,10 @@ test("explicit selection is preserved", () => {
   assert.equal(result.provenance, "explicit");
 });
 test("other legacy values remain unchanged", () => assert.equal(migrateModelSelection({ model: "grok-4-fast" }).model, "grok-4-fast"));
+test("context window is sourced only for the models we have a real published number for", () => {
+  assert.equal(contextWindowForModel("grok-4.6"), 500_000);
+  assert.equal(contextWindowForModel("grok-4"), null);
+  assert.equal(contextWindowForModel("grok-4-fast"), null);
+  assert.equal(contextWindowForModel("grok-4-fast-non-reasoning"), null);
+  assert.equal(contextWindowForModel("unknown-model-id"), null);
+});

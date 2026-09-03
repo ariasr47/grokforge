@@ -112,6 +112,36 @@ rl.on("line", (line) => {
           write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
           return;
         }
+        if (FIXTURE === "usage-included") {
+          write({
+            jsonrpc: "2.0",
+            method: "usage",
+            params: {
+              schemaVersion: 1,
+              type: "usage",
+              promptTokens: 4200,
+              contextWindow: 500000,
+            },
+          });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok with usage" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
+        if (FIXTURE === "usage-unknown-window") {
+          write({
+            jsonrpc: "2.0",
+            method: "usage",
+            params: {
+              schemaVersion: 1,
+              type: "usage",
+              promptTokens: 900,
+              contextWindow: null,
+            },
+          });
+          write({ jsonrpc: "2.0", method: "text_delta", params: { text: "ok with unknown window" } });
+          write({ jsonrpc: "2.0", method: "done", params: { reason: "stop" } });
+          return;
+        }
         if (FIXTURE === "project-instructions-included") {
           write({
             jsonrpc: "2.0",

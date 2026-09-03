@@ -376,6 +376,42 @@ test("project_instructions failed is kept — not collapsed to not_included", ()
   assert.notEqual(a.runsById.r1.projectInstructions?.inclusion, "not_included");
 });
 
+test("usage folds the real prompt token count and catalog context window onto the run", () => {
+  assert.equal(reduceRunEvent(initialRunProjection(), started()).runsById.r1.usage, null);
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 4200, contextWindow: 500_000 }, 2));
+  assert.deepEqual(a.runsById.r1.usage, { promptTokens: 4200, contextWindow: 500_000 });
+});
+
+test("usage with an unmapped model's window folds contextWindow null — never invented by the reducer", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 900, contextWindow: null }, 2));
+  assert.deepEqual(a.runsById.r1.usage, { promptTokens: 900, contextWindow: null });
+});
+
+test("a later usage event replaces the run's earlier reading", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 100, contextWindow: 500_000 }, 2));
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 2500, contextWindow: 500_000 }, 3));
+  assert.deepEqual(a.runsById.r1.usage, { promptTokens: 2500, contextWindow: 500_000 });
+});
+
+test("last usage event wins; persist/restore keeps the reading", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 100, contextWindow: 500_000 }, 2));
+  a = reduceRunEvent(a, event({ kind: "usage", promptTokens: 3300, contextWindow: 500_000 }, 3));
+  assert.deepEqual(a.runsById.r1.usage, { promptTokens: 3300, contextWindow: 500_000 });
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.deepEqual(restored.runsById.r1.usage, { promptTokens: 3300, contextWindow: 500_000 });
+});
+
+test("a run with no usage event restores usage as null, never fabricated", () => {
+  const a = reduceRunEvent(initialRunProjection(), started());
+  assert.equal(a.runsById.r1.usage, null);
+  const restored = restoreRunProjection(persistableRunProjection(a));
+  assert.equal(restored.runsById.r1.usage, null);
+});
+
 test("type/kind mismatch ignored", () => {
   let a = reduceRunEvent(initialRunProjection(), started());
   const mismatched = event(

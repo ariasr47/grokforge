@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-/** Loose envelope parse — extra fields pass through for forward compat. */
+/**
+ * Loose envelope parse — extra fields pass through for forward compat. This
+ * validates the envelope shape only; it never enumerates specific `payload.kind`
+ * values (that typing lives in runReducer.ts's `RunEventPayload` union). A new
+ * additive kind — e.g. "usage" — therefore needs no change here: any object
+ * with a non-empty `kind` string already parses, per runEventSchema.test.ts.
+ */
 export const runEventEnvelopeSchema = z.looseObject({
   schemaVersion: z.literal(1),
   eventSeq: z.number().int().positive(),
