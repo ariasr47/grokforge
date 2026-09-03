@@ -443,22 +443,15 @@
 }
 
 /* —— Composer —— */
+/* Task 11: `.composer` itself is now the bordered/backgrounded card (see
+   chrome.css) — this wrapper is just the outer padding + a hairline
+   separating it from the transcript above, matching
+   docs/design/forge-next/Main.dc.html's `.dockarea`. */
 .composer-wrap {
   position: relative;
   flex-shrink: 0;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 8%, transparent);
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(3, 4, 10, 0.55) 30%,
-    rgba(3, 4, 10, 0.88)
-  );
-  backdrop-filter: blur(20px);
-}
-.composer-wrap .composer {
-  border-top: none;
-  background: transparent;
-  backdrop-filter: none;
+  padding: 10px 24px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 5%, transparent);
 }
 .composer-thinking {
   display: flex;

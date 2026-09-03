@@ -27,11 +27,13 @@ const base = {
   sendDisabledReason: null as string | null,
   productMode: "code",
   connected: true,
-  densityCompact: false,
   onAttachFiles: () => undefined,
   busy: false,
   onCancel: () => undefined,
   onSend: () => undefined,
+  onQueue: () => undefined,
+  onCancelQueued: () => undefined,
+  queuedCount: 0,
   footer: null,
 };
 
@@ -48,24 +50,83 @@ describe("ComposerPane dock lock", () => {
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(composer.disabled, true);
     assert.equal(composer.placeholder, SETTLE_CARD_BELOW);
-    assert.ok(screen.getByRole("button", { name: "Cancel" }));
+    assert.ok(screen.getByRole("button", { name: "Stop" }));
     assert.equal(screen.queryByRole("button", { name: "Send" }), null);
   });
 });
 
-describe("ComposerPane empty-draft placeholder", () => {
-  it("empty Code composer is two rows, not a tall three-row pill", () => {
+describe("ComposerPane growth: one row idle, two rows once the draft grows", () => {
+  it("idle composer is one 46px row, rows=1, and carries the one-row layout class", () => {
     render(<ComposerPane {...base} />);
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
-    assert.equal(composer.rows, 2);
+    assert.equal(composer.rows, 1);
+    assert.ok(composer.closest(".composer")?.classList.contains("one"));
   });
 
-  it("compact density uses a one-row composer", () => {
-    render(<ComposerPane {...base} densityCompact />);
+  it("a newline in the draft grows the composer past one row", () => {
+    render(<ComposerPane {...base} draft={"first line\nsecond line"} />);
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(composer.rows, 1);
+    assert.equal(composer.closest(".composer")?.classList.contains("one"), false);
   });
 
+  it("shrinks back to the one-row layout once the newline is removed", () => {
+    const { rerender } = render(<ComposerPane {...base} draft={"a\nb"} />);
+    assert.equal(
+      screen.getByLabelText("Message to agent").closest(".composer")?.classList.contains("one"),
+      false,
+    );
+    rerender(<ComposerPane {...base} draft="a" />);
+    assert.equal(
+      screen.getByLabelText("Message to agent").closest(".composer")?.classList.contains("one"),
+      true,
+    );
+  });
+});
+
+describe("ComposerPane placeholders (exact copy)", () => {
+  it("Code idle: Ask Grok to change something…", () => {
+    render(<ComposerPane {...base} />);
+    assert.equal(
+      (screen.getByLabelText("Message to agent") as HTMLTextAreaElement).placeholder,
+      "Ask Grok to change something… @ file · / command",
+    );
+  });
+
+  it("Code while a decision is pending: Reply or steer Grok…", () => {
+    render(<ComposerPane {...base} decisionPending />);
+    assert.equal(
+      (screen.getByLabelText("Message to agent") as HTMLTextAreaElement).placeholder,
+      "Reply or steer Grok… @ file · / command",
+    );
+  });
+
+  it("a pending decision never leaks the placeholder into Chat mode", () => {
+    render(<ComposerPane {...base} productMode="chat" decisionPending chatHomeLabel="Family admin" />);
+    assert.equal(
+      (screen.getByLabelText("Message to agent") as HTMLTextAreaElement).placeholder,
+      "Message Family admin… paste text, drop a PDF",
+    );
+  });
+
+  it("Chat idle names the current home", () => {
+    render(<ComposerPane {...base} productMode="chat" chatHomeLabel="Family admin" />);
+    assert.equal(
+      (screen.getByLabelText("Message to agent") as HTMLTextAreaElement).placeholder,
+      "Message Family admin… paste text, drop a PDF",
+    );
+  });
+
+  it("Chat without a home label falls back to a real word, not an empty gap", () => {
+    render(<ComposerPane {...base} productMode="chat" />);
+    assert.equal(
+      (screen.getByLabelText("Message to agent") as HTMLTextAreaElement).placeholder,
+      "Message Chat… paste text, drop a PDF",
+    );
+  });
+});
+
+describe("ComposerPane empty-draft placeholder", () => {
   it("keeps Code placeholder copy while Send stays disabled", () => {
     render(
       <ComposerPane {...base} sendDisabledReason="Type a message to send" />,
@@ -73,7 +134,7 @@ describe("ComposerPane empty-draft placeholder", () => {
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(
       composer.placeholder,
-      "Reply to Grok… @file · attach · Enter send",
+      "Ask Grok to change something… @ file · / command",
     );
     const send = screen.getByRole("button", { name: "Send" });
     assert.equal(send.hasAttribute("disabled"), true);
@@ -91,7 +152,7 @@ describe("ComposerPane empty-draft placeholder", () => {
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(
       composer.placeholder,
-      "Reply to Grok… paste text, attach .txt/.md",
+      "Message Chat… paste text, drop a PDF",
     );
   });
 
@@ -138,6 +199,127 @@ describe("composerBlockReasonVisible", () => {
     assert.equal(composerBlockReasonVisible(EMPTY_DRAFT_SEND, "@"), false);
     assert.equal(composerBlockReasonVisible(EMPTY_DRAFT_SEND, "@AGENTS.md "), false);
     assert.equal(composerBlockReasonVisible("Open a project folder first", "hello"), true);
+  });
+});
+
+describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () => {
+  it("busy with an empty draft shows a disabled Queue and an active Stop", () => {
+    render(<ComposerPane {...base} busy />);
+    assert.equal(screen.queryByRole("button", { name: "Send" }), null);
+    assert.equal(screen.queryByRole("button", { name: /steer/i }), null);
+    const queue = screen.getByRole("button", { name: "Queue" });
+    assert.equal(queue.hasAttribute("disabled"), true);
+    assert.equal(screen.getByRole("button", { name: "Stop" }).hasAttribute("disabled"), false);
+  });
+
+  it("busy with draft text enables Queue; clicking it calls onQueue", () => {
+    let queued = false;
+    render(
+      <ComposerPane
+        {...base}
+        busy
+        draft="ship this next"
+        onQueue={() => {
+          queued = true;
+        }}
+      />,
+    );
+    const queue = screen.getByRole("button", { name: "Queue" });
+    assert.equal(queue.hasAttribute("disabled"), false);
+    fireEvent.click(queue);
+    assert.equal(queued, true);
+  });
+
+  it("Stop still cancels the run while busy", () => {
+    let cancelled = false;
+    render(
+      <ComposerPane
+        {...base}
+        busy
+        onCancel={() => {
+          cancelled = true;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    assert.equal(cancelled, true);
+  });
+
+  it("a queued message shows Queued · 1 instead of the Queue button, and can be cancelled", () => {
+    let cancelled = false;
+    render(
+      <ComposerPane
+        {...base}
+        busy
+        queuedCount={1}
+        onCancelQueued={() => {
+          cancelled = true;
+        }}
+      />,
+    );
+    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
+    const queuedChip = screen.getByRole("button", { name: "Queued · 1" });
+    fireEvent.click(queuedChip);
+    assert.equal(cancelled, true);
+    assert.ok(screen.getByRole("button", { name: "Stop" }));
+  });
+
+  it("idle (not busy) never shows Queue, Queued, or Stop", () => {
+    render(<ComposerPane {...base} />);
+    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Stop" }), null);
+    assert.equal(screen.queryByText(/Queued ·/), null);
+  });
+});
+
+describe("ComposerPane has no Export control", () => {
+  it("idle composer never renders an Export button — it lives in the thread header", () => {
+    render(<ComposerPane {...base} />);
+    assert.equal(screen.queryByRole("button", { name: /export/i }), null);
+  });
+
+  it("busy composer never renders an Export button either", () => {
+    render(<ComposerPane {...base} busy queuedCount={1} />);
+    assert.equal(screen.queryByRole("button", { name: /export/i }), null);
+  });
+});
+
+describe("ComposerPane chip and context-ring mount points", () => {
+  it("renders whatever chips App.tsx composes beside the field", () => {
+    render(<ComposerPane {...base} chips={<button type="button">Plan</button>} />);
+    assert.ok(screen.getByRole("button", { name: "Plan" }));
+  });
+
+  it("context ring renders nothing when no usage data exists", () => {
+    render(<ComposerPane {...base} />);
+    assert.equal(document.querySelector(".ring"), null);
+  });
+
+  it("context ring renders whatever App.tsx provides once usage data exists", () => {
+    render(<ComposerPane {...base} contextRing={<span className="ring">41%</span>} />);
+    assert.ok(document.querySelector(".ring"));
+  });
+});
+
+describe("ComposerPane meta line: one mono line, facts left, shortcuts right", () => {
+  it("renders the provided facts and the idle shortcut hint", () => {
+    render(<ComposerPane {...base} metaFacts={<span>policy sentence · grok-4.6</span>} />);
+    const meta = document.querySelector(".cmeta");
+    assert.ok(meta);
+    const text = meta?.textContent ?? "";
+    assert.ok(text.includes("policy sentence · grok-4.6"));
+    assert.ok(text.includes("⏎ send"));
+    assert.ok(text.includes("⇧⏎ line"));
+    assert.ok(text.includes("Ctrl+K commands"));
+  });
+
+  it("the shortcut hint swaps to queue/stop while busy and drops send/line/commands", () => {
+    render(<ComposerPane {...base} busy />);
+    const text = document.querySelector(".cmeta")?.textContent ?? "";
+    assert.ok(text.includes("⇧⏎ queue"));
+    assert.ok(text.includes("esc stop"));
+    assert.equal(text.includes("⏎ send"), false);
+    assert.equal(text.includes("Ctrl+K commands"), false);
   });
 });
 

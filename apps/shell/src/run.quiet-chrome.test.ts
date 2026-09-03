@@ -46,19 +46,23 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(body, /background:\s*none/);
   });
 
-  it("empty composer textarea is not a 14px-padded sausage", () => {
+  it("idle composer textarea carries no padding of its own — it's inline with the row", () => {
+    // Task 11 retired the pill-shaped textarea (padding: 8px 16px, a fixed
+    // min-height) for the one-row-that-grows composer: the field now sits
+    // flush inside .composer's own padding and grows by height alone (see
+    // ComposerPane.tsx's composerShouldGrow / the resize effect).
     const m = chrome.match(/\.composer textarea\s*\{([^}]+)\}/);
     assert.ok(m?.[1], "missing .composer textarea");
-    assert.match(m[1]!, /padding:\s*8px 16px/);
+    assert.match(m[1]!, /padding:\s*0/);
     assert.doesNotMatch(m[1]!, /padding:\s*14px 20px/);
-    assert.match(m[1]!, /min-height:\s*40px/);
+    assert.doesNotMatch(m[1]!, /padding:\s*8px 16px/);
   });
 
   it("disabled Send does not keep the plasma glow", () => {
-    const m = chrome.match(
-      /\.composer\s*>\s*\.btn\.primary:disabled\s*\{([^}]+)\}/,
-    );
-    assert.ok(m?.[1], "missing .composer > .btn.primary:disabled");
+    // Task 11: the round .send button (32px circle) replaces the old
+    // .composer > .btn.primary pill.
+    const m = chrome.match(/\.composer \.send:disabled\s*\{([^}]+)\}/);
+    assert.ok(m?.[1], "missing .composer .send:disabled");
     assert.match(m[1]!, /box-shadow\s*:\s*none/);
   });
 

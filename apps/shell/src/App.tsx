@@ -33,7 +33,7 @@ import {
   composerBlockReasonVisible,
   draftIsSendReady,
 } from "./ComposerPane";
-import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend } from "./composerSend";
+import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend, queueAdmitted, shouldFlushQueue } from "./composerSend";
 import { isStalePermissionDecision } from "./stalePermissionDecision";
 import { activityIsVendorSessionPlan, activityLooksLikeWrite } from "./activityWriteLike";
 import { atFileSuggestions } from "./atFileQuery";
@@ -244,6 +244,7 @@ import {
 } from "./artifactOpenBinding";
 import { PermissionPolicyControl, savedPolicyUnusable } from "./PermissionPolicyControl";
 import { BypassPermissionsControl } from "./BypassPermissionsControl";
+import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
 
@@ -350,6 +351,11 @@ export function App() {
   // process (and flashing duplicate sockets in production).
   const onServerEventRef = useRef<(ev: ServerEvent) => void>(() => undefined);
   const [draft, setDraft] = useState("");
+  /** Queue ⇧⏎ (Task 11): a single held draft, sent via the normal send path
+   *  once the run it was queued behind ends. See composerSend.ts's
+   *  queueAdmitted/shouldFlushQueue for the pure admission/flush decisions. */
+  const [queuedDraft, setQueuedDraft] = useState<string | null>(null);
+  const wasBusyRef = useRef(false);
   const [pathInput, setPathInput] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
@@ -2297,6 +2303,69 @@ export function App() {
     [state?.chatRoot, state?.workspaceName],
   );
   const activeHome = sessionId ? loadSession(sessionPartition, sessionId) : null;
+  // Composer placeholder's "<home>" — the same real, never-fabricated title
+  // ThreadHeader/ChatHomeName already show for this session.
+  const chatHomeLabel = activeHome?.title?.trim() || null;
+  // A question-style decision (recovery_confirmation) does not lock the
+  // composer — the field is a valid way to answer it, so the placeholder
+  // says so instead of the plain idle copy.
+  const decisionPending = Boolean(pendingRecoveryDecision);
+
+  // Review ⌄ composer popover — backed by the same PermissionPolicyControl
+  // / BypassPermissionsControl logic (save flow, Bypass's own confirmation
+  // gate) the Settings page uses, just reachable from the composer too. A
+  // separate computation from Settings' own, so neither can regress the
+  // other's already-tested wiring.
+  const policyPublicView = (
+    state as PublicState & {
+      permissionPolicy?: { effectiveMode?: string; fallbackReason?: string | null; status?: string };
+    }
+  )?.permissionPolicy;
+  const bypassPublicView = (
+    state as PublicState & {
+      bypassPermissions?: { unlocked?: boolean; available?: boolean; activeForSession?: boolean; blockedReason?: string | null };
+    }
+  )?.bypassPermissions;
+  const policyKind = effectivePolicyKind({
+    effectiveMode:
+      policyPublicView?.effectiveMode === "trusted_workspace"
+        ? "trusted_workspace"
+        : policyPublicView?.effectiveMode === "review"
+          ? "review"
+          : null,
+    bypassActive: Boolean(bypassPublicView?.activeForSession),
+  });
+  const policySentence = policyPublicView?.status === "confirmed" ? POLICY_SENTENCE[policyKind] : null;
+  const policyChipContent = (
+    <>
+      <PermissionPolicyControl
+        status={!state ? "loading" : !state.workspace ? "no_workspace" : policyPublicView?.status === "confirmed" ? "confirmed" : hostOk ? "unconfirmed" : "offline"}
+        confirmedMode={policyPublicView?.effectiveMode === "trusted_workspace" ? "trusted_workspace" : policyPublicView?.effectiveMode === "review" ? "review" : null}
+        fallbackReason={policyPublicView?.fallbackReason}
+        disabled={Boolean(runStartedAt)}
+        onSave={async (mode) => {
+          const latest = stateRef.current;
+          if (!sessionId || !latest?.workspace) throw new Error("No session or workspace");
+          const result = await api.saveWorkspacePolicy({ sessionId, workspace: latest.workspace, mode });
+          applyState({ ...latest, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
+        }}
+      />
+      {sessionId ? (
+        <BypassPermissionsControl
+          sessionId={sessionId}
+          unlocked={Boolean(bypassPublicView?.unlocked)}
+          available={Boolean(bypassPublicView?.available)}
+          active={Boolean(bypassPublicView?.activeForSession)}
+          blockedReason={bypassPublicView?.blockedReason}
+          onActiveChange={(active) => {
+            if (!state || !bypassPublicView) return;
+            applyState({ ...state, bypassPermissions: { ...bypassPublicView, activeForSession: active } });
+          }}
+        />
+      ) : null}
+    </>
+  );
+
   const chatPackComposer = projectChatPackComposer({
     mode: productMode,
     connected,
@@ -3348,6 +3417,10 @@ export function App() {
 
   const requestCancel = useCallback(() => {
     if (cancelInFlightRef.current && !busyRef.current) return;
+    // A manual Stop means the queued follow-up should not fire once this
+    // cancelled run reaches terminal — that would surprise-send a message
+    // right after the user asked to stop.
+    setQueuedDraft(null);
     cancelInFlightRef.current = true;
     cancelGenerationRef.current = streamEpochRef.current;
     setRunPhaseDetail("Cancelling…");
@@ -3681,6 +3754,31 @@ export function App() {
     await sendText(draft);
   }, [draft, sendText]);
 
+  /** Queue ⇧⏎ — holds the current draft; the run's Send stays unavailable
+   *  while busy, so this is the only way to compose a follow-up mid-run.
+   *  Single slot: queuing again replaces whatever was already held. */
+  const queueCurrentDraft = useCallback(() => {
+    if (!queueAdmitted({ text: draft, busy })) return;
+    setQueuedDraft(draft.trim());
+    setDraft("");
+    setHistIdx(-1);
+  }, [draft, busy]);
+
+  const cancelQueuedDraft = useCallback(() => setQueuedDraft(null), []);
+
+  // Flush exactly on the busy->idle edge — the run the draft was queued
+  // behind just reached terminal. Goes through the normal sendText path
+  // (never a second, parallel send), same as a live Enter would.
+  useEffect(() => {
+    const wasBusy = wasBusyRef.current;
+    wasBusyRef.current = busy;
+    if (shouldFlushQueue({ wasBusy, isBusy: busy, hasQueued: queuedDraft != null })) {
+      const text = queuedDraft as string;
+      setQueuedDraft(null);
+      void sendText(text);
+    }
+  }, [busy, queuedDraft, sendText]);
+
   // The Review surface's line comments, "Ask Grok to change this file…"
   // field, and "Commit accepted files" all go through this same composer
   // send path — never a separate api call, and never git run by Forge itself.
@@ -3995,6 +4093,16 @@ export function App() {
       }
       return;
     }
+    if (e.key === "Enter" && e.shiftKey && busy) {
+      // Steer isn't offered (the host has no capability signal for it yet —
+      // see PublicState); while busy, Shift+Enter's role becomes Queue
+      // instead of a plain newline.
+      if (queueAdmitted({ text: draft, busy })) {
+        e.preventDefault();
+        queueCurrentDraft();
+      }
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -4063,6 +4171,13 @@ export function App() {
           if (dockOwns) return;
           e.preventDefault();
           closeArtifact();
+          return;
+        }
+        // Composer's "Stop esc" hint, lowest priority — only once no gate,
+        // palette, peek, or open artifact wants Escape first.
+        if (busy) {
+          e.preventDefault();
+          requestCancel();
         }
       },
       Enter: (e) => {
@@ -4143,6 +4258,8 @@ export function App() {
     settlePlan,
     view,
     changesAvailable,
+    busy,
+    requestCancel,
   ]);
 
   const saveSettings = async () => {
@@ -4510,6 +4627,69 @@ export function App() {
       />
     );
   }
+
+  // Composer chips beside the field — Code: Plan, Expert, Review; Chat:
+  // Pack, Expert (matches docs/design/forge-next/Main.dc.html and
+  // Chat.dc.html's own composer `.bar` order).
+  const composerChips =
+    productMode === "code" ? (
+      <>
+        <PlanArmControl
+          projection={planArm}
+          onToggle={(engaged) => void setPlanEngagementUi(engaged)}
+          onRetry={() => void setPlanEngagementUi(true)}
+        />
+        <EffortControl
+          value={effortLevel}
+          applied={state?.appliedEffort}
+          onChange={(e) => void setEffortUi(e)}
+          disabled={!connected}
+        />
+        <PolicyChip kind={policyKind} disabled={!connected} content={policyChipContent} />
+      </>
+    ) : (
+      <>
+        {chatPackComposer.state !== "absent_code" ? (
+          <ChatPackStatus
+            projection={chatPackComposer}
+            inventoryOpen={packInventoryOpen}
+            onToggleInventory={() => setPackInventoryOpen((open) => !open)}
+          />
+        ) : null}
+        <EffortControl
+          value={effortLevel}
+          applied={state?.appliedEffort}
+          onChange={(e) => void setEffortUi(e)}
+          disabled={!connected}
+        />
+      </>
+    );
+
+  // Composer meta line's left side — Code: policy sentence · CodeAgentStatus
+  // + model · ProjectInstructionsStatus (each real fact only, never
+  // fabricated — an absent one is simply omitted, the CSS separator only
+  // appears between facts that actually rendered). Chat has no permission
+  // policy or AGENTS.md; its own home + model take the same slot.
+  const composerMetaFacts =
+    productMode === "code" ? (
+      <>
+        {policySentence ? <span>{policySentence}</span> : null}
+        <span className="composer-identity">
+          <CodeAgentStatus projection={codeAgentComposer} />
+          <span className="composer-meta">
+            {state?.appliedModel || state?.model || modelDraft}
+          </span>
+        </span>
+        <ProjectInstructionsStatus projection={projectInstructionsComposer} />
+      </>
+    ) : (
+      <>
+        <span>{chatHomeLabel || "Chat"}</span>
+        <span className="composer-meta">
+          {state?.appliedModel || state?.model || modelDraft}
+        </span>
+      </>
+    );
 
   return (
     <div className="app">
@@ -5435,11 +5615,17 @@ export function App() {
                 }
                 productMode={productMode}
                 connected={connected}
-                densityCompact={prefs.density === "compact"}
                 onAttachFiles={(files) => void attachFilesToComposer(files)}
                 busy={busy}
                 onCancel={requestCancel}
                 onSend={() => void send()}
+                onQueue={queueCurrentDraft}
+                onCancelQueued={cancelQueuedDraft}
+                queuedCount={queuedDraft != null ? 1 : 0}
+                decisionPending={decisionPending}
+                chatHomeLabel={chatHomeLabel}
+                chips={composerChips}
+                metaFacts={composerMetaFacts}
                 footer={
                   <>
                 {packInventoryVisible ? (
@@ -5455,50 +5641,6 @@ export function App() {
                     onClearPack={() => void mutateChatPack({ action: "clear_pack" })}
                   />
                 ) : null}
-                <div className="composer-footer">
-                  <EffortControl
-                    value={effortLevel}
-                    applied={state?.appliedEffort}
-                    onChange={(e) => void setEffortUi(e)}
-                    disabled={!connected}
-                  />
-                  {productMode === "code" ? (
-                    <PlanArmControl
-                      projection={planArm}
-                      onToggle={(engaged) => void setPlanEngagementUi(engaged)}
-                      onRetry={() => void setPlanEngagementUi(true)}
-                    />
-                  ) : null}
-                  {chatPackComposer.state !== "absent_code" ? (
-                    <ChatPackStatus
-                      projection={chatPackComposer}
-                      inventoryOpen={packInventoryOpen}
-                      onToggleInventory={() => setPackInventoryOpen((open) => !open)}
-                    />
-                  ) : null}
-                  {projectInstructionsComposer.state !== "absent_chat" ? (
-                    <ProjectInstructionsStatus projection={projectInstructionsComposer} />
-                  ) : null}
-                  <span className="composer-identity">
-                    <CodeAgentStatus projection={codeAgentComposer} />
-                    <span className="composer-meta">
-                      {productMode === "chat"
-                        ? "Chat"
-                        : state?.workspaceName || "no project"}
-                      {" · "}
-                      {state?.appliedModel || state?.model || modelDraft}
-                      {state?.authSource ? ` · ${state.authSource}` : ""}
-                    </span>
-                  </span>
-                  {state?.permissionPolicy?.status === "confirmed" && (
-                    <span className="composer-policy" aria-label="Effective permission policy">
-                      Policy: {state.permissionPolicy.effectiveMode === "trusted_workspace" ? "Trusted workspace" : "Review"}
-                    </span>
-                  )}
-                  <span className="composer-hint">
-                    Attach text · Export .md · Enter send · Ctrl+K
-                  </span>
-                </div>
                 {savedPolicyUnusable(state?.permissionPolicy?.fallbackReason) && (
                   <div className="composer-policy-notice" role="status">
                     Forge couldn’t use the saved permission policy. Review is active.

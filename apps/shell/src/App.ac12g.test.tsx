@@ -67,6 +67,17 @@ function resetBrowserState(): void {
 const NOT_FOUND_COPY = "Forge didn't find your earlier conversations.";
 const WELCOME_COPY = "Welcome to Forge";
 
+// Task 11 replaced the Effort radiogroup with an `Expert ⌄` composer chip
+// that opens a small menu — the trigger's own accessible name is whichever
+// level is current (not a fixed "Expert"), so it's found by its
+// aria-haspopup rather than by role/name.
+async function chooseEffort(user: ReturnType<typeof userEvent.setup>, level: string): Promise<void> {
+  const trigger = document.querySelector('.effort-control button[aria-haspopup="menu"]');
+  assert.ok(trigger, "missing the Expert composer chip trigger");
+  await user.click(trigger as HTMLElement);
+  await user.click(await screen.findByRole("menuitemradio", { name: level }));
+}
+
 describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)", () => {
   it("mode switch, folder open, effort change and a settings change all leave the alarm exactly as the launch rendered it", async () => {
     resetBrowserState();
@@ -114,7 +125,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     assert.equal(screen.queryByText(WELCOME_COPY), null);
 
     // Action 3 — change the effort level (POST /api/effort, also unstamped).
-    await user.click(screen.getByRole("radio", { name: "Expert" }));
+    await chooseEffort(user, "Expert");
     await waitFor(() => assert.ok(host.callsTo("/api/effort").length >= 1));
     assert.ok(
       await screen.findByText(NOT_FOUND_COPY),
@@ -190,7 +201,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     await waitFor(() => assert.ok(host.callsTo("/api/workspace").length >= 1));
     assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
 
-    await user.click(screen.getByRole("radio", { name: "Expert" }));
+    await chooseEffort(user, "Expert");
     await waitFor(() => assert.ok(host.callsTo("/api/effort").length >= 1));
     assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
   });

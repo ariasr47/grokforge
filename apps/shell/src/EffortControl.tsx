@@ -1,5 +1,7 @@
-import { memo, useCallback } from "react";
+import { ChevronDown } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { EffortLevel } from "./api";
+import { Icon } from "./ui/Icon";
 
 const LEVELS: EffortLevel[] = ["auto", "fast", "expert", "heavy"];
 
@@ -24,70 +26,76 @@ interface Props {
   disabled?: boolean;
 }
 
+/**
+ * The `Expert ⌄` composer chip. A quiet trigger showing the current level
+ * (falling back to the level the model actually applied) that opens a small
+ * menu listing Auto/Fast/Expert/Heavy with their existing hint copy —
+ * Escape or an outside click closes it, same convention as ThreadHeader's
+ * Overview popover.
+ */
 export const EffortControl = memo(function EffortControl({
   value,
   applied,
   onChange,
   disabled,
 }: Props) {
-  const showFallback = applied && applied !== value;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const showFallback = Boolean(applied && applied !== value);
 
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLButtonElement>) => {
-      if (
-        e.key !== "ArrowRight" &&
-        e.key !== "ArrowLeft" &&
-        e.key !== "ArrowUp" &&
-        e.key !== "ArrowDown"
-      )
-        return;
-      e.preventDefault();
-      const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
-      const idx = LEVELS.indexOf(value);
-      const next = LEVELS[(idx + dir + LEVELS.length) % LEVELS.length]!;
-      onChange(next);
-    },
-    [value, onChange],
-  );
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [open]);
+
+  const triggerLabel = LABELS[showFallback ? (applied as EffortLevel) : value];
 
   return (
-    <div className="effort-control">
-      <span className="effort-label" id="effort-control-label">
-        Effort
-      </span>
-      <div
-        className="effort-chips"
-        role="radiogroup"
-        aria-labelledby="effort-control-label"
+    <div className="effort-control" ref={rootRef}>
+      <button
+        type="button"
+        className="chip effort-trigger"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={showFallback ? `Model adjusted effort to ${LABELS[applied as EffortLevel]}` : HINTS[value]}
+        onClick={() => setOpen((o) => !o)}
       >
-        {LEVELS.map((level) => {
-          const active = value === level;
-          return (
+        <span>{triggerLabel}</span>
+        <Icon icon={ChevronDown} size={11} className="chip-ch" />
+      </button>
+      {open ? (
+        <div className="menu effort-menu" role="menu" aria-label="Effort">
+          {LEVELS.map((level) => (
             <button
               key={level}
               type="button"
-              role="radio"
-              aria-checked={active}
+              role="menuitemradio"
+              aria-checked={level === value}
               aria-label={LABELS[level]}
-              tabIndex={active ? 0 : -1}
-              className={`effort-chip${active ? " active" : ""}`}
-              disabled={disabled}
               title={HINTS[level]}
-              onClick={() => onChange(level)}
-              onKeyDown={onKeyDown}
+              className={`mi${level === value ? " on" : ""}`}
+              onClick={() => {
+                onChange(level);
+                setOpen(false);
+              }}
             >
-              {LABELS[level]}
-              {active ? (
-                <span className="effort-chip-mark" aria-hidden="true" />
-              ) : null}
+              <span className="k">{LABELS[level]}</span>
+              <span className="d">{HINTS[level]}</span>
             </button>
-          );
-        })}
-      </div>
-      {showFallback ? (
-        <span className="effort-fallback" title="Model adjusted effort">
-          Using {LABELS[applied!]}
-        </span>
+          ))}
+        </div>
       ) : null}
     </div>
   );

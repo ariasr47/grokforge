@@ -94,12 +94,17 @@ describe("AC7 — effort control visible in both modes, next send uses it", () =
     render(<App />);
     const user = userEvent.setup();
 
-    // Visible in Chat.
-    const expertChipChat = await screen.findByRole("radio", { name: "Expert" });
-    await user.click(expertChipChat);
+    // Visible in Chat. Task 11 replaced the Effort radiogroup with an
+    // `Expert ⌄` composer chip that opens a small menu — the trigger's own
+    // accessible name is whichever level is current, so find it by its
+    // aria-haspopup rather than by a fixed role/name.
+    const effortTrigger = await screen.findByRole("button", { name: "Auto" });
+    assert.equal(effortTrigger.getAttribute("aria-haspopup"), "menu");
+    await user.click(effortTrigger);
+    await user.click(await screen.findByRole("menuitemradio", { name: "Expert" }));
     await waitFor(() => assert.ok(host.callsTo("/api/effort").length >= 1));
     await waitFor(() => {
-      assert.equal(screen.getByRole("radio", { name: "Expert" }).getAttribute("aria-checked"), "true");
+      assert.ok(screen.getByRole("button", { name: "Expert" }));
     });
 
     // Survives a mode switch (one global control, not per-mode).
@@ -107,8 +112,7 @@ describe("AC7 — effort control visible in both modes, next send uses it", () =
     await waitFor(() => {
       assert.equal(screen.getByRole("radio", { name: "Code" }).getAttribute("aria-checked"), "true");
     });
-    const expertChipCode = screen.getByRole("radio", { name: "Expert" });
-    assert.equal(expertChipCode.getAttribute("aria-checked"), "true");
+    assert.ok(screen.getByRole("button", { name: "Expert" }));
 
     // Next send in the new mode carries the selected effort.
     await user.keyboard("{Control>}n{/Control}");

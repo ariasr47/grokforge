@@ -45,3 +45,27 @@ export function cancelDuringAdmission(input: {
   if (!input.cancelRequested) return "continue";
   return input.admitted ? "cancel_admitted_run" : "abort_before_post";
 }
+
+/**
+ * Queue ⇧⏎ (Task 11): while a run is busy, holding a draft is only useful
+ * with real text and only while there is something to hold it for. The held
+ * text and its "Queued · 1" chip are plain React state in App.tsx (a single
+ * slot — queuing again replaces the held draft, it does not accumulate a
+ * list); this is only the admission decision.
+ */
+export function queueAdmitted(input: { text: string; busy: boolean }): boolean {
+  return input.busy && Boolean(input.text.trim());
+}
+
+/**
+ * Runs on every busy transition. True exactly once per run ending, on the
+ * busy→idle edge, when a draft was held — the caller sends it via the normal
+ * send path (never a second, parallel path) and clears the slot.
+ */
+export function shouldFlushQueue(input: {
+  wasBusy: boolean;
+  isBusy: boolean;
+  hasQueued: boolean;
+}): boolean {
+  return input.wasBusy && !input.isBusy && input.hasQueued;
+}

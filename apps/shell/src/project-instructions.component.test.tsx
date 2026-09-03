@@ -105,7 +105,12 @@ afterEach(() => {
   cleanup();
 });
 
-test("Code footer order: Effort, Plan, Project instructions, meta, Policy", async () => {
+test("Code composer: Plan, Expert, Review chips beside the field in order; meta line carries policy + project instructions", async () => {
+  // Task 11 replaced the multi-row .composer-footer with chips beside the
+  // field (Plan, Expert, Review) and a single mono .cmeta line — this
+  // reworks the old footer-order assertion onto that structure, keeping the
+  // same intent: Plan/Effort/Project-instructions/Policy are all reachable,
+  // in a sensible order.
   const host = createFakeHost({
     mode: "code",
     workspace: WORKSPACE,
@@ -117,16 +122,21 @@ test("Code footer order: Effort, Plan, Project instructions, meta, Policy", asyn
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
   await screen.findByLabelText("Message to agent");
-  const footer = document.querySelector(".composer-footer");
-  assert.ok(footer);
-  const text = footer.textContent ?? "";
-  const effort = text.indexOf("Effort");
-  const plan = text.indexOf("Plan");
-  const instructions = text.indexOf(PI_COMPOSER_LOADED_LABEL);
-  const meta = text.indexOf("repo");
-  const policy = text.indexOf("Policy:");
-  assert.ok(effort >= 0 && plan >= 0 && instructions >= 0 && meta >= 0 && policy >= 0);
-  assert.ok(effort < plan && plan < instructions && instructions < meta && meta < policy);
+
+  const bar = document.querySelector(".composer .bar");
+  assert.ok(bar);
+  const barText = bar.textContent ?? "";
+  const plan = barText.indexOf("Plan");
+  const expert = barText.indexOf("Auto"); // default effort level's chip label
+  const review = barText.indexOf("Review");
+  assert.ok(plan >= 0 && expert >= 0 && review >= 0);
+  assert.ok(plan < expert && expert < review);
+
+  const meta = document.querySelector(".cmeta")?.textContent ?? "";
+  const policy = meta.indexOf("Review writes edits to disk and asks before shell");
+  const instructions = meta.indexOf(PI_COMPOSER_LOADED_LABEL);
+  assert.ok(policy >= 0 && instructions >= 0);
+  assert.ok(policy < instructions);
   assert.ok(screen.getByText("AGENTS.md"));
 });
 

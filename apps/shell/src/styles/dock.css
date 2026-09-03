@@ -277,15 +277,6 @@
   outline-offset: -2px;
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
-.composer-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px 10px;
-  font-size: 11px;
-  color: var(--muted);
-  font-family: var(--mono);
-}
 .composer-block-reason {
   padding: 0 16px 10px;
   font-size: 12px;

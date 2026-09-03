@@ -6,6 +6,8 @@ import {
   composerChromeBusy,
   composerSendAdmitted,
   endPageSend,
+  queueAdmitted,
+  shouldFlushQueue,
 } from "./composerSend.js";
 
 afterEach(() => endPageSend());
@@ -108,5 +110,35 @@ test("page send latch admits once then refuses until ended", () => {
   assert.equal(
     composerSendAdmitted({ text: "BUSY-SECOND-MUST-NOT-SEND", sessionBusy: false, ownedRunActive: false }),
     true,
+  );
+});
+
+test("Queue ⇧⏎ is admitted only while busy with a real draft", () => {
+  assert.equal(queueAdmitted({ text: "hold this", busy: true }), true);
+  assert.equal(queueAdmitted({ text: "   ", busy: true }), false);
+  assert.equal(queueAdmitted({ text: "", busy: true }), false);
+  assert.equal(queueAdmitted({ text: "hold this", busy: false }), false);
+});
+
+test("a queued message flushes exactly on the busy->idle edge", () => {
+  // The run this message was queued for ends -> flush.
+  assert.equal(
+    shouldFlushQueue({ wasBusy: true, isBusy: false, hasQueued: true }),
+    true,
+  );
+  // Nothing was held -> nothing to flush.
+  assert.equal(
+    shouldFlushQueue({ wasBusy: true, isBusy: false, hasQueued: false }),
+    false,
+  );
+  // Already idle on both sides of the transition -> not a real edge.
+  assert.equal(
+    shouldFlushQueue({ wasBusy: false, isBusy: false, hasQueued: true }),
+    false,
+  );
+  // Still busy -> the run has not ended yet, keep holding.
+  assert.equal(
+    shouldFlushQueue({ wasBusy: true, isBusy: true, hasQueued: true }),
+    false,
   );
 });

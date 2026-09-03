@@ -90,7 +90,11 @@ test("Chat footer: pack chip before composer-meta; placeholder name", async () =
   await screen.findByLabelText("Message to agent");
   await waitFor(() => assert.ok(screen.getByText(PACK_COMPOSER_EMPTY)));
   assert.ok(screen.getByRole("button", { name: /^Name this home$/ }));
-  const footer = document.querySelector(".composer-footer");
+  // Task 11 retired .composer-footer for chips beside the field (.composer
+  // .bar, where the Pack chip now lives) plus a single .cmeta meta line —
+  // .composer-wrap still wraps both, in that same order, so "pack before
+  // meta" still holds.
+  const footer = document.querySelector(".composer-wrap");
   assert.ok(footer);
   const text = footer.textContent ?? "";
   const pack = text.indexOf(PACK_COMPOSER_EMPTY);

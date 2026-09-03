@@ -102,8 +102,10 @@ function envelope(payload: RunEventEnvelope["payload"], seq: number, runId = RUN
   };
 }
 
+// Task 11 retired .composer-footer for chips beside the field plus a single
+// .cmeta meta line, both still inside .composer-wrap.
 function footerText(): string {
-  return document.querySelector(".composer-footer")?.textContent ?? "";
+  return document.querySelector(".composer-wrap")?.textContent ?? "";
 }
 
 let originalFetch: typeof fetch;
@@ -232,7 +234,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     render(<App />);
     await screen.findByLabelText("Message to agent");
     await waitFor(() => {
-      assert.ok(document.querySelector(".composer-footer"));
+      assert.ok(document.querySelector(".composer-wrap"));
     });
     assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
     assert.equal(screen.queryByText(CODE_AGENT_CHECKING), null);
