@@ -39,3 +39,5 @@ apps/shell/src-tauri/resources/
 .claude/
 .codex/
 .spire/
+# Local ACP runtime journals (machine-specific paths)
+.grokforge-runtime/
