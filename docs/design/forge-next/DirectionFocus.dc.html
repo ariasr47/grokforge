@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&amp;family=Geist:wght@400;500;600&amp;display=swap">
+  <style>
+    body { margin: 0; background: #0b0c10; color: #d7dbe4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; font-size: 12px; line-height: 1.4; }
+    a { color: #5ce1ff; } a:hover { color: #8eeaff; }
+    * { box-sizing: border-box; }
+    .sk { background: #0b0c10; position: relative; overflow: hidden; }
+    .note { font-family: "Caveat", "Segoe Print", cursive; font-size: 22px; color: #8eeaff; line-height: 1.15; }
+    .note small { display: block; font-size: 17px; color: rgba(142,234,255,0.75); margin-top: 4px; }
+    .box { border: 1.5px dashed rgba(215,219,228,0.28); border-radius: 6px; position: absolute; }
+    .solid { border: 1.5px solid rgba(215,219,228,0.35); border-radius: 6px; position: absolute; }
+    .lbl { position: absolute; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(215,219,228,0.55); }
+    .line { position: absolute; height: 8px; border-radius: 4px; background: rgba(215,219,228,0.16); }
+    .line.dark { background: rgba(215,219,228,0.08); }
+    .pillx { position: absolute; height: 26px; padding: 0 12px; border-radius: 999px; border: 1.5px solid rgba(215,219,228,0.3); font-size: 11px; display: flex; align-items: center; gap: 8px; color: rgba(215,219,228,0.8); }
+    .dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: rgba(215,219,228,0.4); }
+    .dot.a { background: #5ce1ff; }
+  </style>
+</helmet>
+<div class="sk" style="width: 1120px; height: 700px;">
+  <div class="note" style="position: absolute; left: 24px; top: 16px; width: 520px;">Direction C · Focus<small>One column, nothing else. Sessions live behind a switcher, changes slide up as a sheet, everything else is Ctrl+K. Tradeoff: parallel sessions are out of sight, and power users will miss the dock.</small></div>
+
+  <div class="solid" style="left: 24px; top: 96px; width: 1072px; height: 580px; border-radius: 10px;"></div>
+
+  <div class="pillx" style="left: 440px; top: 110px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f0b45a; display: inline-block;"></span>Fix typecheck in apps/shell · grokforge<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></svg></div>
+  <div class="pillx" style="left: 960px; top: 110px; border-color: #f0b45a; color: #f0b45a;">Needs you · 2</div>
+  <div class="lbl" style="left: 40px; top: 116px; display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #5ce1ff; display: inline-block;"></span><span>Forge</span></div>
+
+  <div class="lbl" style="left: 300px; top: 170px;">one column · 640px prose measure</div>
+  <div class="dot" style="left: 284px; top: 200px;"></div>
+  <div class="line" style="left: 300px; top: 200px; width: 420px;"></div>
+  <div class="line dark" style="left: 300px; top: 216px; width: 300px;"></div>
+  <div class="dot a" style="left: 284px; top: 250px;"></div>
+  <div class="box" style="left: 300px; top: 246px; width: 520px; height: 70px;"></div>
+  <div class="line dark" style="left: 312px; top: 258px; width: 320px;"></div>
+  <div class="line dark" style="left: 312px; top: 276px; width: 380px;"></div>
+  <div class="line dark" style="left: 312px; top: 294px; width: 260px;"></div>
+  <div class="line" style="left: 300px; top: 336px; width: 520px;"></div>
+  <div class="line" style="left: 300px; top: 354px; width: 480px;"></div>
+  <div class="line" style="left: 300px; top: 372px; width: 500px;"></div>
+  <div class="line" style="left: 300px; top: 390px; width: 260px;"></div>
+  <div class="dot" style="left: 284px; top: 430px;"></div>
+  <div class="line" style="left: 300px; top: 430px; width: 240px;"></div>
+  <div class="dot" style="left: 284px; top: 470px; background: #f0b45a;"></div>
+  <div class="line dark" style="left: 300px; top: 470px; width: 360px;"></div>
+
+  <div class="solid" style="left: 284px; top: 520px; width: 552px; height: 130px; border-radius: 12px 12px 0 0; background: rgba(215,219,228,0.04);"></div>
+  <div class="lbl" style="left: 300px; top: 532px;">Changes · 2 files · sheet slides up, thread stays</div>
+  <div class="line" style="left: 300px; top: 560px; width: 300px; height: 6px;"></div>
+  <div class="line dark" style="left: 300px; top: 576px; width: 420px; height: 6px;"></div>
+  <div class="line dark" style="left: 300px; top: 592px; width: 380px; height: 6px;"></div>
+  <div class="solid" style="left: 300px; top: 614px; width: 70px; height: 24px; background: rgba(92,225,255,0.5); border-color: transparent;"></div>
+  <div class="solid" style="left: 378px; top: 614px; width: 70px; height: 24px;"></div>
+
+
+  <div class="box" style="left: 640px; top: 150px; width: 300px; height: 150px; border-style: solid; border-color: rgba(92,225,255,0.5); background: rgba(11,12,16,0.96);"></div>
+  <div class="lbl" style="left: 654px; top: 162px; color: #5ce1ff;">Ctrl+K · everything</div>
+  <div class="line" style="left: 654px; top: 190px; width: 260px; height: 6px;"></div>
+  <div class="line dark" style="left: 654px; top: 212px; width: 220px; height: 6px;"></div>
+  <div class="line dark" style="left: 654px; top: 232px; width: 240px; height: 6px;"></div>
+  <div class="line dark" style="left: 654px; top: 252px; width: 200px; height: 6px;"></div>
+  <div class="lbl" style="left: 654px; top: 276px; font-size: 9px;">sessions · files · commands · settings</div>
+
+  <div class="note" style="position: absolute; left: 640px; top: 16px; width: 440px; font-size: 18px; color: rgba(215,219,228,0.7);">No sidebar, no dock. The window is the thread. Closest to a "chat that codes"; farthest from a command center.</div>
+</div>
+</x-dc>
+</body>
+</html>

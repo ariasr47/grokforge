@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap">
+  <style>
+    body { margin: 0; background: #050508; color: #f2f4f8; font-family: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.6; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
+    a { color: #5ce1ff; text-decoration: none; }
+    a:hover { color: #8eeaff; }
+    * { box-sizing: border-box; }
+    .doc { background: #050508; padding: 48px 56px 64px; display: flex; flex-direction: column; gap: 28px; }
+    .eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #8b93a7; }
+    h1 { margin: 6px 0 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+    .lead { font-size: 15px; color: rgba(242,244,248,0.8); max-width: 720px; margin: 10px 0 0; }
+    h2 { margin: 12px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; padding-top: 22px; border-top: 1px solid rgba(255,255,255,0.08); }
+    h3 { margin: 6px 0 0; font-size: 14px; font-weight: 600; }
+    p { margin: 0; max-width: 760px; }
+    ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 780px; }
+    li { padding-left: 2px; }
+    li b { font-weight: 500; }
+    .m { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; font-size: 12px; color: #cfeaff; }
+    .src { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11px; color: #8b93a7; }
+    .muted { color: #8b93a7; }
+    table { border-collapse: collapse; width: 100%; font-size: 12.5px; line-height: 1.45; }
+    th { text-align: left; font-weight: 500; color: #8b93a7; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 10px 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1); vertical-align: bottom; }
+    td { padding: 9px 10px 9px 0; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; color: rgba(242,244,248,0.85); }
+    td:first-child { font-weight: 500; color: #f2f4f8; white-space: nowrap; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; }
+    .card { border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.025); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+    .card b { font-size: 13px; font-weight: 500; }
+    .card span { font-size: 12.5px; color: rgba(242,244,248,0.75); }
+    .kv { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 16px; font-size: 13px; }
+    .kv .k { color: #8b93a7; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid rgba(255,255,255,0.1); color: #8b93a7; margin-left: 6px; vertical-align: 1px; }
+    .amber { color: #f0b45a; } .mint { color: #5ee4a8; } .rose { color: #ff7a90; } .cyan { color: #5ce1ff; } .violet { color: #a78bfa; }
+  </style>
+</helmet>
+<div class="doc" style="width: 960px; min-height: 6400px;">
+  <div>
+    <div class="eyebrow">Research &amp; redesign brief · 1 September 2026 · proposal for the operator</div>
+    <h1>Forge, next: the same house, built properly</h1>
+    <p class="lead">Voidglass stays. Geist stays. Review, Trusted and Bypass stay. What changes is execution: one palette instead of two, one box per idea instead of seven, a thread you can trust at a glance, and an approval surface that respects the reader's attention. This brief records what we have, what the field has converged on, and what the canvas beside it proposes.</p>
+    <p class="src" style="margin-top: 10px;">Decision · 1 September 2026 · Direction A chosen and polished; B and C moved to the "Not chosen" page.</p>
+  </div>
+
+  <h2>1 · What we have today</h2>
+  <p>Audit of <span class="m">apps/shell</span> at 0.6.6, the dogfood screenshots, and the design canon in <span class="m">.spire/clusters/tech/context/DESIGN_SYSTEM.md</span>.</p>
+  <ul>
+    <li><b>Two palettes in one theme.</b> Tokens declare cyan <span class="m">#5ce1ff</span> and violet <span class="m">#a78bfa</span> (Voidglass, "locked default"), but most of <span class="m">chrome.css</span>, <span class="m">run.css</span>, <span class="m">dock.css</span> and <span class="m">settings.css</span> hardcode the Aeon mint <span class="m">rgba(125,255,232)</span> and lilac <span class="m">rgba(196,181,253)</span>. The shipped app is mint-teal while the canon is cyan; newer chips use cyan, so both are on screen at once. <span class="src">docs/brand/README.md names Aeon as primary; tokens.css names Voidglass. This disagreement is the root cause.</span></li>
+    <li><b>Boxes inside boxes.</b> One Code turn renders up to nine bordered containers: a sticky "You" card, four provenance chips, Thought, Earlier / Mid-turn, Tool activity, File changes, the answer card, an "Answered" strip and a "Your turn" delimiter. Every element has the same weight, so nothing leads. <span class="src">docs/dogfood/edit-turn.png, forge-file-changes.png</span></li>
+    <li><b>Chrome before content.</b> Dev ribbon, a nine-item topbar (brand, mode word, segmented control, breadcrumb, three status pills, Ctrl+K, Settings) and a sidebar with a label pill, gradient CTA, search, a workspace card holding a session card, a path row, Messages / Settings tabs and a help line. The sidebar is also double-padded (aside padding plus every child's own).</li>
+    <li><b>The composer is four rows tall.</b> A pill textarea with three external buttons, an Effort row of four pills, Plan, project-instructions chip, agent chip, meta, policy and a hint line. A static <span class="m">--composer-height: 160px</span> positions the dock and toasts, yet the real height varies with wrapping.</li>
+    <li><b>Motion behind reading surfaces.</b> A canvas paints up to 72 twinkling stars and two nebulae behind the transcript. Particles under 14px text cost contrast and read as generic "AI product".</li>
+    <li><b>Copy that performs instead of informs.</b> "Speak into the continuum…", "YOUR TURN — TYPE THE NEXT MESSAGE BELOW", every group titled "Tool activity", a "Failed" row whose body says "completed", "Answered" as a strip.</li>
+    <li><b>Tool rows.</b> Mono 11px throughout, a "Peek path" button under every row, the group body scrolling inside the transcript (nested scroll). The 2000px capture shows the thread held to a 700px column with a floating "You" card top-right and 60% of the window empty. <span class="src">screen-overflow-cut-off-scroll.png</span></li>
+    <li><b>Component debt.</b> Button has three variants and no sizes; eight ad-hoc <span class="m">!important</span> size overrides; fourteen hand-styled pill variants; two transcript renderers (<span class="m">RunSurface</span> and <span class="m">MessageList</span>); a 90 KB PNG brand mark next to an unused SVG; light theme declared twice with conflicting values; <span class="m">--ok</span> referenced but never defined.</li>
+    <li><b>Contrast fixes were needed at 1.27:1 to 4.15:1</b> during the last accessibility sweep, all from hardcoded colors bypassing tokens.</li>
+  </ul>
+  <h3>Worth keeping, and built on here</h3>
+  <ul>
+    <li>The house / guest split: Forge draws, the vendor decides when to think, tool, or ask.</li>
+    <li>Review · Trusted · Bypass, mapped onto the guest's permission prompts. This is the moat; the redesign makes it visible rather than hiding it in Settings.</li>
+    <li>Plan → File changes → Verify → Git review as the loop. The new Changes dock and Review surface are that loop in one place.</li>
+    <li>Activity groups instead of a card per call; the amber dock as attention; honest copy about limits ("not Forge workers", the unsigned installer); the Y · S · N · A · R keys.</li>
+  </ul>
+
+  <h2>2 · What the field does now</h2>
+  <p>Ten products read through launch posts, docs, changelogs, issue trackers and 2025–26 reviews. Full source list at the end.</p>
+  <table>
+    <tr><th>Product</th><th>Shape</th><th>Thread &amp; tools</th><th>Approvals</th><th>Praised</th><th>Criticized</th></tr>
+    <tr><td>Codex app</td><td>Project thread list left, agent center, diffs / git / terminal drawers right; worktree per thread</td><td>Diffs inside the thread with comments; open in VS Code to edit</td><td>OS sandbox on Windows; permission-mode cycling shortcuts</td><td>"Steer" mid-flight; "dead simple to kick off tasks"; compact without cramped</td><td>Electron lag, 100–170% CPU idle; worktree "whack-a-mole"; no state inspector; context meter shrank to an unlabeled circle; thread sprawl</td></tr>
+    <tr><td>Claude Code desktop</td><td>Chat / Cowork / Code tabs; sessions filtered by status and project; drag-arranged panes</td><td>Normal / Verbose / Summary transcript modes; tool calls collapsed into summaries</td><td>Manual / Accept edits / Plan / Auto / Bypass; Auto routes through a classifier</td><td>Clear per-session state; per-agent elapsed time and tool count; filter by status</td><td>"Slow, buggy, bloated"; sidebar freezes at 10+ sessions; clutter after two or three panels; unified diff only</td></tr>
+    <tr><td>Cursor 3</td><td>Agents Window: local + cloud agents in one sidebar; tiled panes</td><td>Cards show Planning / Executing / Reviewing / Done, files touched, diff preview</td><td>Autopilot mode; cloud–local handoff</td><td>Dropped frames cut 87%; voice with waveform</td><td>"Lose any connection to your code"; no flow state; correction is friction</td></tr>
+    <tr><td>Warp</td><td>Everything is a block in one stream; Agent Management Panel</td><td>Reasoning, tool calls, diffs and commands as blocks; hidden blocks are zero-height</td><td>Agent profiles bundle model + permission set; MCP confirmations name the tool and server</td><td>Code Review pane: three diff modes, hand-edit in diff, revert hunks, line comments to the agent</td><td>Few substantive complaints found (unverified)</td></tr>
+    <tr><td>Conductor</td><td>Workspace list, each a worktree with its own branch, agent and terminal</td><td>Click a line, tell the agent what to change</td><td>Notifies on finish and needs-attention</td><td>"More responsive, doesn't hide what it's doing"</td><td>Mac only</td></tr>
+    <tr><td>Zed agent panel</td><td>Threads grouped by project; worktree picker in the title bar</td><td>Queue-vs-Steer toggle; Restore Checkpoint after every edit; multibuffer review with per-hunk accept</td><td>Allow / deny / confirm per tool; notify-when-waiting with sound</td><td>Checkpoints; @ files, symbols, threads, diagnostics</td><td>"Cramped and visually inconsistent"; status and worktree separation hard to read</td></tr>
+    <tr><td>Copilot app</td><td>"My Work" inbox of sessions, issues, PRs; Canvases</td><td>Session = branch + files + conversation + task state</td><td>Local vs cloud sandboxes</td><td>Auto worktrees, "no branch juggling"</td><td>Outages; billing jumps</td></tr>
+    <tr><td>Amp</td><td>Durable shareable threads; Orbs per thread</td><td>Full reasoning trace; subagents by default</td><td>No approval by default</td><td>Compact thread / new thread with summary</td><td>Leaderboards "out of place in professional settings"</td></tr>
+    <tr><td>Devin Desktop</td><td>Kanban command center of every agent session by status</td><td>Interactive planning first</td><td>Cascade → Devin handoff</td><td>Status at a glance</td><td>Kanban limits deep work on one thread</td></tr>
+    <tr><td>Antigravity · Jules</td><td>Editor plus Manager surface; artifacts (plans, diffs, recordings)</td><td>Mini diff in the feed, full-screen diff editor, end-of-task summary</td><td>Pauses at milestones for review; plan-approval gate</td><td>Walkthrough recordings; artifacts instead of watching every call</td><td>"Cluttered, overwhelming"; buggy</td></tr>
+  </table>
+  <p class="src">Figures and quotes are as the linked sources report them; they were read, not independently reproduced.</p>
+
+  <h2>3 · What has converged, and where Forge can win</h2>
+  <div class="grid2">
+    <div class="card"><b>Steer without stopping</b><span>Codex, Claude, Zed, Conductor and Warp all let you type while the agent runs and choose between steering now and queueing. Forge's composer gets Steer ⏎ · Queue ⇧⏎ · Stop esc.</span></div>
+    <div class="card"><b>Receipts, not logs</b><span>Claude's Normal mode, Warp's zero-height blocks and Antigravity's artifacts agree: collapse tool calls into summaries, expand on demand. Forge's receipts are one verb-first line per call.</span></div>
+    <div class="card"><b>Plan review is where attention works</b><span>Anthropic's own numbers, from its August 2026 "Auto mode" post: people reject 39% of plans and 3% of permission prompts, and approve 97% of prompts reflexively. Forge keeps Review as default but makes the Plan gate the richest card, and offers "allow this class for the session" on every shell prompt.</span></div>
+    <div class="card"><b>Needs-you as a state</b><span>Warp's Blocked badge, Zed's notify-when-waiting, Claude's status filter. Forge's sidebar leads with a Needs-you group, the spine's last node turns amber, and the home screen opens on what needs you.</span></div>
+    <div class="card"><b>A visible context meter</b><span>Codex users noticed the moment theirs shrank. Forge shows a labeled ring in the composer, always.</span></div>
+    <div class="card"><b>Per-hunk review with a way to talk back</b><span>Warp, Conductor and Claude let you comment on a line and send it to the agent. Forge's Review surface pairs per-hunk accept with "Ask Grok to change this file".</span></div>
+    <div class="card"><b>Findability from day one</b><span>Search, filter by state, and archive on finish, before there are fifty sessions, not after.</span></div>
+    <div class="card"><b>Where nobody is good yet</b><span>A native-feeling Windows desktop; a clear "which session is running what" answer; a shell that is not an IDE and so never buries you under panes. That is Forge's lane.</span></div>
+  </div>
+
+  <h2>4 · The redesign</h2>
+  <h3>Principles</h3>
+  <ul>
+    <li><b>Answer first.</b> Hierarchy in the thread is fixed: the answer, then your prompt, then receipts, then metadata. Type size and contrast follow that order and nothing else.</li>
+    <li><b>One box per idea.</b> A turn is a node on the spine, a prompt block, an optional thought line, one receipts group, prose. Strips, delimiters and status cards are gone; their information lives in the node and the composer state.</li>
+    <li><b>Amber means you.</b> Only things that need a human are amber: the sidebar group, the node, the gate, the toast. Cyan is action and life; violet is thought and plans; mint and rose are verdicts.</li>
+    <li><b>Keys everywhere.</b> Every gate shows its keys, palette rows list their shortcuts, and A and R still accept and reject hunks. ⏎ allows, S trusts for the session, esc denies; Y and N stay as aliases.</li>
+    <li><b>Motion explains.</b> Ten interactions, each tied to a state change (see the components sheet). Nothing loops except live dots and one shimmer; the star field becomes a static aurora at the top edge and the stars move to the Calm-off preference.</li>
+    <li><b>Honest words.</b> Sentence case, plain verbs, no theater: "Reply or steer Grok… @ file · / command", "Waiting for you", "exit 2 · 3 errors", "Rejecting restores the pre-run copy Forge kept".</li>
+  </ul>
+
+  <h3>System changes</h3>
+  <div class="kv">
+    <span class="k">Palette</span><span>One: the Voidglass tokens. Retire every hardcoded <span class="m">rgba(125,255,232)</span> and <span class="m">rgba(196,181,253)</span>. Add three surfaces: glass 4%, glass raised 7%, floating <span class="m">#0e1016</span> at 92% with 20px blur.</span>
+    <span class="k">Radius</span><span>Composer and floating layers 16; cards 12–14; controls 10; chips pill. <span class="pill">amends canon 16 / 12</span></span>
+    <span class="k">Type</span><span>Prose 15 / 1.62 at a 640px measure; UI 13; labels 11 caps only for section names; mono 12 only for machine text.</span>
+    <span class="k">Button</span><span>One component, sizes 28 / 32 / 36, tones CTA · accent · default · ghost · danger. Removes the eight <span class="m">!important</span> overrides.</span>
+    <span class="k">Chip</span><span>One component with quiet, default, on and amber tones replaces fourteen pill variants.</span>
+    <span class="k">Brand mark</span><span>The SVG nucleus at 18 px in chrome, 44 px on Home. The PNG goes back to the installer only, as the brand doc already rules.</span>
+    <span class="k">Composer</span><span>One row when idle, two when you type; in flow, no static height. Plan, effort and policy chips sit beside the field with the context ring. While Grok runs the same field steers: Steer ⏎, Queue ⇧⏎, Stop esc. The gate docks in the same column, so nothing overlaps.</span>
+    <span class="k">Thread</span><span>One renderer. Runs and chat turns are the same block model with a mode flag.</span>
+  </div>
+
+  <h3>Shell</h3>
+  <ul>
+    <li><b>Topbar</b> keeps six things: mark, workspace switcher (name, branch, chevron), Chat | Code, engine dot, Ctrl+K, Settings. Dev-channel facts move to the Home footer and Settings.</li>
+    <li><b>Window frame.</b> Frameless on Windows: the topbar is the drag region and carries the caption buttons, so there is one bar instead of a native title bar sitting over a toolbar.</li>
+    <li><b>Sidebar</b> is one level deep: New session, search, an optional Needs-you group, then workspaces as headers with session rows (dot, title, time). Filter chips replace scrolling. Messages / Settings tabs go; Settings is in the topbar and Ctrl+,.</li>
+    <li><b>Changes dock</b> on the right, 380 px, collapsible: Files with accept / reject per file, a hunk preview, Verify rows, Git state and "Review &amp; commit…". It is the Plan → File changes → Verify → Git loop as a place, not four cards in the stream.</li>
+    <li><b>Home</b> opens on what needs you, then recent workspaces and chat homes, with one field that opens a folder, jumps to a session or starts a prompt.</li>
+  </ul>
+
+  <h3>Trust surfaces</h3>
+  <ul>
+    <li><b>Gate</b> above the composer: amber for shell and file, violet for a plan, cyan for a question. Every gate says what, where, why, and which policy is asking. "Allow npm for this session" is the trusted-class door, offered in the moment instead of in Settings.</li>
+    <li><b>Review</b> is a full surface: file list, hunks with per-hunk accept, Verify results with the test list, a commit message Grok drafted and you own, and a footer that says exactly what accept and reject do to disk.</li>
+    <li><b>Receipts</b> mark trusted runs ("trusted class · no prompt") and vendor tools Forge cannot show ("not available in Forge") in the same quiet voice, so the record is complete.</li>
+    <li><b>Line comments.</b> Any diff line takes a comment that goes to Grok with the hunk as context (Ctrl+⏎), so review is a conversation, not only a verdict.</li>
+    <li><b>Chat</b> keeps bubbles for you and prose for Grok; answers cite the pack page they came from, and long answers open in Beside instead of becoming a wall in the bubble.</li>
+  </ul>
+
+  <h3>Copy, before and after</h3>
+  <table>
+    <tr><th>Where</th><th>Today</th><th>Proposed</th></tr>
+    <tr><td>Composer placeholder</td><td>Speak into the continuum… @file · attach · Enter send</td><td>Ask Grok to change something… @ file · / command</td></tr>
+    <tr><td>While waiting on you</td><td>YOUR TURN — TYPE THE NEXT MESSAGE BELOW</td><td>Reply or steer Grok… @ file · / command</td></tr>
+    <tr><td>Tool group title</td><td>Tool activity · Completed · list dir, read file…</td><td>5 actions · 52s (rows: Read … · Ran … · Edited …)</td></tr>
+    <tr><td>Failed command</td><td>Failed (body: completed)</td><td>exit 2 · 3 errors</td></tr>
+    <tr><td>End of a turn</td><td>Answered (strip) + Your turn (delimiter)</td><td>Nothing; the node closes and the composer is ready</td></tr>
+    <tr><td>Permission keys</td><td>Y once · S session · N deny</td><td>Allow ⏎ · Allow npm for this session S · Deny esc (Y, N still work)</td></tr>
+    <tr><td>Model waiting</td><td>Waiting for the model — this can take a while on Expert/Heavy.</td><td>Thought for 8s (one violet line, collapsed)</td></tr>
+    <tr><td>Code empty state</td><td>Code continuum</td><td>What should we work on in grokforge?</td></tr>
+  </table>
+
+  <h2>5 · Canon: kept and proposed amendments</h2>
+  <div class="grid2">
+    <div class="card"><b class="mint">Kept</b><span>Voidglass dark as default and brand reference · Geist + Geist Mono · cyan leads actions, violet is accent · glass over hard shadows · one gradient CTA per screen · amber dock for attention · activity groups, not a card per call · toasts bottom-right · no light default.</span></div>
+    <div class="card"><b class="amber">Proposed amendments</b><span>Radius scale 16 / 12–14 / 10 · star field off by default (static aurora; stars under a preference) · receipts replace "Tool activity" · composer footer to one line and in flow · SVG mark in chrome · one Chip, one Button with sizes · retire the Aeon hardcodes.</span></div>
+  </div>
+
+  <h2>6 · Build order</h2>
+  <ul>
+    <li><b>1 · Tokens and chrome.</b> Retire Aeon hardcodes; add surface and radius tokens; Button sizes; Chip; SVG mark; topbar and sidebar. Observable: no mint anywhere, sidebar one level deep.</li>
+    <li><b>2 · Thread.</b> Spine, You block, thought line, receipts, prose measure; delete "Answered" and "Your turn"; one renderer. Observable: a turn is at most four blocks.</li>
+    <li><b>3 · Gate and Changes dock.</b> Gate tiers with keys; dock with Files / Verify / Git; Review surface. Observable: approve, review and commit without leaving the column.</li>
+    <li><b>4 · Composer and Home.</b> One-row composer that grows, Plan / Expert / Review chips, context ring, Steer / Queue / Stop, anchored menus; frameless window; Home with Needs-you. Observable: the composer is one row idle and two rows typing, in every mode.</li>
+    <li><b>5 · Chat and motion.</b> Restyle homes, packs and the Beside panel on the new system; the twelve interactions; reduced-motion parity. Observable: a week of Chat without the operator, and nothing loops that isn't alive.</li>
+  </ul>
+
+  <h2 class="muted" style="font-size: 14px;">Sources</h2>
+  <p class="src" style="max-width: 820px; line-height: 1.7;">
+    openai.com/codex (app, worktrees, changelog via learn.chatgpt.com/docs/changelog) · news.ycombinator.com/item?id=46859054 · every.to/vibe-check/codex-vibe-check · thecartine.substack.com/p/codex-app-doesnt-suck · github.com/openai/codex issues 10479, 16440, 21326, 21970, 23928 · code.claude.com/docs/en/desktop · claude.com/blog/claude-code-desktop-redesign · claude.com/blog/auto-mode-default-in-claude-code · verygood.ventures/blog/claude-code-desktop-hands-on-review · findskill.ai/blog/claude-code-desktop-redesign-review · daringfireball.net/2026/07/claudes_criminally_bad_mac_app_is_an_inside_job · simonwillison.net/2026/Jan/12/claude-cowork · cursor.com/blog/cursor-3 · cursor.com/changelog/3-1 · infoq.com/news/2026/04/cursor-3-agent-first-interface · warp.dev/blog/block-model-behind-warps-agentic-development-environment · docs.warp.dev/code/code-review · conductor.build/changelog · zed.dev/docs/ai/agent-panel · github.com/zed-industries/zed/discussions/55099 · github.blog (copilot app, 2026-05-14) · ampcode.com/news · devin.ai/blog/windsurf-is-now-devin-desktop · antigravity.google/docs/artifacts · jules.google/docs/code · linear.app/now/how-we-redesigned-the-linear-ui · linear.app/developers/agent-best-practices · microsoft.design/articles/ux-design-for-agents · lukew.com/ff/entry.asp?2106 · smashingmagazine.com/2026/05/designing-stable-interfaces-streaming-content · elements.ai-sdk.dev/components/tool · raycast.com/blog/the-new-raycast · madegooddesigns.com/best-programming-fonts-2026
+  </p>
+</div>
+</x-dc>
+</body>
+</html>

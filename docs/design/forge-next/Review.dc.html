@@ -1,0 +1,250 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap">
+  <style>
+    body { margin: 0; background: #050508; color: #f2f4f8; font-family: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv11"; }
+    a { color: #5ce1ff; text-decoration: none; }
+    a:hover { color: #8eeaff; }
+    * { box-sizing: border-box; }
+    button { font: inherit; color: inherit; letter-spacing: inherit; cursor: pointer; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
+    .app { position: relative; overflow: hidden; display: grid; grid-template-rows: 52px 1fr; background: radial-gradient(900px 480px at 8% -12%, rgba(92,225,255,0.07), transparent 58%), radial-gradient(760px 420px at 100% -6%, rgba(167,139,250,0.08), transparent 55%), #050508; }
+    .top { display: flex; align-items: center; gap: 10px; padding: 0 0 0 14px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(5,5,8,0.72); backdrop-filter: blur(20px) saturate(1.2); }
+    .win { display: flex; align-self: stretch; margin-left: 8px; }
+    .cap { width: 46px; border: 0; background: transparent; color: #8b93a7; display: inline-flex; align-items: center; justify-content: center; }
+    .cap:hover { background: rgba(255,255,255,0.06); color: #f2f4f8; }
+    .cap.close:hover { background: #c42b1c; color: #fff; }
+    .lc { margin: 6px 10px 8px 48px; padding: 8px 10px; border-radius: 9px; border: 1px solid rgba(92,225,255,0.3); background: rgba(92,225,255,0.05); font-family: "Geist", ui-sans-serif, sans-serif; letter-spacing: -0.01em; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; white-space: normal; line-height: 1.5; }
+    .lc .lch { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }
+    .lc .lcs { margin-left: auto; font-weight: 400; color: #8b93a7; font-size: 11px; }
+    .lc .lct { color: rgba(242,244,248,0.85); }
+    .lc .lca { display: flex; gap: 6px; }
+    .lc .mono { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11.5px; color: #cfeaff; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.14em; font-size: 12px; padding-right: 6px; }
+    .ws { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; background: transparent; }
+    .ws .name { font-weight: 500; font-size: 13px; }
+    .ws .branch { font-size: 11.5px; color: #8b93a7; }
+    .seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); }
+    .seg button { height: 28px; padding: 0 12px; border-radius: 8px; border: 0; background: transparent; color: #8b93a7; font-size: 13px; font-weight: 500; }
+    .seg button.on { background: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .spacer { flex: 1; }
+    .engine { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8b93a7; background: rgba(255,255,255,0.03); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+    .dot.live { background: #5ce1ff; animation: pulse 1.8s ease-out infinite; }
+    .dot.done { background: rgba(139,147,167,0.45); }
+    .dot.ok { background: #5ee4a8; }
+    .dot.needs { background: #f0b45a; animation: breathe 2.4s ease-in-out infinite; }
+    .dot.idle { border: 1.5px solid rgba(139,147,167,0.6); background: transparent; width: 8px; height: 8px; }
+    .label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #8b93a7; padding: 4px 8px 6px; display: flex; align-items: center; gap: 8px; }
+    .count.amber { color: #f0b45a; font-weight: 500; }
+    .btn.ghost kbd { opacity: 1; color: #8b93a7; }
+    .icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; border: 1px solid transparent; background: transparent; color: #8b93a7; }
+    .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .kbd-btn { height: 30px; padding: 0 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #8b93a7; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+    .body { display: flex; min-height: 0; }
+    .rail { width: 260px; flex: none; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; gap: 14px; padding: 12px; min-height: 0; }
+    .cta { display: flex; align-items: center; justify-content: center; gap: 8px; height: 36px; width: 100%; border: 0; border-radius: 12px; font-weight: 600; font-size: 13px; color: #041016; background: linear-gradient(135deg, #5ce1ff, #7dd3fc 48%, #a78bfa); box-shadow: 0 8px 28px rgba(92,225,255,0.22); }
+    .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #8b93a7; font-size: 13px; }
+    .search kbd { margin-left: auto; font-family: inherit; font-size: 11px; color: #8b93a7; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 1px 5px; }
+    .group { display: flex; flex-direction: column; gap: 2px; }
+    .wshead { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+    .wshead .br { font-size: 11.5px; color: #8b93a7; font-weight: 400; }
+    .wshead .ch { color: #8b93a7; display: inline-flex; }
+    .count { margin-left: auto; font-size: 11px; color: #8b93a7; font-weight: 400; }
+    .row { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 8px 0 10px; border-radius: 9px; font-size: 13px; color: rgba(242,244,248,0.86); border: 1px solid transparent; }
+    .row.active { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .when { font-size: 11px; color: #8b93a7; flex: none; }
+    .row.sub { padding-left: 24px; }
+    .railfoot { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px 8px 2px; font-size: 12px; color: #8b93a7; border-top: 1px solid rgba(255,255,255,0.06); }
+    .avatar { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #5ce1ff, #a78bfa); flex: none; }
+    .review { flex: 1; min-width: 0; display: grid; grid-template-rows: 44px 1fr 56px; min-height: 0; }
+    .rhead { display: flex; align-items: center; gap: 12px; padding: 0 20px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .rhead .title { font-size: 13.5px; font-weight: 500; }
+    .rhead .meta { font-size: 11.5px; color: #8b93a7; }
+    .back { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 6px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #8b93a7; font-size: 12.5px; }
+    .back:hover { background: rgba(255,255,255,0.05); color: #f2f4f8; }
+    .cols { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; min-height: 0; }
+    .files { border-right: 1px solid rgba(255,255,255,0.06); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .sl { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #8b93a7; padding: 4px 8px 6px; display: flex; align-items: center; gap: 8px; }
+    .frow { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; border: 1px solid transparent; }
+    .frow.sel { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); }
+    .frow .fn { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .frow .dir { color: #8b93a7; }
+    .pm { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11.5px; flex: none; }
+    .mint { color: #5ee4a8; }
+    .rose { color: #ff7a90; }
+    .amber { color: #f0b45a; }
+    .fnote { font-size: 12px; color: #8b93a7; padding: 10px 8px 0; line-height: 1.5; }
+    .diffcol { display: flex; flex-direction: column; min-height: 0; }
+    .dhead { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 12.5px; }
+    .dhead .sub { color: #8b93a7; }
+    .mini { height: 28px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+    .mini.ok { color: #041016; background: #5ee4a8; border-color: transparent; }
+    .mini kbd { font-family: inherit; font-size: 10.5px; opacity: 0.7; border: 1px solid currentColor; border-radius: 4px; padding: 0 3px; line-height: 14px; }
+    .dbody { flex: 1; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
+    .hunk { border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; background: rgba(0,0,0,0.35); font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 12.5px; line-height: 1.65; overflow: hidden; }
+    .hunk.accepted { border-color: rgba(94,228,168,0.3); }
+    .hh { display: flex; align-items: center; gap: 10px; padding: 6px 12px; color: #8b93a7; font-size: 11.5px; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); }
+    .hh .ha { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+    .ln { padding: 0 12px; white-space: pre; color: rgba(242,244,248,0.75); display: flex; gap: 14px; }
+    .ln .no { width: 26px; text-align: right; color: #8b93a7; flex: none; }
+    .ln.add { background: rgba(94,228,168,0.09); color: rgba(160,240,200,0.95); }
+    .ln.del { background: rgba(255,122,144,0.09); color: rgba(255,170,184,0.9); }
+    .ln .w { background: rgba(94,228,168,0.25); border-radius: 2px; }
+    .ln .wd { background: rgba(255,122,144,0.25); border-radius: 2px; }
+    .ask { margin-top: auto; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #8b93a7; font-size: 13.5px; }
+    .ask .send { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: rgba(92,225,255,0.5); color: #041016; display: inline-flex; align-items: center; justify-content: center; }
+    .vcol { border-left: 1px solid rgba(255,255,255,0.06); padding: 10px 16px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+    .vrow { display: flex; align-items: center; gap: 10px; height: 30px; font-size: 13px; }
+    .vrow .vn { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 12px; color: rgba(242,244,248,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .vrow .vt { margin-left: auto; font-size: 11.5px; flex: none; }
+    .tests { border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; background: rgba(0,0,0,0.3); padding: 8px 10px; font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11.5px; line-height: 1.7; color: rgba(242,244,248,0.7); }
+    .field { border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; background: rgba(255,255,255,0.04); padding: 10px 12px; font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
+    .field .fl { font-size: 11px; color: #8b93a7; }
+    .field .desc { color: rgba(242,244,248,0.7); font-size: 12.5px; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); font-size: 13px; font-weight: 500; color: #f2f4f8; }
+    .btn.primary { border-color: transparent; color: #041016; background: #5ce1ff; box-shadow: 0 0 24px rgba(92,225,255,0.25); }
+    .btn.ghost { border-color: transparent; background: transparent; color: #8b93a7; }
+    .btn kbd { font-family: inherit; font-size: 11px; opacity: 0.7; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 16px; }
+    .foot { display: flex; align-items: center; gap: 10px; padding: 0 20px 0 16px; border-top: 1px solid rgba(255,255,255,0.06); background: rgba(5,5,8,0.5); }
+    .foot .sum { font-size: 12.5px; color: #8b93a7; }
+    .prog { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b93a7; }
+    .prog .bar { width: 120px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; }
+    .prog .bar i { display: block; height: 100%; width: 50%; background: #5ee4a8; border-radius: 2px; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,225,255,0.45); } 70% { box-shadow: 0 0 0 6px rgba(92,225,255,0); } 100% { box-shadow: 0 0 0 0 rgba(92,225,255,0); } }
+    @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+    @media (prefers-reduced-motion: reduce) { .dot.live, .dot.needs { animation: none; } }
+  </style>
+</helmet>
+<div class="app" style="width: 1440px; height: 900px;">
+  <header class="top">
+    <div class="brand">
+      <svg width="18" height="18" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="fmk3" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8fff4"></stop><stop offset="0.42" stop-color="#5ce1ff"></stop><stop offset="1" stop-color="#a78bfa"></stop></linearGradient></defs><path fill="url(#fmk3)" d="M32 8C42 8 52 18 52 30C52 44 40 54 32 56C24 54 12 44 12 30C12 18 22 8 32 8Z"></path><path fill="#ffffff" opacity="0.28" d="M18 34C22 28 28 30 32 33C36 36 42 36 46 31C44 42 38 48 32 50C26 48 20 42 18 34Z"></path></svg>
+      <span>FORGE</span>
+    </div>
+    <button class="ws">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"></path></svg>
+      <span class="name">grokforge</span>
+      <span class="branch mono">master</span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></svg>
+    </button>
+    <div class="seg"><button>Chat</button><button class="on">Code</button></div>
+    <div class="spacer"></div>
+    <div class="engine"><i class="dot live"></i><span>Grok · live</span></div>
+    <button class="kbd-btn"><span>Ctrl+K</span></button>
+    <button class="icon-btn" title="Settings"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"></path></svg></button>
+    <div class="win">
+      <button class="cap" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><path d="M0 5h10"></path></svg></button>
+      <button class="cap" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+      <button class="cap close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"></path></svg></button>
+    </div>
+  </header>
+  <div class="body">
+    <aside class="rail">
+      <button class="cta"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg><span>New session</span></button>
+      <div class="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.25"></circle><path d="M10.2 10.2L13.5 13.5"></path></svg><span>Search sessions</span><kbd>Ctrl+P</kbd></div>
+      <div class="group">
+        <div class="label"><span>Needs you</span><span class="count amber">1</span></div>
+        <div class="row"><i class="dot needs"></i><span class="t">Sidebar tree · sessions v2</span><span class="when">question</span></div>
+      </div>
+      <div class="group">
+        <div class="wshead"><span class="ch"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></svg></span><span>grokforge</span><span class="br mono">master</span></div>
+        <div class="row sub active"><i class="dot ok"></i><span class="t">Fix typecheck in apps/shell</span><span class="when">review</span></div>
+        <div class="row sub"><i class="dot done"></i><span class="t">Installer SHA-256 in Settings</span><span class="when">1h</span></div>
+        <div class="row sub"><i class="dot done"></i><span class="t">Typecheck mid-turn fixtures</span><span class="when">Tue</span></div>
+      </div>
+      <div class="group">
+        <div class="wshead"><span class="ch"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg></span><span>spire-os</span><span class="br mono">master</span><span class="count">4</span></div>
+      </div>
+      <div class="group">
+        <div class="wshead"><span class="ch"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></svg></span><span>grok-acp</span><span class="br mono">feat/live-kinds</span><span class="count">2</span></div>
+      </div>
+      <div class="railfoot"><span class="avatar"></span><span>Grok · subscription</span><span style="margin-left: auto; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px;">v0.7.0</span></div>
+    </aside>
+
+    <main class="review">
+      <div class="rhead">
+        <button class="back"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4"></path></svg><span>Thread</span></button>
+        <span class="title">Review changes</span>
+        <span class="meta">Fix typecheck in apps/shell · 2 files · <span class="mint">+10</span> <span class="rose">−5</span></span>
+        <span class="spacer"></span>
+        <div class="prog"><span>1 of 2 accepted</span><span class="bar"><i></i></span></div>
+      </div>
+
+      <div class="cols">
+        <div class="files">
+          <div class="sl"><span>Files</span><span style="margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400;">2</span></div>
+          <div class="frow"><i class="dot ok"></i><span class="fn"><span class="dir">src/</span>OverviewStrip.tsx</span><span class="pm"><span class="mint">+6</span> <span class="rose">−2</span></span></div>
+          <div class="frow sel"><i class="dot idle"></i><span class="fn"><span class="dir">src/</span>OverviewStrip.test.ts</span><span class="pm"><span class="mint">+4</span> <span class="rose">−3</span></span></div>
+          <div class="fnote">Edits are on disk, so checks run against them. Nothing has touched git yet.</div>
+        </div>
+
+        <div class="diffcol">
+          <div class="dhead"><span>src/OverviewStrip.test.ts</span><span class="sub">2 hunks · 1 accepted</span><span class="spacer"></span><button class="mini ok"><span>Accept file</span><kbd>⇧A</kbd></button><button class="mini"><span>Reject file</span><kbd>⇧R</kbd></button><button class="mini"><span>Open in editor</span></button></div>
+          <div class="dbody">
+            <div class="hunk accepted">
+              <div class="hh"><span>@@ -12,4 +12,5 @@</span><span>buildSummary fixture</span><span class="ha"><span class="mint">accepted</span><button class="mini"><span>Undo</span></button></span></div>
+              <div class="ln"><span class="no">12</span><span>  const s = buildSummary({</span></div>
+              <div class="ln del"><span class="no">13</span><span>-   <span class="wd">turns</span>: 3,</span></div>
+              <div class="ln add"><span class="no">13</span><span>+   <span class="w">turnCount</span>: 3,</span></div>
+              <div class="ln add"><span class="no">14</span><span>+   // renamed in sessions v2</span></div>
+              <div class="ln"><span class="no">15</span><span>    branch: "master",</span></div>
+              <div class="ln"><span class="no">16</span><span>  });</span></div>
+            </div>
+            <div class="hunk">
+              <div class="hh"><span>@@ -31,4 +32,4 @@</span><span>label expectations</span><span class="ha"><button class="mini ok"><span>Accept hunk</span><kbd>A</kbd></button><button class="mini"><span>Reject</span><kbd>R</kbd></button></span></div>
+              <div class="ln"><span class="no">32</span><span>  it("labels turns", () =&gt; {</span></div>
+              <div class="ln del"><span class="no">33</span><span>-   expect(label({ <span class="wd">turns</span>: 1 })).toBe("1 turn");</span></div>
+              <div class="ln add"><span class="no">33</span><span>+   expect(label({ <span class="w">turnCount</span>: 1 })).toBe("1 turn");</span></div>
+              <div class="ln del"><span class="no">34</span><span>-   expect(label({ <span class="wd">turns</span>: 3 })).toBe("3 turns");</span></div>
+              <div class="ln add"><span class="no" style="color: #5ce1ff;">34</span><span>+   expect(label({ <span class="w">turnCount</span>: 3 })).toBe("3 turns");</span></div>
+              <div class="lc">
+                <div class="lch"><i class="dot" style="background: #5ce1ff;"></i><span>Comment on line 34</span><span class="lcs">goes to Grok with this hunk as context</span></div>
+                <div class="lct">Also cover <span class="mono">turnCount: undefined</span>. A summary can be partial while a run is still streaming.</div>
+                <div class="lca"><button class="mini ok"><span>Send to Grok</span><kbd>Ctrl+⏎</kbd></button><button class="mini"><span>Discard</span></button></div>
+              </div>
+              <div class="ln"><span class="no">35</span><span>  });</span></div>
+            </div>
+            <div class="ask"><span>Ask Grok to change this file… for example “keep the old key as a deprecated alias”</span><span class="send"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3.5M4.5 7L8 3.5 11.5 7"></path></svg></span></div>
+          </div>
+        </div>
+
+        <div class="vcol">
+          <div>
+            <div class="sl"><span>Verify</span><span style="margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400;" class="mint">all green</span></div>
+            <div class="vrow"><i class="dot ok"></i><span class="vn">tsc --noEmit</span><span class="vt mint">0 errors · 4.1s</span></div>
+            <div class="vrow"><i class="dot ok"></i><span class="vn">npm test -- OverviewStrip</span><span class="vt mint">6 passed · 2.3s</span></div>
+            <div class="tests"><span style="color: #8b93a7;">npm test · raw output</span><br>✓ labels a single turn<br>✓ labels many turns<br>✓ labels zero turns<br>✓ counts files from the summary<br>✓ jumps to the newest turn<br>✓ stays quiet while streaming</div>
+          </div>
+          <div>
+            <div class="sl"><span>Git</span><span style="margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400;">master · clean before run</span></div>
+            <div class="field">
+              <span class="fl">Commit message · drafted by Grok, yours to edit</span>
+              <span>Rename turns → turnCount in OverviewStrip</span>
+              <span class="desc">Sessions v2 renamed the summary field; the strip and its test still read the old name. No behavior change.</span>
+            </div>
+            <div class="vrow" style="height: auto; padding-top: 10px; gap: 8px;"><button class="btn primary"><span>Commit 1 accepted file</span><kbd>Ctrl+⇧⏎</kbd></button><button class="btn ghost">Stage only</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span class="sum">Accept keeps a file as Grok wrote it. Reject restores the copy Forge kept before the run.</span>
+        <span class="spacer"></span>
+        <button class="btn ghost">Reject all</button>
+        <button class="btn"><span>Accept all</span><kbd>Ctrl+⇧A</kbd></button>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

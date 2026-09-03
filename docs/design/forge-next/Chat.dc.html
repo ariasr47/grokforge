@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap">
+  <style>
+    body { margin: 0; background: #050508; color: #f2f4f8; font-family: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv11"; }
+    a { color: #5ce1ff; text-decoration: none; }
+    a:hover { color: #8eeaff; }
+    * { box-sizing: border-box; }
+    button { font: inherit; color: inherit; letter-spacing: inherit; cursor: pointer; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
+    .app { position: relative; overflow: hidden; display: grid; grid-template-rows: 52px 1fr; background: radial-gradient(900px 480px at 8% -12%, rgba(92,225,255,0.07), transparent 58%), radial-gradient(760px 420px at 100% -6%, rgba(167,139,250,0.08), transparent 55%), #050508; }
+    .top { display: flex; align-items: center; gap: 10px; padding: 0 0 0 14px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(5,5,8,0.72); backdrop-filter: blur(20px) saturate(1.2); }
+    .win { display: flex; align-self: stretch; margin-left: 8px; }
+    .cap { width: 46px; border: 0; background: transparent; color: #8b93a7; display: inline-flex; align-items: center; justify-content: center; }
+    .cap:hover { background: rgba(255,255,255,0.06); color: #f2f4f8; }
+    .cap.close:hover { background: #c42b1c; color: #fff; }
+    .cite { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; height: 20px; border-radius: 6px; border: 1px solid rgba(92,225,255,0.25); background: rgba(92,225,255,0.06); font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11.5px; color: #8eeaff; vertical-align: 2px; margin: 0 2px 0 4px; }
+    .live { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #8b93a7; }
+    .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
+    .btn.accent { border-color: transparent; color: #041016; background: #5ce1ff; }
+    .btn kbd { font-family: inherit; font-size: 11px; opacity: 0.7; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 16px; }
+    .steer { display: inline-flex; gap: 6px; margin-left: 4px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.14em; font-size: 12px; padding-right: 6px; }
+    .ws { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; background: transparent; }
+    .ws:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
+    .ws .name { font-weight: 500; font-size: 13px; }
+    .ws .branch { font-size: 11.5px; color: #8b93a7; }
+    .seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); }
+    .seg button { height: 28px; padding: 0 12px; border-radius: 8px; border: 0; background: transparent; color: #8b93a7; font-size: 13px; font-weight: 500; }
+    .seg button.on { background: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .spacer { flex: 1; }
+    .engine { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8b93a7; background: rgba(255,255,255,0.03); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+    .dot.live { background: #5ce1ff; animation: pulse 1.8s ease-out infinite; }
+    .dot.done { background: rgba(139,147,167,0.45); }
+    .icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; border: 1px solid transparent; background: transparent; color: #8b93a7; }
+    .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .kbd-btn { height: 30px; padding: 0 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #8b93a7; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+    .body { display: flex; min-height: 0; }
+    .rail { width: 260px; flex: none; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; gap: 14px; padding: 12px; min-height: 0; }
+    .cta { display: flex; align-items: center; justify-content: center; gap: 8px; height: 36px; width: 100%; border: 0; border-radius: 12px; font-weight: 600; font-size: 13px; color: #041016; background: linear-gradient(135deg, #5ce1ff, #7dd3fc 48%, #a78bfa); box-shadow: 0 8px 28px rgba(92,225,255,0.22); }
+    .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #8b93a7; font-size: 13px; }
+    .search kbd { margin-left: auto; font-family: inherit; font-size: 11px; color: #8b93a7; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; padding: 1px 5px; }
+    .group { display: flex; flex-direction: column; gap: 2px; }
+    .label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #8b93a7; padding: 4px 8px 6px; display: flex; align-items: center; gap: 8px; }
+    .label .act { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400; color: #5ce1ff; padding: 6px 8px; margin: -6px -8px -6px auto; border-radius: 6px; }
+    .home { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 8px 0 10px; border-radius: 9px; font-size: 13px; font-weight: 500; border: 1px solid transparent; }
+    .home:hover { background: rgba(255,255,255,0.04); }
+    .home.on { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); }
+    .home .n { margin-left: auto; font-size: 11px; color: #8b93a7; font-weight: 400; }
+    .hm { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+    .row { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px 0 10px; border-radius: 9px; font-size: 13px; color: rgba(242,244,248,0.86); border: 1px solid transparent; }
+    .row:hover { background: rgba(255,255,255,0.04); }
+    .row.active { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); color: #f2f4f8; }
+    .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .when { font-size: 11px; color: #8b93a7; flex: none; }
+    .row.sub { padding-left: 24px; }
+    .file { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px 0 10px; font-size: 12.5px; color: rgba(242,244,248,0.8); border-radius: 8px; }
+    .file .fn { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file .sz { font-size: 11px; color: #8b93a7; }
+    .railfoot { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px 8px 2px; font-size: 12px; color: #8b93a7; border-top: 1px solid rgba(255,255,255,0.06); }
+    .avatar { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #5ce1ff, #a78bfa); flex: none; }
+    .thread { flex: 1; min-width: 0; display: grid; grid-template-rows: 44px 1fr auto; min-height: 0; }
+    .thead { display: flex; align-items: center; gap: 12px; padding: 0 20px 0 28px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .thead .title { font-size: 13.5px; font-weight: 500; }
+    .thead .meta { font-size: 11.5px; color: #8b93a7; }
+    .stream { overflow: hidden; padding: 28px 32px 8px; display: flex; flex-direction: column; gap: 24px; }
+    .msg { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+    .msg.me { align-self: flex-end; align-items: flex-end; max-width: 520px; }
+    .bubble { padding: 12px 16px; border-radius: 16px 16px 6px 16px; background: rgba(92,225,255,0.06); border: 1px solid rgba(92,225,255,0.16); font-size: 14.5px; line-height: 1.55; }
+    .stamp { font-size: 11px; color: #8b93a7; padding: 0 4px; }
+    .who { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8b93a7; }
+    .who .g { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, #5ce1ff, #a78bfa); }
+    .prose { font-size: 15px; line-height: 1.62; color: #f2f4f8; }
+    .prose p { margin: 0 0 10px; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose code { font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 13px; padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,0.07); color: #cfeaff; }
+    .beside { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); width: 100%; }
+    .beside .ic { width: 34px; height: 34px; border-radius: 9px; background: rgba(92,225,255,0.1); border: 1px solid rgba(92,225,255,0.2); display: inline-flex; align-items: center; justify-content: center; color: #5ce1ff; flex: none; }
+    .beside .bt { font-size: 13.5px; font-weight: 500; }
+    .beside .bs { font-size: 12px; color: #8b93a7; }
+    .beside .open { margin-left: auto; }
+    .choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    .choice { padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); display: flex; flex-direction: column; gap: 3px; }
+    .choice.rec { border-color: rgba(92,225,255,0.35); background: rgba(92,225,255,0.05); }
+    .choice .ct { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .choice .cd { font-size: 12px; color: #8b93a7; }
+    .choice .tag { font-size: 10.5px; color: #5ce1ff; letter-spacing: 0.06em; text-transform: uppercase; margin-left: auto; }
+    .caret { display: inline-block; width: 2px; height: 1em; background: #5ce1ff; vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+    .dockarea { padding: 10px 32px 12px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid rgba(255,255,255,0.05); }
+    .composer { border-radius: 16px; border: 1px solid rgba(92,225,255,0.35); box-shadow: 0 0 0 3px rgba(92,225,255,0.08), 0 0 40px rgba(92,225,255,0.08); background: rgba(255,255,255,0.04); padding: 12px 12px 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .composer .tx { font-size: 14.5px; min-height: 22px; }
+    .composer .bar { display: flex; align-items: center; gap: 6px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); font-size: 12.5px; color: rgba(242,244,248,0.85); }
+    .chip.quiet { border-color: transparent; background: transparent; color: #8b93a7; }
+    .chip.on { border-color: rgba(92,225,255,0.4); background: rgba(92,225,255,0.08); color: #f2f4f8; }
+    .btn.ghost kbd { opacity: 1; color: #8b93a7; }
+    .chip .ch { display: inline-flex; color: #8b93a7; }
+    .send { margin-left: 4px; width: 32px; height: 32px; border-radius: 50%; border: 0; display: inline-flex; align-items: center; justify-content: center; color: #041016; background: #5ce1ff; box-shadow: 0 0 20px rgba(92,225,255,0.35); }
+    .ring { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11.5px; color: #8b93a7; padding-right: 4px; }
+    .cmeta { display: flex; align-items: center; gap: 14px; padding: 0 6px; font-family: "Geist Mono", ui-monospace, monospace; letter-spacing: 0; font-size: 11px; color: #8b93a7; }
+    .cmeta .r { margin-left: auto; }
+    .side { width: 380px; flex: none; border-left: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.015); display: flex; flex-direction: column; min-height: 0; }
+    .shead { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13.5px; font-weight: 500; }
+    .shead .k { font-size: 11px; color: #8b93a7; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; }
+    .tabs { display: flex; gap: 2px; padding: 10px 16px 0; }
+    .tabs button { height: 28px; padding: 0 12px; border: 0; background: transparent; border-radius: 8px; font-size: 12.5px; color: #8b93a7; }
+    .tabs button.on { background: rgba(255,255,255,0.06); color: #f2f4f8; }
+    .doc { padding: 16px 20px; font-size: 14px; line-height: 1.65; color: rgba(242,244,248,0.9); overflow: hidden; }
+    .doc .subj { font-size: 12px; color: #8b93a7; margin-bottom: 12px; display: flex; flex-direction: column; gap: 2px; }
+    .doc .subj b { color: #f2f4f8; font-weight: 500; }
+    .doc p { margin: 0 0 12px; }
+    .doc mark { background: rgba(92,225,255,0.14); color: #f2f4f8; border-radius: 3px; padding: 0 2px; }
+    .sfoot { margin-top: auto; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); font-size: 12.5px; font-weight: 500; color: #f2f4f8; }
+    .btn.ghost { border-color: transparent; background: transparent; color: #8b93a7; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,225,255,0.45); } 70% { box-shadow: 0 0 0 6px rgba(92,225,255,0); } 100% { box-shadow: 0 0 0 0 rgba(92,225,255,0); } }
+    @keyframes blink { 0% { opacity: 1; } 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .dot.live, .caret { animation: none; } }
+  </style>
+</helmet>
+<div class="app" style="width: 1440px; height: 900px;">
+  <header class="top">
+    <div class="brand">
+      <svg width="18" height="18" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="fmk2" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8fff4"></stop><stop offset="0.42" stop-color="#5ce1ff"></stop><stop offset="1" stop-color="#a78bfa"></stop></linearGradient></defs><path fill="url(#fmk2)" d="M32 8C42 8 52 18 52 30C52 44 40 54 32 56C24 54 12 44 12 30C12 18 22 8 32 8Z"></path><path fill="#ffffff" opacity="0.28" d="M18 34C22 28 28 30 32 33C36 36 42 36 46 31C44 42 38 48 32 50C26 48 20 42 18 34Z"></path></svg>
+      <span>FORGE</span>
+    </div>
+    <button class="ws">
+      <span class="hm" style="background: #a78bfa;"></span>
+      <span class="name">Family admin</span>
+      <span class="branch">home</span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></svg>
+    </button>
+    <div class="seg"><button class="on">Chat</button><button>Code</button></div>
+    <div class="spacer"></div>
+    <div class="engine"><i class="dot live"></i><span>Grok · live</span></div>
+    <button class="kbd-btn"><span>Ctrl+K</span></button>
+    <button class="icon-btn" title="Settings"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"></path></svg></button>
+    <div class="win">
+      <button class="cap" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><path d="M0 5h10"></path></svg></button>
+      <button class="cap" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+      <button class="cap close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"></path></svg></button>
+    </div>
+  </header>
+  <div class="body">
+    <aside class="rail">
+      <button class="cta">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg>
+        <span>New chat</span>
+      </button>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.25"></circle><path d="M10.2 10.2L13.5 13.5"></path></svg>
+        <span>Search chats</span>
+        <kbd>Ctrl+P</kbd>
+      </div>
+      <div class="group">
+        <div class="label"><span>Homes</span></div>
+        <div class="home on"><span class="hm" style="background: #a78bfa;"></span><span>Family admin</span><span class="n">3</span></div>
+        <div class="row sub active"><i class="dot live"></i><span class="t">Landlord email · EN/JA</span><span class="when">now</span></div>
+        <div class="row sub"><i class="dot done"></i><span class="t">Insurance renewal summary</span><span class="when">Mon</span></div>
+        <div class="row sub"><i class="dot done"></i><span class="t">School forms for April</span><span class="when">Aug 22</span></div>
+        <div class="home"><span class="hm" style="background: #5ce1ff;"></span><span>Japanese study</span><span class="n">12</span></div>
+        <div class="home"><span class="hm" style="background: #8b93a7;"></span><span>Work notes</span><span class="n">7</span></div>
+      </div>
+      <div class="group">
+        <div class="label"><span>Pack</span><span class="act">Add</span></div>
+        <div class="file"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 2.5h4.5l3 3v8h-7.5z"></path><path d="M9 2.5v3h3"></path></svg><span class="fn">lease-2025.pdf</span><span class="sz">14 pages</span></div>
+        <div class="file"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 2.5h4.5l3 3v8h-7.5z"></path><path d="M9 2.5v3h3"></path></svg><span class="fn">insurance-renewal.pdf</span><span class="sz">3 pages</span></div>
+        <div class="file"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 2.5h4.5l3 3v8h-7.5z"></path><path d="M9 2.5v3h3"></path></svg><span class="fn">household-notes.md</span><span class="sz">2 KB</span></div>
+      </div>
+      <div class="railfoot"><span class="avatar"></span><span>Grok · subscription</span><span style="margin-left: auto; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px;">v0.7.0</span></div>
+    </aside>
+
+    <main class="thread">
+      <div class="thead">
+        <span class="title">Landlord email · EN/JA</span>
+        <span class="meta">grok-4.6 · Pack · 3 files</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="Export"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M5 7.5l3 3 3-3M3 13h10"></path></svg></button>
+        <button class="chip on"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="M9.5 3v10"></path></svg><span>Beside</span></button>
+      </div>
+
+      <div class="stream">
+        <div class="msg me">
+          <div class="bubble">Draft an email to our landlord asking them to fix the kitchen tap. Polite but firm. English and Japanese. The lease says repairs are on them — check the PDF.</div>
+          <div class="stamp">09:41</div>
+        </div>
+
+        <div class="msg">
+          <div class="who"><span class="g"></span><span>Grok</span><span>·</span><span>read 2 of 14 pages · lease-2025.pdf</span></div>
+          <div class="prose">
+            <p>Clause 7.2 of the lease<span class="cite">lease-2025.pdf · p.7</span>puts plumbing repairs on the landlord, so the email can cite it directly instead of asking as a favor. I kept both versions short: one paragraph on the problem, one on the clause, one asking for a date.</p>
+            <p>The Japanese version uses plain polite form, not heavy keigo, so it reads like a tenant writing, not a lawyer.</p>
+          </div>
+          <div class="beside">
+            <span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 2.5h4.5l3 3v8h-7.5z"></path><path d="M9 2.5v3h3"></path></svg></span>
+            <div><div class="bt">Landlord email</div><div class="bs">English + Japanese · 2 versions · open in Beside</div></div>
+            <button class="btn open">Open</button>
+          </div>
+          <div class="choices">
+            <div class="choice"><div class="ct">Friendly reminder</div><div class="cd">No clause, just a nudge</div></div>
+            <div class="choice rec"><div class="ct">Firm, cite the lease<span class="tag">Suggested</span></div><div class="cd">Clause 7.2, 7-day window</div></div>
+            <div class="choice"><div class="ct">Formal notice</div><div class="cd">Dated, keeps a paper trail</div></div>
+          </div>
+        </div>
+
+        <div class="msg me">
+          <div class="bubble">Firm, cite the lease. And give them until next Friday.</div>
+          <div class="stamp">09:43</div>
+        </div>
+
+        <div class="msg">
+          <div class="who"><span class="g"></span><span>Grok</span></div>
+          <div class="prose">
+            <p>Updated both versions to cite clause 7.2 and ask for the repair by Friday 11 September. The English one is in the panel now; switching to the Japanese tab shows the same three paragraphs with the date written as 9月11日（金）<span class="caret"></span></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="dockarea">
+        <div class="live" style="padding-left: 6px;"><i class="dot live"></i><span>Grok is writing · 6s</span></div>
+        <div class="composer">
+          <div class="tx">Also mention the bathroom fan is</div>
+          <div class="bar">
+            <button class="icon-btn" title="Attach"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 6.5l-4 4a1.5 1.5 0 0 1-2.1-2.1l4.6-4.6a2.5 2.5 0 0 1 3.5 3.5l-4.8 4.8a3.5 3.5 0 0 1-5-5L7 3"></path></svg></button>
+            <button class="chip"><span>Pack</span><span style="color: #8b93a7;">3</span></button>
+            <button class="chip"><span>Expert</span><span class="ch"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></svg></span></button>
+            <span class="ring" title="18% of context used"><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2.5"></circle><circle cx="10" cy="10" r="7.5" fill="none" stroke="#5ce1ff" stroke-width="2.5" stroke-dasharray="47.1" stroke-dashoffset="38.6" stroke-linecap="round" transform="rotate(-90 10 10)"></circle></svg><span>18%</span></span>
+            <span class="steer"><button class="btn sm accent"><span>Steer</span><kbd>⏎</kbd></button><button class="btn sm"><span>Queue</span><kbd>⇧⏎</kbd></button><button class="btn sm ghost"><span>Stop</span><kbd>esc</kbd></button></span>
+          </div>
+        </div>
+        <div class="cmeta"><span>Family admin</span><span>grok-4.6</span><span>drop a PDF to add it to the pack</span><span class="r">⏎ steer · ⇧⏎ queue · esc stop</span></div>
+      </div>
+    </main>
+
+    <aside class="side">
+      <div class="shead"><span class="k">Beside</span><span>Landlord email</span><span class="spacer"></span><button class="icon-btn" title="Close"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"></path></svg></button></div>
+      <div class="tabs"><button class="on">English</button><button>日本語</button></div>
+      <div class="doc">
+        <div class="subj"><span>To: Sato Property Management</span><span>Subject: <b>Kitchen tap repair — Apt 402 (lease clause 7.2)</b></span></div>
+        <p>Hello Sato-san,</p>
+        <p>The kitchen tap in Apt 402 has been dripping constantly for about two weeks and now leaks at the base when opened. We have turned the supply down but it needs a proper repair.</p>
+        <p>Under <mark>clause 7.2 of our lease</mark>, plumbing repairs are the landlord's responsibility. Could you arrange a plumber to visit by <mark>Friday 11 September</mark>? Mornings work best for us, and we can be home any weekday before 11.</p>
+        <p>Thank you for taking care of this.</p>
+        <p>Rodrigo Arias<br>Apt 402</p>
+      </div>
+      <div class="sfoot"><button class="btn">Copy</button><button class="btn ghost">Export .md</button><span class="spacer"></span><span style="font-size: 11.5px; color: #8b93a7;">v2 · 09:43</span></div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

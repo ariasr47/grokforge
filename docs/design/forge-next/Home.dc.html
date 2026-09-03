@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap">
+  <style>
+    body { margin: 0; background: #050508; color: #f2f4f8; font-family: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv11"; }
+    a { color: #5ce1ff; text-decoration: none; }
+    a:hover { color: #8eeaff; }
+    * { box-sizing: border-box; }
+    button { font: inherit; color: inherit; letter-spacing: inherit; cursor: pointer; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
+    .app { position: relative; overflow: hidden; display: grid; grid-template-rows: 52px 1fr; background: radial-gradient(1100px 560px at 50% -20%, rgba(92,225,255,0.09), transparent 60%), radial-gradient(700px 420px at 100% 10%, rgba(167,139,250,0.07), transparent 55%), #050508; }
+    .top { display: flex; align-items: center; gap: 10px; padding: 0 0 0 14px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .win { display: flex; align-self: stretch; margin-left: 8px; }
+    .cap { width: 46px; border: 0; background: transparent; color: #8b93a7; display: inline-flex; align-items: center; justify-content: center; }
+    .cap:hover { background: rgba(255,255,255,0.06); color: #f2f4f8; }
+    .cap.close:hover { background: #c42b1c; color: #fff; }
+    .item.focus { background: rgba(255,255,255,0.05); border-color: rgba(92,225,255,0.35); }
+    .item .k { font-family: inherit; font-size: 11px; color: #8b93a7; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; padding: 1px 6px; flex: none; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.14em; font-size: 12px; }
+    .spacer { flex: 1; }
+    .engine { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8b93a7; background: rgba(255,255,255,0.03); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+    .dot.live { background: #5ce1ff; animation: pulse 1.8s ease-out infinite; }
+    .dot.needs { background: #f0b45a; animation: breathe 2.4s ease-in-out infinite; }
+    .dot.done { background: rgba(139,147,167,0.45); }
+    .icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; border: 1px solid transparent; background: transparent; color: #8b93a7; }
+    .kbd-btn { height: 30px; padding: 0 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #8b93a7; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+    .page { display: flex; flex-direction: column; align-items: center; padding: 72px 40px 0; gap: 28px; min-height: 0; overflow: hidden; }
+    .hero { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+    .hero h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+    .hero p { margin: 0; font-size: 14.5px; color: #8b93a7; }
+    .hero p b { color: #f0b45a; font-weight: 500; }
+    .field { width: 760px; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 12px 0 18px; border-radius: 16px; border: 1px solid rgba(92,225,255,0.35); background: rgba(255,255,255,0.04); box-shadow: 0 0 0 3px rgba(92,225,255,0.08), 0 0 60px rgba(92,225,255,0.1); font-size: 16px; color: #8b93a7; }
+    .field kbd { font-family: inherit; font-size: 11px; color: #8b93a7; border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; padding: 2px 6px; }
+    .field .go { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; background: #5ce1ff; color: #041016; display: inline-flex; align-items: center; justify-content: center; }
+    .hints { display: flex; gap: 18px; font-size: 12px; color: #8b93a7; margin-top: -14px; }
+    .hints kbd { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: #8b93a7; }
+    .grid { width: 760px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 40px; }
+    .col { display: flex; flex-direction: column; gap: 4px; }
+    .sl { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #8b93a7; padding: 0 8px 8px; display: flex; align-items: center; gap: 8px; }
+    .sl .amber { color: #f0b45a; letter-spacing: 0; text-transform: none; font-weight: 500; }
+    .sl .act { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400; color: #5ce1ff; padding: 6px 8px; margin: -6px -8px -6px auto; border-radius: 6px; }
+    .item { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; }
+    .item:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
+    .item .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .item .t { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item .s { font-size: 12px; color: #8b93a7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item .when { font-size: 11.5px; color: #8b93a7; flex: none; }
+    .item .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+    .item .ic { width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); display: inline-flex; align-items: center; justify-content: center; color: #8b93a7; flex: none; }
+    .item.needs .ic { background: rgba(240,180,90,0.08); border-color: rgba(240,180,90,0.3); color: #f0b45a; }
+    .hm { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .quick { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 10px; font-size: 13px; color: rgba(242,244,248,0.85); }
+    .quick kbd { margin-left: auto; font-family: inherit; font-size: 11px; color: #8b93a7; border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; padding: 1px 6px; }
+    .foot { margin-top: auto; width: 100%; display: flex; align-items: center; gap: 16px; padding: 14px 6px 12px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 12px; color: #8b93a7; }
+    .foot .spacer { flex: 1; }
+    .foot .warn { display: inline-flex; align-items: center; gap: 6px; color: rgba(240,180,90,0.9); }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,225,255,0.45); } 70% { box-shadow: 0 0 0 6px rgba(92,225,255,0); } 100% { box-shadow: 0 0 0 0 rgba(92,225,255,0); } }
+    @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+    @media (prefers-reduced-motion: reduce) { .dot.live, .dot.needs { animation: none; } }
+  </style>
+</helmet>
+<div class="app" style="width: 1440px; height: 900px;">
+  <header class="top">
+    <div class="brand">
+      <svg width="18" height="18" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="fmk4" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8fff4"></stop><stop offset="0.42" stop-color="#5ce1ff"></stop><stop offset="1" stop-color="#a78bfa"></stop></linearGradient></defs><path fill="url(#fmk4)" d="M32 8C42 8 52 18 52 30C52 44 40 54 32 56C24 54 12 44 12 30C12 18 22 8 32 8Z"></path><path fill="#ffffff" opacity="0.28" d="M18 34C22 28 28 30 32 33C36 36 42 36 46 31C44 42 38 48 32 50C26 48 20 42 18 34Z"></path></svg>
+      <span>FORGE</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="engine"><i class="dot live"></i><span>Grok · live</span></div>
+    <button class="kbd-btn"><span>Ctrl+K</span></button>
+    <button class="icon-btn" title="Settings"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"></path></svg></button>
+    <div class="win">
+      <button class="cap" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><path d="M0 5h10"></path></svg></button>
+      <button class="cap" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+      <button class="cap close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"></path></svg></button>
+    </div>
+  </header>
+  <div class="page">
+    <div class="hero">
+      <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="fmk5" x1="14" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8fff4"></stop><stop offset="0.42" stop-color="#5ce1ff"></stop><stop offset="1" stop-color="#a78bfa"></stop></linearGradient></defs><ellipse cx="32" cy="34" rx="24" ry="26" fill="#5ce1ff" opacity="0.08"></ellipse><path fill="url(#fmk5)" d="M32 8C42 8 52 18 52 30C52 44 40 54 32 56C24 54 12 44 12 30C12 18 22 8 32 8Z"></path><path fill="#ffffff" opacity="0.28" d="M18 34C22 28 28 30 32 33C36 36 42 36 46 31C44 42 38 48 32 50C26 48 20 42 18 34Z"></path></svg>
+      <h1>Good morning, Rodrigo.</h1>
+      <p><b>Two sessions need you.</b> Three others finished while you were away.</p>
+    </div>
+    <div class="field">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.25"></circle><path d="M10.2 10.2L13.5 13.5"></path></svg>
+      <span>Open a folder, jump to a session, or ask Grok…</span>
+      <span class="go"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3.5M4.5 7L8 3.5 11.5 7"></path></svg></span>
+    </div>
+    <div class="hints"><span><kbd>Ctrl+O</kbd> open folder</span><span><kbd>Ctrl+N</kbd> new session</span><span><kbd>Ctrl+Shift+N</kbd> new chat</span><span><kbd>@</kbd> file</span><span><kbd>/</kbd> command</span></div>
+
+    <div class="grid">
+      <div class="col">
+        <div class="sl"><span>Needs you</span><span class="amber">2</span></div>
+        <div class="item needs focus"><span class="ic"><i class="dot needs"></i></span><div class="tx"><span class="t">Approve a command · npm test</span><span class="s">Fix typecheck in apps/shell · grokforge</span></div><span class="when">41s</span><kbd class="k">⏎</kbd></div>
+        <div class="item needs"><span class="ic"><i class="dot needs"></i></span><div class="tx"><span class="t">Answer a question · which sessions store to keep?</span><span class="s">Sidebar tree · sessions v2 · grokforge</span></div><span class="when">12m</span></div>
+        <div class="sl" style="padding-top: 22px;"><span>Recent</span><span class="act">All sessions</span></div>
+        <div class="item"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"></path></svg></span><div class="tx"><span class="t">grokforge <span class="mono" style="color: #8b93a7; font-weight: 400; font-size: 12px;">master</span></span><span class="s">4 sessions · Installer SHA-256 in Settings finished</span></div><span class="when">1h</span></div>
+        <div class="item"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"></path></svg></span><div class="tx"><span class="t">spire-os <span class="mono" style="color: #8b93a7; font-weight: 400; font-size: 12px;">master</span></span><span class="s">4 sessions · one running: cycle 14 cull</span></div><span class="when">now</span></div>
+        <div class="item"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"></path></svg></span><div class="tx"><span class="t">grok-acp <span class="mono" style="color: #8b93a7; font-weight: 400; font-size: 12px;">feat/live-kinds</span></span><span class="s">2 sessions · live kinds streaming end to end</span></div><span class="when">Tue</span></div>
+      </div>
+      <div class="col">
+        <div class="sl"><span>Chat homes</span><span class="act">New home</span></div>
+        <div class="item"><span class="hm" style="background: #a78bfa; margin: 0 9px;"></span><div class="tx"><span class="t">Family admin</span><span class="s">Landlord email · EN/JA · pack of 3</span></div><span class="when">now</span></div>
+        <div class="item"><span class="hm" style="background: #5ce1ff; margin: 0 9px;"></span><div class="tx"><span class="t">Japanese study</span><span class="s">N2 grammar drill · 12 chats</span></div><span class="when">Mon</span></div>
+        <div class="item"><span class="hm" style="background: #8b93a7; margin: 0 9px;"></span><div class="tx"><span class="t">Work notes</span><span class="s">Weekly summary for Thursday</span></div><span class="when">Aug 28</span></div>
+        <div class="sl" style="padding-top: 22px;"><span>Start</span></div>
+        <div class="quick"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"></path></svg><span>Open a folder as a Code workspace</span><kbd>Ctrl+O</kbd></div>
+        <div class="quick"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.6" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"></path></svg><span>New session in the last workspace</span><kbd>Ctrl+N</kbd></div>
+        <div class="quick"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b93a7" stroke-width="1.5" stroke-linejoin="round"><path d="M3 4.5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 4.5v5a1.5 1.5 0 0 1-1.5 1.5H7l-3 2.5V11h-.5A1.5 1.5 0 0 1 3 9.5z"></path></svg><span>New chat in a home</span><kbd>Ctrl+Shift+N</kbd></div>
+      </div>
+    </div>
+
+    <div class="foot"><span>Forge 0.7.0 · Windows</span><span class="warn"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5l6 11H2z"></path><path d="M8 6.5v3M8 12h.01"></path></svg><span>Installer is unsigned · SHA-256 in Settings</span></span><span class="spacer"></span><span>Grok · subscription</span><span>host :8787 · data %USERPROFILE%\.grokforge</span></div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

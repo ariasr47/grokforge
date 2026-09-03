@@ -1,0 +1,23 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Screens" },
+    { "id": "page-2", "name": "System & research" },
+    { "id": "page-3", "name": "Not chosen" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Code · mid-run, needs you", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Chat.dc.html", "title": "Chat · home with a pack, steering mid-answer", "x": 1520, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Review.dc.html", "title": "Review · accept, comment, verify, commit", "x": 0, "y": 1020, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Home.dc.html", "title": "Home · what needs you", "x": 1520, "y": 1020, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Components.dc.html", "title": "Components · Voidglass, refined", "x": 0, "y": 0, "w": 1440, "h": 4300, "page": "page-2" },
+    { "file": "Research.dc.html", "title": "Research & redesign brief", "x": 1520, "y": 0, "w": 960, "h": 6400, "page": "page-2", "print": "flow" },
+    { "file": "DirectionConsole.dc.html", "title": "Direction B · Console split (not chosen)", "x": 0, "y": 0, "w": 1120, "h": 700, "page": "page-3" },
+    { "file": "DirectionFocus.dc.html", "title": "Direction C · Focus (not chosen)", "x": 1200, "y": 0, "w": 1120, "h": 700, "page": "page-3" }
+  ],
+  "annotations": [
+    { "id": "direction-a", "x": 0, "y": -190, "w": 680, "page": "page-1", "text": "Direction A · Voidglass, refined · chosen 1 Sep 2026\nSame canon: OLED void, glass, cyan leads, Geist. New execution: a spine down the thread, receipts with expandable output, an amber gate above a one-row composer that grows, a Changes dock on the right, a frameless window. Static mockups; every state shown maps to the current app's model (Review policy, trusted classes, Plan, packs, the artifact panel as Beside)." },
+    { "id": "system-note", "x": 0, "y": -150, "w": 640, "page": "page-2", "text": "Components sheet on the left, research brief on the right. The brief records the audit of apps/shell, the ten-product teardown with sources, what converged across the field, and the build order for this canvas." },
+    { "id": "alternates", "x": 0, "y": -170, "w": 700, "page": "page-3", "text": "Not chosen · B and C were structural alternates to A, not palettes: B makes the console permanent, C hides everything behind Ctrl+K. Kept for the record; A is the design." }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}
