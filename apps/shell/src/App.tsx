@@ -92,13 +92,30 @@ import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
 import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "./copyDock";
 import { RefreshCw } from "lucide-react";
 import { MessageList, WAITING_PLACEHOLDER_HEAD, type ChatMessage } from "./MessageList";
-import { RunStatusBar, type RunPhase } from "./RunStatusBar";
 import {
   formatToolInput,
   formatToolOutput,
 } from "./toolFormat";
 import { type PendingDiff } from "./DiffPanel";
 import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
+import {
+  ChangesDock,
+  type ChangesDockFilesState,
+  type ChangesDockGitState,
+  type ChangesDockMember,
+  type ChangesDockVerifyState,
+} from "./ChangesDock";
+import { ThreadHeader } from "./ThreadHeader";
+import { projectRunVerifyList } from "./runVerifyList";
+import { projectRunGitReviewList } from "./runGitReviewList";
+
+/** Legacy per-run phase label — superseded by derivedLivePhase's phaseCopy for
+ *  display, but still threaded through several socket-event handlers below. */
+type RunPhase = "waiting_model" | "reasoning" | "tools" | "writing" | "done" | null;
+
+// TODO(Task 10): the Review surface doesn't exist yet — a stable module-level
+// no-op keeps ChangesDock's memo() from re-rendering on every App render.
+function noopOpenReview() {}
 import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
 import {
   cancelledDoneShouldPaint,
@@ -135,7 +152,7 @@ import {
   type ChatSession,
 } from "./sessions";
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
-import { computeOverview, filesJumpNeedsStart, OverviewStrip, pickToolsJumpEl, scrollDeltaBelowYou, toolsJumpNeedsStart } from "./OverviewStrip";
+import { computeOverview, OverviewStrip, pickToolsJumpEl, toolsJumpNeedsStart } from "./OverviewStrip";
 import { EmptyStates } from "./EmptyStates";
 import { Sidebar, type WorkspaceNode } from "./Sidebar";
 import {
@@ -200,6 +217,7 @@ import {
   mergePendingDiffs,
   mergePendingPermissions,
   isStaleRailChip,
+  projectRunChangeList,
   railEvidenceFromRun,
   settledRailIdentities,
   type PermissionReq,
@@ -345,7 +363,8 @@ export function App() {
   const [planArmError, setPlanArmError] = useState<string | null>(null);
   const [planSettling, setPlanSettling] = useState(false);
   const [planDecisionError, setPlanDecisionError] = useState<string | null>(null);
-  const [activeDiffId, setActiveDiffId] = useState<string | null>(null);
+  const [changeRecoveryFlash, setChangeRecoveryFlash] = useState<Record<string, "reverted" | "conflict">>({});
+  const [changeRevertPendingEditId, setChangeRevertPendingEditId] = useState<string | null>(null);
   const [oauth, setOauth] = useState<OAuthPending | null>(null);
   const [forceOpenFailedTools, setForceOpenFailedTools] = useState(false);
   const [runFooter, setRunFooter] = useState<string | null>(null);
@@ -365,6 +384,8 @@ export function App() {
   const setPeek = useChromeStore((s) => s.setPeek);
   const dragOver = useChromeStore((s) => s.dragOver);
   const setDragOver = useChromeStore((s) => s.setDragOver);
+  const changesOpen = useChromeStore((s) => s.changesOpen);
+  const setChangesOpen = useChromeStore((s) => s.setChangesOpen);
   const toast = useToast();
   const setSessionWrite = useSessionFlagsStore((s) => s.setSessionWrite);
   const setSessionShell = useSessionFlagsStore((s) => s.setSessionShell);
@@ -399,9 +420,20 @@ export function App() {
   const [connTest, setConnTest] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ kind: "idle" });
   const [modeSwitching, setModeSwitching] = useState(false);
-  const [runPhase, setRunPhase] = useState<RunPhase>(null);
+  // Legacy per-run phase — still written by socket-event handlers below, but no
+  // longer read anywhere: RunStatusBar (its one reader) is gone, and
+  // ThreadHeader's live status uses derivedLivePhase's phaseCopy instead.
+  const [, setRunPhase] = useState<RunPhase>(null);
   const [runPhaseDetail, setRunPhaseDetail] = useState<string | null>(null);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  // ThreadHeader's elapsed minutes/seconds — ticks only while a run is
+  // actually timed (mirrors RunStatusBar's old local clock).
+  const [liveNow, setLiveNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!runStartedAt) return;
+    const t = setInterval(() => setLiveNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [runStartedAt]);
   /** After a finished answer, show “your turn” delimiter until next send */
   const [awaitingNextTurn, setAwaitingNextTurn] = useState(false);
   const thinkingIdRef = useRef<string | null>(null);
@@ -1336,7 +1368,6 @@ export function App() {
           const owner = Object.values(runProjectionRef.current.runsById).find((r) => r.state !== "terminal");
           return [...q, { id: ev.id!, path: ev.path, diff: ev.diff, runId: owner?.runId }];
         });
-        setActiveDiffId((cur) => cur ?? ev.id!);
         setMessages((prev) => prev.some((m) => m.activityIdentity === stamp.activityIdentity)
           ? prev
           : [...prev, { id: `diff-sys-${ev.id}`, role: "system", content: `Diff proposed: ${ev.path}`, activityRunKey: stamp.activityRunKey, activityOrder: stamp.activityOrder, activityIdentity: stamp.activityIdentity }]);
@@ -1962,6 +1993,97 @@ export function App() {
   busyRef.current = busy;
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
+  // Changes dock aggregation — the dock is one panel beside the whole thread
+  // (not per-run like the old in-stream sections), so it folds every run in
+  // this session together, the same runs `.stream` already renders.
+  const sessionRuns = useMemo(
+    () =>
+      runProjection.runOrder
+        .map((id) => runProjection.runsById[id])
+        .filter((run): run is NonNullable<typeof run> => Boolean(run) && run.sessionId === sessionId),
+    [runProjection, sessionId],
+  );
+  const changesDockFiles: ChangesDockFilesState = useMemo(() => {
+    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [] };
+    const projections = sessionRuns.map((run) => ({
+      run,
+      projection: projectRunChangeList(run, catchUpForRun(catchUpByRunId, run.runId)),
+    }));
+    if (projections.some((p) => p.projection.state === "loading")) return { state: "loading" };
+    const errored = projections.find((p): p is typeof p & { projection: { state: "error"; message: string } } =>
+      p.projection.state === "error",
+    );
+    if (errored) return { state: "error", message: errored.projection.message };
+    const members: ChangesDockMember[] = [];
+    for (const { run, projection } of projections) {
+      if (projection.state !== "ready") continue;
+      for (const member of projection.members) members.push({ ...member, runId: run.runId });
+    }
+    return { state: "ready", members };
+  }, [sessionRuns, catchUpByRunId, productMode]);
+  const changesDockVerify: ChangesDockVerifyState = useMemo(() => {
+    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [] };
+    const projections = sessionRuns.map((run) => projectRunVerifyList(run, catchUpForRun(catchUpByRunId, run.runId)));
+    if (projections.some((p) => p.state === "loading")) return { state: "loading" };
+    const errored = projections.find((p): p is typeof p & { state: "error"; message: string } => p.state === "error");
+    if (errored) return { state: "error", message: errored.message };
+    const members = projections.flatMap((p) => (p.state === "ready" ? p.members : []));
+    return { state: "ready", members };
+  }, [sessionRuns, catchUpByRunId, productMode]);
+  const changesDockGit: ChangesDockGitState = useMemo(() => {
+    if (productMode !== "code" || sessionRuns.length === 0) return { state: "ready", members: [] };
+    const projections = sessionRuns.map((run) => projectRunGitReviewList(run, catchUpForRun(catchUpByRunId, run.runId)));
+    if (projections.some((p) => p.state === "loading")) return { state: "loading" };
+    const errored = projections.find((p): p is typeof p & { state: "error"; message: string } => p.state === "error");
+    if (errored) return { state: "error", message: errored.message };
+    const members = projections.flatMap((p) => (p.state === "ready" ? p.members : []));
+    return { state: "ready", members };
+  }, [sessionRuns, catchUpByRunId, productMode]);
+  const changesActivityStatusById = useMemo(() => {
+    const map = new Map<string, ActivityRecord["status"]>();
+    for (const run of sessionRuns) {
+      for (const a of Object.values(run.activities)) map.set(a.activityId, a.status);
+    }
+    return map;
+  }, [sessionRuns]);
+  const changesActivityLifecycleById = useMemo(() => {
+    const map = new Map<string, ActivityRecord["lifecycle"]>();
+    for (const run of sessionRuns) {
+      for (const a of Object.values(run.activities)) map.set(a.activityId, a.lifecycle);
+    }
+    return map;
+  }, [sessionRuns]);
+  const changesNonEmpty = (s: { state: string; members?: unknown[] }) =>
+    s.state === "loading" || s.state === "error" || (s.state === "ready" && (s.members?.length ?? 0) > 0);
+  const changesAvailable =
+    changesNonEmpty(changesDockFiles) || changesNonEmpty(changesDockVerify) || changesNonEmpty(changesDockGit);
+  const changesDockVisible = changesAvailable && changesOpen;
+  const recoverChangeMember = useCallback(async (member: ChangesDockMember) => {
+    const run = runProjectionRef.current.runsById[member.runId];
+    if (!run) return;
+    setChangeRevertPendingEditId(member.editId);
+    try {
+      await api.editRecovery({ sessionId: run.sessionId, runId: run.runId, editId: member.editId });
+      setChangeRecoveryFlash((prev) => ({
+        ...prev,
+        [member.editId]: "reverted",
+        [member.activityId]: "reverted",
+      }));
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === "recovery_conflict") {
+        setChangeRecoveryFlash((prev) => ({
+          ...prev,
+          [member.editId]: "conflict",
+          [member.activityId]: "conflict",
+        }));
+      } else {
+        reportError(e instanceof Error ? e.message : "Recovery failed");
+      }
+    } finally {
+      setChangeRevertPendingEditId(null);
+    }
+  }, [reportError]);
   const livePhase = useMemo(() => {
     if (activeRun) return deriveLivePhaseFromRun(activeRun);
     if (runStartedAt) {
@@ -2588,7 +2710,6 @@ export function App() {
         })),
       );
       setDiffQueue([]);
-      setActiveDiffId(null);
       setPermissions([]);
       setSessionWrite(false);
       setSessionShell(false);
@@ -3039,56 +3160,16 @@ export function App() {
       reportError(err instanceof Error ? err.message : String(err));
     }
   }, [reportError, settleOwnedDiff, toast]);
+  // Stable wrappers so ChangesDock (memo()) does not re-render on every App
+  // render just because an inline arrow function got a new identity.
+  const onChangesDockAccept = useCallback((id: string) => void acceptDiff(id), [acceptDiff]);
+  const onChangesDockReject = useCallback((id: string) => void rejectDiff(id), [rejectDiff]);
+  const onChangesDockRevert = useCallback(
+    (member: ChangesDockMember) => void recoverChangeMember(member),
+    [recoverChangeMember],
+  );
+  const onChangesDockCollapse = useCallback(() => setChangesOpen(false), [setChangesOpen]);
 
-  const acceptAllDiffs = useCallback(async () => {
-    const ids = diffQueue.map((d) => d.id);
-    let ok = 0;
-    let fail = 0;
-    const failed = new Set<string>();
-    const keepEnvelope = new Set<string>();
-    for (const id of ids) {
-      try {
-        const envelopePending = await settleOwnedDiff(id, "accept");
-        ok += 1;
-        if (envelopePending) keepEnvelope.add(id);
-      } catch {
-        fail += 1;
-        failed.add(id);
-      }
-    }
-    setDiffQueue((q) => q.filter((d) => failed.has(d.id) || keepEnvelope.has(d.id)));
-    toast.push(
-      fail
-        ? `Accepted ${ok}, failed ${fail}`
-        : `Accepted ${ok} file${ok === 1 ? "" : "s"}`,
-      fail ? "error" : "success",
-    );
-  }, [diffQueue, settleOwnedDiff, toast]);
-
-  const rejectAllDiffs = useCallback(async () => {
-    const ids = diffQueue.map((d) => d.id);
-    let ok = 0;
-    let fail = 0;
-    const failed = new Set<string>();
-    const keepEnvelope = new Set<string>();
-    for (const id of ids) {
-      try {
-        const envelopePending = await settleOwnedDiff(id, "reject");
-        ok += 1;
-        if (envelopePending) keepEnvelope.add(id);
-      } catch {
-        fail += 1;
-        failed.add(id);
-      }
-    }
-    setDiffQueue((q) => q.filter((d) => failed.has(d.id) || keepEnvelope.has(d.id)));
-    toast.push(
-      fail
-        ? `Rejected ${ok}, failed ${fail}`
-        : `Rejected ${ok} file${ok === 1 ? "" : "s"}`,
-      fail ? "error" : "info",
-    );
-  }, [diffQueue, settleOwnedDiff, toast]);
 
   const openToolPath = useCallback(async (path: string) => {
     setPeek({ path, content: "Loading…" });
@@ -3993,17 +4074,15 @@ export function App() {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (diffQueue.length === 0) return;
         if (inEditable(e.target)) return;
-        const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
         e.preventDefault();
-        void acceptDiff(active.id);
+        void acceptDiff(diffQueue[0]!.id);
       },
       KeyR: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (diffQueue.length === 0) return;
         if (inEditable(e.target)) return;
-        const active = diffQueue.find((d) => d.id === activeDiffId) ?? diffQueue[0]!;
         e.preventDefault();
-        void rejectDiff(active.id);
+        void rejectDiff(diffQueue[0]!.id);
       },
     });
     return () => unbind();
@@ -4016,7 +4095,6 @@ export function App() {
     paletteOpen,
     skillsOpen,
     diffQueue,
-    activeDiffId,
     oauth,
     acceptDiff,
     rejectDiff,
@@ -4988,94 +5066,62 @@ export function App() {
             </div>
           ) : (
             <div className="panel-chat">
-              {prefs.density !== "compact" && (
-                <OverviewStrip
-                  overview={overview}
-                  workspaceName={
-                    productMode === "chat" ? chatRootLabel : (state?.workspaceName ?? null)
-                  }
-                  mode={productMode}
-                  shellCapability={state?.shellCapability}
-                  codeAgentIdentity={state?.codeAgent?.identity}
-                  onJumpToFiles={
-                    overview.filesTouched.length
-                      ? () => {
-                          const files = document.querySelector<HTMLElement>(".file-changes");
-                          const you = document.querySelector<HTMLElement>(".you");
-                          const transcript = document.querySelector<HTMLElement>(".transcript");
-                          if (!files) return;
-                          files.scrollIntoView({ block: "start", behavior: "instant" });
-                          const thought = document.querySelector<HTMLElement>(".thought");
-                          const thoughtOpen =
-                            thought instanceof HTMLDetailsElement
-                              ? thought.open
-                              : Boolean(thought?.hasAttribute("open"));
-                          const thoughtR = !thoughtOpen ? thought?.getBoundingClientRect() : null;
-                          const thoughtTop = thoughtR?.top ?? null;
-                          const thoughtBottom = thoughtR?.bottom ?? null;
-                          if (
-                            you &&
-                            filesJumpNeedsStart({
-                              filesTop: files.getBoundingClientRect().top,
-                              youBottom: you.getBoundingClientRect().bottom,
-                              thoughtTop,
-                              thoughtBottom,
-                            })
-                          ) {
-                            const delta = scrollDeltaBelowYou({
-                              targetTop: files.getBoundingClientRect().top,
-                              youBottom: you.getBoundingClientRect().bottom,
-                              thoughtTop,
-                              thoughtBottom,
-                            });
-                            if (transcript) transcript.scrollTop += delta;
-                          }
-                        }
-                      : undefined
-                  }
-                  onJumpToTools={
-                    overview.tools > 0
-                      ? () => {
-                          const tools = pickToolsJumpEl();
-                          if (!tools) return;
-                          tools.scrollIntoView({ block: "nearest", behavior: "instant" });
-                          const you = document.querySelector<HTMLElement>(".you");
-                          if (you) {
-                            const toolsR0 = tools.getBoundingClientRect();
-                            const youR = you.getBoundingClientRect();
-                            if (toolsJumpNeedsStart({ toolsTop: toolsR0.top, youBottom: youR.bottom })) {
-                              tools.scrollIntoView({ block: "start", behavior: "instant" });
+              <ThreadHeader
+                title={activeHome?.title ?? ""}
+                model={state?.appliedModel || state?.model || null}
+                effortLabel={
+                  effortLevel !== "auto"
+                    ? effortLevel.charAt(0).toUpperCase() + effortLevel.slice(1)
+                    : null
+                }
+                elapsedMinutes={runStartedAt ? Math.floor((liveNow - runStartedAt) / 60000) : null}
+                elapsedSeconds={runStartedAt ? Math.floor((liveNow - runStartedAt) / 1000) : null}
+                liveStatusText={liveCopy.status}
+                decisionPending={
+                  permissions.length > 0 ||
+                  diffQueue.length > 0 ||
+                  Boolean(pendingPlanDecision) ||
+                  sessionHasDockOwnedPending
+                }
+                cancellable={busy}
+                onCancel={requestCancel}
+                overview={
+                  <OverviewStrip
+                    overview={overview}
+                    workspaceName={
+                      productMode === "chat" ? chatRootLabel : (state?.workspaceName ?? null)
+                    }
+                    mode={productMode}
+                    shellCapability={state?.shellCapability}
+                    codeAgentIdentity={state?.codeAgent?.identity}
+                    onJumpToFiles={
+                      overview.filesTouched.length ? () => setChangesOpen(true) : undefined
+                    }
+                    onJumpToTools={
+                      overview.tools > 0
+                        ? () => {
+                            const tools = pickToolsJumpEl();
+                            if (!tools) return;
+                            tools.scrollIntoView({ block: "nearest", behavior: "instant" });
+                            const you = document.querySelector<HTMLElement>(".you");
+                            if (you) {
+                              const toolsR0 = tools.getBoundingClientRect();
+                              const youR = you.getBoundingClientRect();
+                              if (toolsJumpNeedsStart({ toolsTop: toolsR0.top, youBottom: youR.bottom })) {
+                                tools.scrollIntoView({ block: "start", behavior: "instant" });
+                              }
                             }
                           }
-                        }
-                      : undefined
-                  }
-                />
-              )}
-              <RunStatusBar
-                busy={busy || Boolean(runStartedAt)}
-                phase={runPhase}
-                phaseLabel={liveCopy.status}
-                phaseDetail={null}
-                runStartedAt={runStartedAt}
-                effortLabel={
-                  effortLevel !== "auto" ? `Effort: ${effortLevel}` : null
+                        : undefined
+                    }
+                  />
                 }
-                modelLabel={state?.appliedModel || state?.model || null}
-                permissionPending={permissions.length > 0}
-                diffCount={diffQueue.length}
-                planning={livePlanning}
-                onJumpPermission={() =>
-                  document
-                    .getElementById("perm-card")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
-                onJumpDiff={() =>
-                  document
-                    .getElementById("diff-panel")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
-                onCancel={requestCancel}
+                onExport={exportCurrentChat}
+                exportDisabled={messages.length === 0}
+                changesCount={changesDockFiles.state === "ready" ? changesDockFiles.members.length : 0}
+                changesOpen={changesOpen}
+                onToggleChanges={() => setChangesOpen((v) => !v)}
+                changesAvailable={changesAvailable}
               />
               {productMode === "chat" ? (
                 <ChatHomeName
@@ -5173,7 +5219,7 @@ export function App() {
                         const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
                         return (
                         <div key={id} className="run-stack">
-                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onFocusDiffRequest={setActiveDiffId} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
+                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
                         </div>
                         );
                       })}
@@ -5223,9 +5269,6 @@ export function App() {
 
               <ActionDock
                 permissions={permissions}
-                diffQueue={diffQueue}
-                activeDiffId={activeDiffId}
-                onActiveDiffId={setActiveDiffId}
                 oauth={oauth}
                 onPermission={(d) => void decidePermission(d)}
                 onTrustFolder={
@@ -5239,10 +5282,6 @@ export function App() {
                     : undefined
                 }
                 workspaceName={state?.workspaceName ?? null}
-                onAccept={(id) => void acceptDiff(id)}
-                onReject={(id) => void rejectDiff(id)}
-                onAcceptAll={() => void acceptAllDiffs()}
-                onRejectAll={() => void rejectAllDiffs()}
                 onOauthCancel={() => {
                   void api.oauthCancel();
                   setOauth(null);
@@ -5340,8 +5379,6 @@ export function App() {
                 densityCompact={prefs.density === "compact"}
                 onAttachFiles={(files) => void attachFilesToComposer(files)}
                 busy={busy}
-                hasMessages={messages.length > 0}
-                onExportChat={exportCurrentChat}
                 onCancel={requestCancel}
                 onSend={() => void send()}
                 footer={
@@ -5428,6 +5465,29 @@ export function App() {
           )}
         </main>
         </Panel>
+        {changesDockVisible ? (
+          <>
+            <PanelResizeHandle className="layout-resize" aria-label="Resize changes" />
+            <Panel id="changes" defaultSize="26%" minSize="300px" maxSize="560px" className="changes-panel">
+              <ChangesDock
+                files={changesDockFiles}
+                verify={changesDockVerify}
+                git={changesDockGit}
+                diffQueue={diffQueue}
+                activityStatusById={changesActivityStatusById}
+                activityLifecycleById={changesActivityLifecycleById}
+                onAccept={onChangesDockAccept}
+                onReject={onChangesDockReject}
+                onRevert={onChangesDockRevert}
+                revertPendingEditId={changeRevertPendingEditId}
+                recoveryFlash={changeRecoveryFlash}
+                onCollapse={onChangesDockCollapse}
+                // TODO(Task 10): wire to the Review surface once it exists.
+                onOpenReview={noopOpenReview}
+              />
+            </Panel>
+          </>
+        ) : null}
         </PanelGroup>
       </div>
 

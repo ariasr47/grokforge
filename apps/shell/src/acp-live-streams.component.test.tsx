@@ -2,7 +2,7 @@ import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen } from "@testing-library/react";
 import { midturnFoldedIntoAnswer, RunSurface } from "./RunSurface";
-import { RunStatusBar } from "./RunStatusBar";
+import { ThreadHeader } from "./ThreadHeader";
 import { composerFooterPhaseText, deriveLivePhase, statusBarPhaseText } from "./derivedLivePhase";
 import type { ActivityRecord, RunProjectionRun, RunSnapshot } from "./runReducer";
 
@@ -240,17 +240,20 @@ test("failed / not_executed stay on the one Activity rail", () => {
   assert.ok(rail.textContent?.includes("failed") || rail.textContent?.includes("boom"));
 });
 
-test("status bar uses phaseLabel from DerivedLivePhase — no retired lies", () => {
+test("ThreadHeader's live status uses phaseLabel from DerivedLivePhase — no retired lies", () => {
   const d = deriveLivePhase({
     terminal: false, ownedBusy: true, liveness: "provider", planOwned: false,
     pendingTool: null, lastContentKind: "thought", decisionPending: false,
   });
   render(
-    <RunStatusBar
-      busy
-      permissionPending={false}
-      diffCount={0}
-      phaseLabel={statusBarPhaseText(d)}
+    <ThreadHeader
+      title="t"
+      liveStatusText={statusBarPhaseText(d)}
+      overview={null}
+      onExport={() => undefined}
+      changesOpen={false}
+      onToggleChanges={() => undefined}
+      changesAvailable={false}
     />,
   );
   assert.ok(screen.getByText("Thinking…"));
@@ -280,16 +283,20 @@ test("Plan-owned bar and footer helpers agree on kind", () => {
     pendingTool: null, lastContentKind: "message", decisionPending: false,
   });
   assert.equal(statusBarPhaseText(d), "Planning");
+  // "Plan · no edits applied" is the composer's own footer line (App.tsx,
+  // untouched by Task 9) — this test's job is the pure functions agreeing,
+  // plus confirming ThreadHeader's live status can display the bar's half.
   assert.equal(composerFooterPhaseText(d), "Plan · no edits applied");
   render(
-    <RunStatusBar
-      busy
-      permissionPending={false}
-      diffCount={0}
-      planning={d.kind === "plan"}
-      phaseLabel={statusBarPhaseText(d)}
+    <ThreadHeader
+      title="t"
+      liveStatusText={statusBarPhaseText(d)}
+      overview={null}
+      onExport={() => undefined}
+      changesOpen={false}
+      onToggleChanges={() => undefined}
+      changesAvailable={false}
     />,
   );
   assert.ok(screen.getByText("Planning"));
-  assert.ok(screen.getByText("Plan · no edits applied"));
 });

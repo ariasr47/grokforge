@@ -8,10 +8,10 @@ import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { partitionKey, reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
 import {
-  FILE_CHANGES_HEADER,
+  CHANGES_DOCK_LABEL,
   FILE_CHANGES_KIND_DELETED,
   FILE_CHANGES_KIND_RENAMED,
-} from "./FileChangesSection";
+} from "./ChangesDock";
 import type { ActivityRecord, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -186,8 +186,7 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     await waitFor(() => {
       assert.ok(screen.getByRole("article", { name: /Run delete a file/ }));
     });
-    assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
-    assert.equal(screen.queryByLabelText(FILE_CHANGES_HEADER), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
     assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
   });
 
@@ -212,7 +211,7 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     ws.emit(envelope({ kind: "activity_update", activity: renameActivity() }, 3) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
-      const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+      const section = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
       assert.ok(within(section).getByText(FILE_CHANGES_KIND_DELETED));
       assert.ok(within(section).getByText(FILE_CHANGES_KIND_RENAMED));
       assert.ok(within(section).getByText("gone.txt"));
@@ -256,7 +255,7 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(/run_shell|run shell/i));
     });
-    assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
     assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
     assert.equal(screen.queryByText(FILE_CHANGES_KIND_RENAMED), null);
   });

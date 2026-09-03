@@ -2,12 +2,11 @@ import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { ActionDock, PLAN_ACCEPT, PLAN_DOCK_EMPTY, PLAN_END_EMPTY, PLAN_KEEP, PLAN_SETTLING, planReadyTitle } from "./ActionDock";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
-import { VERIFY_HEADER } from "./VerifySection";
+import { CHANGES_DOCK_LABEL, ChangesDock } from "./ChangesDock";
 import { PLAN_HEADER } from "./PlanSection";
 import { PLAN_LIVE_FOOTER, PLAN_LIVE_STATUS } from "./planArm";
 import { RunSurface } from "./RunSurface";
-import { RunStatusBar } from "./RunStatusBar";
+import { ThreadHeader } from "./ThreadHeader";
 import type { ActivityRecord, PlanRecord, RunProjectionRun, RunSnapshot } from "./runReducer";
 
 afterEach(() => cleanup());
@@ -107,7 +106,10 @@ function verifyActivity(): ActivityRecord {
   };
 }
 
-test("hierarchy: Plan before File changes before Verify before Activity", () => {
+test("hierarchy: Plan before Activity", () => {
+  // File changes / Verify moved out of RunSurface into the Changes dock
+  // (Task 9) — they're a separate panel now, not orderable against Plan/
+  // Activity inside one RunSurface render. Plan-before-Activity still is.
   render(
     <RunSurface
       run={run({
@@ -121,50 +123,46 @@ test("hierarchy: Plan before File changes before Verify before Activity", () => 
     />,
   );
   const plan = screen.getByRole("region", { name: PLAN_HEADER });
-  const files = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
-  const verify = screen.getByRole("region", { name: VERIFY_HEADER });
   const activity = screen.getByLabelText("Activity");
-  assert.ok(plan.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING);
-  assert.ok(files.compareDocumentPosition(verify) & Node.DOCUMENT_POSITION_FOLLOWING);
-  assert.ok(verify.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(plan.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
-test("live Planning chrome only when executionPhase === plan", () => {
+test("live Planning chrome only when planOwned", () => {
+  // Live Planning status moved into ThreadHeader (Task 9); PLAN_LIVE_FOOTER
+  // is still App.tsx's own untouched run-footer ternary, not re-tested here.
   const { rerender } = render(
-    <RunStatusBar
-      busy
-      permissionPending={false}
-      diffCount={0}
-      planning
+    <ThreadHeader
+      title="t"
+      liveStatusText={PLAN_LIVE_STATUS}
+      overview={null}
+      onExport={() => undefined}
+      changesOpen={false}
+      onToggleChanges={() => undefined}
+      changesAvailable={false}
     />,
   );
   assert.ok(screen.getByText(PLAN_LIVE_STATUS));
-  assert.ok(screen.getByText(PLAN_LIVE_FOOTER));
+  assert.equal(PLAN_LIVE_FOOTER, "Plan · no edits applied");
   rerender(
-    <RunStatusBar
-      busy
-      permissionPending={false}
-      diffCount={0}
-      planning={false}
+    <ThreadHeader
+      title="t"
+      liveStatusText={null}
+      overview={null}
+      onExport={() => undefined}
+      changesOpen={false}
+      onToggleChanges={() => undefined}
+      changesAvailable={false}
     />,
   );
   assert.equal(screen.queryByText(PLAN_LIVE_STATUS), null);
-  assert.equal(screen.queryByText(PLAN_LIVE_FOOTER), null);
 });
 
 test("non-empty plan_pending: Review plan + Accept plan + Keep planning; no Reject", () => {
   render(
     <ActionDock
       permissions={[]}
-      diffQueue={[]}
-      activeDiffId={null}
-      onActiveDiffId={() => undefined}
       oauth={null}
       onPermission={() => undefined}
-      onAccept={() => undefined}
-      onReject={() => undefined}
-      onAcceptAll={() => undefined}
-      onRejectAll={() => undefined}
       planDecision={{ empty: false }}
       onPlanAccept={() => undefined}
       onPlanKeepPlanning={() => undefined}
@@ -182,15 +180,8 @@ test("empty plan_pending: Plan complete · no changes + End Plan · no changes p
   render(
     <ActionDock
       permissions={[]}
-      diffQueue={[]}
-      activeDiffId={null}
-      onActiveDiffId={() => undefined}
       oauth={null}
       onPermission={() => undefined}
-      onAccept={() => undefined}
-      onReject={() => undefined}
-      onAcceptAll={() => undefined}
-      onRejectAll={() => undefined}
       planDecision={{ empty: true }}
     />,
   );
@@ -206,15 +197,8 @@ test("settling shows Updating plan decision…", () => {
   render(
     <ActionDock
       permissions={[]}
-      diffQueue={[]}
-      activeDiffId={null}
-      onActiveDiffId={() => undefined}
       oauth={null}
       onPermission={() => undefined}
-      onAccept={() => undefined}
-      onReject={() => undefined}
-      onAcceptAll={() => undefined}
-      onRejectAll={() => undefined}
       planDecision={{ empty: false, settling: true }}
     />,
   );
@@ -222,30 +206,56 @@ test("settling shows Updating plan decision…", () => {
   assert.equal(screen.getByRole("button", { name: PLAN_ACCEPT }).hasAttribute("disabled"), true);
 });
 
-test("A/R shortcuts remain owned by Pending file edits when both present", () => {
+test("plan gate keeps its own Accept plan / Keep planning labels alongside the Changes dock's Accept/Reject", () => {
+  // DiffPanel moved out of ActionDock into the (separate-panel) Changes dock
+  // in Task 9 — render both together, the same way a user would see them,
+  // and confirm the labels still don't collide.
   render(
-    <ActionDock
-      permissions={[]}
-      diffQueue={[{ id: "diff-1", path: "a.txt", diff: "+A" }]}
-      activeDiffId="diff-1"
-      onActiveDiffId={() => undefined}
-      oauth={null}
-      onPermission={() => undefined}
-      onAccept={() => undefined}
-      onReject={() => undefined}
-      onAcceptAll={() => undefined}
-      onRejectAll={() => undefined}
-      planDecision={{ empty: false }}
-    />,
+    <>
+      <ActionDock
+        permissions={[]}
+        oauth={null}
+        onPermission={() => undefined}
+        planDecision={{ empty: false }}
+      />
+      <ChangesDock
+        files={{
+          state: "ready",
+          members: [{
+            editId: "e-1",
+            path: "a.txt",
+            kind: "content",
+            fromPath: null,
+            toPath: null,
+            activityId: "a-1",
+            invocationId: "i-1",
+            requestId: "diff-1",
+            diff: "+A",
+            settlement: "pending",
+            recoveryAvailable: false,
+            diffUnavailable: false,
+            runId: "r1",
+          }],
+        }}
+        verify={{ state: "ready", members: [] }}
+        git={{ state: "ready", members: [] }}
+        diffQueue={[{ id: "diff-1", path: "a.txt", diff: "+A" }]}
+        onAccept={() => undefined}
+        onReject={() => undefined}
+        onCollapse={() => undefined}
+        onOpenReview={() => undefined}
+      />
+    </>,
   );
-  assert.ok(screen.getByRole("button", { name: "Accept" }));
-  assert.ok(screen.getByRole("button", { name: "Reject" }));
+  const dock = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
+  assert.ok(within(dock).getByRole("button", { name: "Accept" }));
+  assert.ok(within(dock).getByRole("button", { name: "Reject" }));
   assert.ok(screen.getByRole("button", { name: PLAN_ACCEPT }));
   assert.ok(screen.getByRole("button", { name: PLAN_KEEP }));
   assert.equal(screen.queryByRole("button", { name: "Reject plan" }), null);
 });
 
-test("planning-only run has Plan section and no File changes / Verify members", () => {
+test("planning-only run has Plan section (File changes / Verify are not RunSurface's concern)", () => {
   render(
     <RunSurface
       run={run({
@@ -287,7 +297,5 @@ test("planning-only run has Plan section and no File changes / Verify members", 
     />,
   );
   assert.ok(screen.getByRole("region", { name: PLAN_HEADER }));
-  assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
-  assert.equal(screen.queryByRole("region", { name: VERIFY_HEADER }), null);
   assert.equal(screen.queryByRole("button", { name: "Reject" }), null);
 });

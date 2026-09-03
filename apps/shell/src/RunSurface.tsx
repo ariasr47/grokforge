@@ -14,12 +14,7 @@ import { projectHooks } from "./hooksProjection";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { writeClipboard } from "./copyClipboard";
 import { isListAutoExecuted } from "./trustedCommandProvenance";
-import { changeListCoversActivity, projectRunChangeList, type CatchUpSignal, type RunChangeMember } from "./runChangeList";
-import { FileChangesSection } from "./FileChangesSection";
-import { projectRunVerifyList } from "./runVerifyList";
-import { VerifySection } from "./VerifySection";
-import { projectRunGitReviewList } from "./runGitReviewList";
-import { GitReviewSection } from "./GitReviewSection";
+import { changeListCoversActivity, projectRunChangeList, type CatchUpSignal } from "./runChangeList";
 import { projectRunPlanSection } from "./runPlanSection";
 import { PlanSection } from "./PlanSection";
 import { projectProjectInstructionsTurn } from "./projectInstructionsTurn";
@@ -122,7 +117,6 @@ export interface RunSurfaceProps {
   onReconnect?: () => void;
   onOpenSettings?: () => void;
   onExportDiagnostics?: () => void;
-  onFocusDiffRequest?: (requestId: string) => void;
   onChoose?: (label: string, meta?: string) => void;
   artifactOpen?: boolean;
   onOpenArtifact?: (runId: string) => void;
@@ -224,13 +218,11 @@ export function nextPromptOverflow(prev: boolean, measured: boolean, promptChang
   return prev || measured;
 }
 
-export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onFocusDiffRequest, onChoose, artifactOpen = false, onOpenArtifact }: RunSurfaceProps) {
+export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onChoose, artifactOpen = false, onOpenArtifact }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
-  const [openChangeDiff, setOpenChangeDiff] = useState<string | null>(null);
   const [recoveryResult, setRecoveryResult] = useState<Record<string, "reverted" | "conflict">>({});
-  const [focusActivityId, setFocusActivityId] = useState<string | null>(null);
   const [thoughtOpen, setThoughtOpen] = useState(() => run.state !== "terminal");
   const youPrompt = visibleUserPrompt(run.acceptedPrompt);
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -306,20 +298,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
       else setError(e instanceof Error ? e.message : "Recovery failed");
     } finally { setPending(null); }
   }
-  async function recoverByMember(member: RunChangeMember) {
-    const activity = run.activities[member.activityId]
-      ?? Object.values(run.activities).find((a) => a.editId === member.editId);
-    if (activity) await recover(activity);
-  }
   const changeList = projectRunChangeList(run, catchUp);
-  const verifyList = projectRunVerifyList(run, catchUp);
-  const gitReviewList = projectRunGitReviewList(run, catchUp);
-  const activityStatusById = new Map(
-    Object.values(run.activities).map((a) => [a.activityId, a.status] as const),
-  );
-  const activityLifecycleById = new Map(
-    Object.values(run.activities).map((a) => [a.activityId, a.lifecycle] as const),
-  );
   const planSection = projectRunPlanSection(run, catchUp, { connected: !offline });
   const projectInstructionsTurn = projectProjectInstructionsTurn(run, catchUp, { mode: productMode });
   const chatPackTurn = projectChatPackTurn(run, catchUp, { mode: productMode });
@@ -437,7 +416,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
           className="you-meta"
           aria-label={[
             codeRunProvenance.state === "absent" ? null : codeRunProvenanceCopy(codeRunProvenance),
-            `Model: ${model.appliedModel || model.requestedModel || "unspecified"}`,
             `Policy: ${policy.effectiveMode || "unspecified"}`,
           ]
             .filter(Boolean)
@@ -445,7 +423,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
         >
           <CodeRunProvenanceChip projection={codeRunProvenance} />
           <SkillHandoffProvenanceChip provenance={run.skillHandoffProvenance} />
-          <span>Model: {model.appliedModel || model.requestedModel || "unspecified"}</span>
           {model.selectionProvenance && model.selectionProvenance !== "inherited" ? <span>Selection: {model.selectionProvenance}</span> : null}
           <span>Policy: {policy.effectiveMode || "unspecified"}</span>
           {policy.source && policy.source !== "fallback" ? <span>Policy source: {policy.source}</span> : null}
@@ -512,46 +489,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
       {productMode !== "chat" ? (
         <PlanSection projection={planSection} preserved={run.plan ?? null} offline={offline} />
       ) : null}
-      {productMode !== "chat" ? (
-      <FileChangesSection
-        projection={changeList}
-        runNonTerminal={run.state !== "terminal"}
-        offline={offline}
-        openEditId={openChangeDiff}
-        onViewDiff={(member) => setOpenChangeDiff(member.editId)}
-        onHideDiff={() => setOpenChangeDiff(null)}
-        onRevert={(member) => void recoverByMember(member)}
-        revertPendingEditId={pending}
-        recoveryFlash={recoveryResult}
-        onFocusDock={onFocusDiffRequest}
-      />
-      ) : null}
-      {productMode !== "chat" ? (
-      <VerifySection
-        projection={verifyList}
-        offline={offline}
-        onViewOutput={(member) => setFocusActivityId(member.activityId)}
-        outputAvailableIds={new Set(
-          Object.values(run.activities)
-            .filter((a) => a.output != null)
-            .map((a) => a.activityId),
-        )}
-      />
-      ) : null}
-      {productMode === "code" ? (
-        <GitReviewSection
-          projection={gitReviewList}
-          offline={offline}
-          activityStatusById={activityStatusById}
-          activityLifecycleById={activityLifecycleById}
-          onViewOutput={(member) => setFocusActivityId(member.activityId)}
-          outputAvailableIds={new Set(
-            Object.values(run.activities)
-              .filter((a) => a.output != null)
-              .map((a) => a.activityId),
-          )}
-        />
-      ) : null}
       {productMode === "code" ? <ChildAgentsSection projection={childProjection} /> : null}
       {productMode === "code" ? <BrowserSection projection={browserProjection} /> : null}
       {productMode === "code" ? <McpServersSection projection={mcpProjection} /> : null}
@@ -562,7 +499,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
             tools={toolMessages}
             live={run.state !== "terminal"}
             groupKey={`run-tools:${run.runId}`}
-            forceOpen={Boolean(focusActivityId)}
           />
           {Object.values(run.activities).map((a) => {
             const result = recoveryResult[a.activityId];

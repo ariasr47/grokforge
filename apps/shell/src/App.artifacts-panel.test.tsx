@@ -6,7 +6,7 @@ import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
 import { setArtifactPanelForceRenderError } from "./ArtifactPanel";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
+import { CHANGES_DOCK_LABEL } from "./ChangesDock";
 import type { ActivityRecord, DecisionRequest, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const CHAT_PARTITION = "chat:__sandbox__";
@@ -563,13 +563,13 @@ describe("artifacts-panel App journeys", () => {
         3,
       ) as unknown as Record<string, unknown>,
     );
-    await waitFor(() => assert.ok(screen.queryByLabelText(FILE_CHANGES_HEADER)));
+    await waitFor(() => assert.ok(screen.queryByLabelText(CHANGES_DOCK_LABEL)));
     const codeOpen = document.querySelector(".assistant-answer-actions button");
     assert.ok(codeOpen);
     fireEvent.click(codeOpen!);
     await waitFor(() => assert.ok(document.querySelector(".artifact-panel")));
-    assert.ok(screen.getByLabelText(FILE_CHANGES_HEADER));
-    assert.ok(within(screen.getByLabelText(FILE_CHANGES_HEADER)).getByText("src/a.ts"));
+    assert.ok(screen.getByLabelText(CHANGES_DOCK_LABEL));
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/a.ts"));
     assert.equal(
       host.callsTo("/api/chat-pack").some((c) => c.body?.action === "pin_file"),
       false,

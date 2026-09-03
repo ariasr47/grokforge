@@ -10,7 +10,12 @@ import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";
 import { flushSessions, reloadSessionsFromDisk } from "./sessions";
 import { WebSocket as BrowserWebSocket } from "ws";
-import { GIT_REVIEW_VIEW_OUTPUT } from "./GitReviewSection";
+
+// "View output" (jumping from the dock to a command's real Receipts entry)
+// was dropped in the Task 9 redesign — see ChangesDock.tsx. This constant
+// only feeds tests below that are skipped without the BE fixture agent
+// (git-review-surface-agent.mjs is not present in this environment).
+const GIT_REVIEW_VIEW_OUTPUT = "View output";
 
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

@@ -30,8 +30,6 @@ const base = {
   densityCompact: false,
   onAttachFiles: () => undefined,
   busy: false,
-  hasMessages: false,
-  onExportChat: () => undefined,
   onCancel: () => undefined,
   onSend: () => undefined,
   footer: null,

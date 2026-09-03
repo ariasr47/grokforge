@@ -14,7 +14,7 @@ import { activityLooksLikeWrite } from "./activityWriteLike";
 import { atFileSuggestions } from "./atFileQuery";
 import { draftIsSendReady } from "./ComposerPane";
 import { MENTION_ATTACH_MARKER, splitUserPromptMentions, visibleUserPrompt } from "./expandMentions";
-import { FILE_CHANGES_HEADER, FileChangesSection } from "./FileChangesSection";
+import { CHANGES_DOCK_LABEL, ChangesDock } from "./ChangesDock";
 import type { RunChangeMember } from "./runChangeList";
 import { planReadyIsEmpty, projectRunPlanSection } from "./runPlanSection";
 import type { PlanRecord, RunProjectionRun } from "./runReducer";
@@ -52,12 +52,20 @@ describe("J1 Write — Review write membership lists in File changes", () => {
       diffUnavailable: false,
     };
     render(
-      <FileChangesSection
-        projection={{ state: "ready", members: [member] }}
+      <ChangesDock
+        files={{ state: "ready", members: [{ ...member, runId: "r1" }] }}
+        verify={{ state: "ready", members: [] }}
+        git={{ state: "ready", members: [] }}
+        diffQueue={[]}
+        onAccept={() => undefined}
+        onReject={() => undefined}
+        onCollapse={() => undefined}
+        onOpenReview={() => undefined}
       />,
     );
-    assert.ok(screen.getByRole("heading", { name: FILE_CHANGES_HEADER }));
-    assert.ok(screen.getByText("docs/dogfood/J1-WEB.md"));
+    const dock = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
+    assert.ok(within(dock).getByText("docs/dogfood/"));
+    assert.ok(within(dock).getByText("J1-WEB.md"));
   });
 });
 
@@ -104,15 +112,8 @@ describe("J4 Plan — Accept plan + three-step body is a real plan", () => {
     render(
       <ActionDock
         permissions={[]}
-        diffQueue={[]}
-        activeDiffId={null}
-        onActiveDiffId={() => undefined}
         oauth={null}
         onPermission={() => undefined}
-        onAccept={() => undefined}
-        onReject={() => undefined}
-        onAcceptAll={() => undefined}
-        onRejectAll={() => undefined}
         planDecision={{ empty: false }}
         onPlanAccept={() => undefined}
         onPlanKeepPlanning={() => undefined}

@@ -8,7 +8,7 @@ import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "./sessions";
 import { setHealthPollTestScheduler } from "./healthPollTestClock";
-import { FILE_CHANGES_HEADER, FILE_CHANGES_LOADING } from "./FileChangesSection";
+import { CHANGES_DOCK_LABEL } from "./ChangesDock";
 import type { ActivityRecord, DecisionRequest, RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 const WORKSPACE = "C:\\repo";
@@ -219,17 +219,16 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
       ws.emit(ev as unknown as Record<string, unknown>);
     }
 
+    // Both r1.txt/r2.txt are backed by real "diff" decisions — the Changes
+    // dock (Task 9) offers Accept/Reject directly on the row, from the same
+    // queue the old (now-removed) DiffPanel read.
+    const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
     await waitFor(() => {
-      const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
-      assert.ok(within(section).getByText("r1.txt"));
-      assert.ok(within(section).getByText("r2.txt"));
-      assert.equal(within(section).getAllByText("Pending").length, 2);
+      assert.ok(within(dock).getByText("r1.txt"));
+      assert.ok(within(dock).getByText("r2.txt"));
+      assert.equal(within(dock).getAllByRole("button", { name: "Accept" }).length, 2);
+      assert.equal(within(dock).getAllByRole("button", { name: "Reject" }).length, 2);
     });
-
-    const dock = await screen.findByRole("region", { name: "Pending file edits (2)" });
-    assert.ok(within(dock).getAllByText(/r1\.txt|r2\.txt/).length >= 1);
-    assert.ok(within(dock).getByRole("button", { name: "Accept" }));
-    assert.ok(within(dock).getByRole("button", { name: "Reject" }));
     assert.equal(
       host.callsTo("/api/diff").length,
       0,
@@ -237,7 +236,7 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(within(dock).getByRole("button", { name: "Accept" }));
+    await user.click(within(dock).getAllByRole("button", { name: "Accept" })[0]!);
     await waitFor(() => {
       assert.ok(host.callsTo("/api/diff").length >= 1);
     });
@@ -275,18 +274,14 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     render(<App />);
 
     await waitFor(() => {
-      const section = document.querySelector('[aria-label="File changes"]')
-        ?? document.querySelector("[class*='file-changes']");
-      assert.ok(section);
+      const section = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
       assert.ok(!section.textContent?.includes("Loading file changes"));
       assert.ok(section.textContent?.includes("r1.txt"));
-      assert.ok(section.textContent?.includes("Pending"));
+      // req-r1 is a real "diff" decision — Accept/Reject render on the row
+      // directly (Task 9), not a separate "Pending file edits" DiffPanel.
+      assert.ok(within(section).getByRole("button", { name: "Accept" }));
+      assert.ok(within(section).getByRole("button", { name: "Reject" }));
     });
-
-    const dock = screen.getByRole("region", { name: "Pending file edits (1)" });
-    assert.ok(within(dock).getAllByText(/r1\.txt/).length >= 1);
-    assert.ok(within(dock).getByRole("button", { name: "Accept" }));
-    assert.ok(within(dock).getByRole("button", { name: "Reject" }));
     assert.ok(host.callsTo("/api/runs").length >= 1);
   });
 
@@ -320,12 +315,18 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 
     render(<App />);
-    await waitFor(() => {
-      assert.ok(host.callsTo("/api/runs").length >= 1);
-      const section = document.querySelector('[aria-label="File changes"]');
-      assert.ok(section);
-      assert.ok(!section.className.includes("file-changes-loading-state"));
-    });
+    for (let i = 0; i < 100; i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+      if (host.callsTo("/api/runs").length < 1) continue;
+      const section = screen.queryByRole("region", { name: CHANGES_DOCK_LABEL });
+      if (!section) continue;
+      if (within(section).queryByText("Loading file changes…")) continue;
+      break;
+    }
+    assert.ok(host.callsTo("/api/runs").length >= 1);
+    const firstSection = screen.queryByRole("region", { name: CHANGES_DOCK_LABEL });
+    assert.ok(firstSection);
+    assert.equal(within(firstSection!).queryByText("Loading file changes…"), null);
 
     const runsBefore = host.callsTo("/api/runs").length;
     assert.ok(poll, "health-poll scheduler must be installed");
@@ -333,8 +334,8 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(screen.queryByText(FILE_CHANGES_LOADING), null);
-    const section = screen.getByRole("region", { name: FILE_CHANGES_HEADER });
+    assert.equal(screen.queryByText("Loading file changes…"), null);
+    const section = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
     assert.ok(within(section).getByText("r1.txt"));
   });
 });

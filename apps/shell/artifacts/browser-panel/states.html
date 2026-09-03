@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme="voidglass">
+<head>
+  <meta charset="utf-8" />
+  <title>Browser — Voidglass states</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --bg: #050508;
+      --bg2: rgba(255, 255, 255, 0.04);
+      --bg3: rgba(255, 255, 255, 0.07);
+      --card: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --accent: #5ce1ff;
+      --accent2: #a78bfa;
+      --accent3: #f0b45a;
+      --danger: #ff7a90;
+      --glow: 0 0 40px rgba(92, 225, 255, 0.18);
+      --radius: 16px;
+      --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: 28px 24px 48px;
+    }
+    h1 { font-size: 18px; letter-spacing: -0.03em; margin: 0 0 8px; }
+    .lede { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+    .grid { display: grid; gap: 20px; max-width: 720px; }
+    .label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--bg2); font-size: 11px;
+    }
+    .browser-work {
+      display: grid; gap: 10px; background: var(--card);
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
+    }
+    .browser-work-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .browser-work-toggle {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;
+      margin: 0; padding: 2px 4px; border: 0; border-radius: 12px; background: transparent;
+      color: inherit; text-align: left; cursor: pointer;
+    }
+    .browser-work-toggle:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+    .browser-work-toggle h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.03em; }
+    .browser-work-count, .browser-work-summary, .browser-work-identity, .browser-work-url,
+    .browser-work-chip, .browser-work-unavailable { font-family: var(--font-mono); }
+    .browser-work-summary, .browser-work-helper, .browser-work-offline, .browser-work-live,
+    .browser-work-loading, .browser-work-snapshot {
+      margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45;
+    }
+    .browser-work-error { margin: 0; color: var(--accent3); font-size: 13px; line-height: 1.45; }
+    .browser-work-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 280px; overflow: auto; }
+    .browser-work-row { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; }
+    .browser-work-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .browser-work-identity-block { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+    .browser-work-identity, .browser-work-url {
+      display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;
+    }
+    .browser-work-identity { color: var(--text); }
+    .browser-work-url { color: var(--muted); }
+    .browser-work-chip, .browser-work-unavailable { flex: 0 0 auto; }
+    .browser-work-chip-running {
+      color: var(--accent); border-color: var(--border-strong);
+      background: color-mix(in srgb, var(--accent) 12%, var(--card)); box-shadow: var(--glow);
+    }
+    .browser-work-chip-done {
+      color: var(--text); border-color: color-mix(in srgb, var(--accent2) 40%, var(--border));
+      background: color-mix(in srgb, var(--accent2) 10%, var(--card));
+    }
+    .browser-work-chip-failed {
+      color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+      background: color-mix(in srgb, var(--danger) 10%, var(--card));
+    }
+    .browser-work-unavailable { color: var(--muted); border-color: var(--border); background: var(--bg3); }
+    .browser-work-snapshot-muted { color: var(--muted); font-weight: 400; }
+  </style>
+</head>
+<body>
+  <h1>Browser — Voidglass states</h1>
+  <p class="lede">SPEC §4 default / loading / error / offline / unrestorable / snapshot caption. Quiet-absent is omitted (no section). Isolated fixture — not Prod :5173.</p>
+  <div class="grid">
+    <div>
+      <div class="label">default — live Running / Done / Failed</div>
+      <section class="browser-work" aria-label="Browser">
+        <header class="browser-work-header">
+          <button type="button" class="browser-work-toggle" aria-expanded="true">
+            <h2>Browser</h2>
+            <span class="chip browser-work-count">3</span>
+            <span class="browser-work-summary">1 running</span>
+            <span class="browser-work-summary">1 done</span>
+            <span class="browser-work-summary">1 failed</span>
+          </button>
+        </header>
+        <p class="browser-work-live" role="status">Updating as browser work appears…</p>
+        <p class="browser-work-helper">Vendor browser / web-fetch on this run — Forge chrome, not a second Chrome.</p>
+        <ul class="browser-work-list">
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Docs">Docs</code>
+                <code class="browser-work-url" title="https://docs.x.ai">https://docs.x.ai</code>
+              </div>
+              <span class="chip browser-work-chip browser-work-chip-running" title="Vendor browser / web-fetch work is still running. Permissions still settle in the action dock.">Running</span>
+            </div>
+          </li>
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="A">A</code>
+                <code class="browser-work-url" title="https://a.example">https://a.example</code>
+              </div>
+              <span class="chip browser-work-chip browser-work-chip-done" title="Vendor browser / web-fetch work finished.">Done</span>
+            </div>
+            <p class="browser-work-snapshot" title="Journaled snapshot caption from this run — not a live page.">Snapshot <span class="browser-work-snapshot-muted">Journaled snapshot</span></p>
+          </li>
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Boom">Boom</code>
+              </div>
+              <span class="chip browser-work-chip browser-work-chip-failed" title="Vendor browser / web-fetch work failed.">Failed</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </div>
+    <div>
+      <div class="label">loading — hydrating keeps last-ready</div>
+      <section class="browser-work browser-work-loading-state" aria-label="Browser">
+        <header class="browser-work-header">
+          <button type="button" class="browser-work-toggle" aria-expanded="true">
+            <h2>Browser</h2>
+            <span class="chip browser-work-count">1</span>
+            <span class="browser-work-summary">1 done</span>
+          </button>
+        </header>
+        <p class="browser-work-loading" role="status">Loading browser work…</p>
+        <ul class="browser-work-list">
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Docs">Docs</code>
+              </div>
+              <span class="chip browser-work-chip browser-work-chip-done">Done</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </div>
+    <div>
+      <div class="label">error — obtain_failed</div>
+      <section class="browser-work browser-work-error-state" aria-label="Browser">
+        <p class="browser-work-error" role="alert">Couldn't load browser work.</p>
+      </section>
+    </div>
+    <div>
+      <div class="label">offline — historical running, no live chip + Unavailable</div>
+      <section class="browser-work" aria-label="Browser">
+        <header class="browser-work-header">
+          <button type="button" class="browser-work-toggle" aria-expanded="true">
+            <h2>Browser</h2>
+            <span class="chip browser-work-count">2</span>
+            <span class="browser-work-summary">1 done</span>
+          </button>
+        </header>
+        <p class="browser-work-offline" role="status">Forge is offline. Browser work recorded on this run so far is still shown. Reconnect to confirm later updates.</p>
+        <ul class="browser-work-list">
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Docs">Docs</code>
+                <code class="browser-work-url" title="https://docs.x.ai">https://docs.x.ai</code>
+              </div>
+            </div>
+          </li>
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Browser work">Browser work</code>
+              </div>
+              <span class="chip browser-work-unavailable">Unavailable</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </div>
+    <div>
+      <div class="label">generic identity — neither URL nor title yet</div>
+      <section class="browser-work" aria-label="Browser">
+        <header class="browser-work-header">
+          <button type="button" class="browser-work-toggle" aria-expanded="true">
+            <h2>Browser</h2>
+            <span class="chip browser-work-count">1</span>
+            <span class="browser-work-summary">1 running</span>
+          </button>
+        </header>
+        <ul class="browser-work-list">
+          <li class="browser-work-row">
+            <div class="browser-work-row-head">
+              <div class="browser-work-identity-block">
+                <code class="browser-work-identity" title="Browser work">Browser work</code>
+              </div>
+              <span class="chip browser-work-chip browser-work-chip-running">Running</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

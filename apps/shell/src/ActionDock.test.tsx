@@ -9,15 +9,8 @@ afterEach(() => cleanup());
 function baseProps() {
   return {
     permissions: [],
-    diffQueue: [],
-    activeDiffId: null,
-    onActiveDiffId: () => undefined,
     oauth: null,
     onPermission: () => undefined,
-    onAccept: () => undefined,
-    onReject: () => undefined,
-    onAcceptAll: () => undefined,
-    onRejectAll: () => undefined,
   };
 }
 

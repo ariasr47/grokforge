@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" data-theme="voidglass">
+<head>
+  <meta charset="utf-8" />
+  <title>Artifact panel — Voidglass states</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --bg: #050508;
+      --bg2: rgba(255, 255, 255, 0.04);
+      --bg3: rgba(255, 255, 255, 0.07);
+      --card: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --accent: #5ce1ff;
+      --accent2: #a78bfa;
+      --danger: #ff7a90;
+      --radius: 16px;
+      --radius-sm: 12px;
+      --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "Geist Mono", ui-monospace, monospace;
+      --mono: var(--font-mono);
+    }
+    html[data-theme="light"] {
+      --bg: #f4f5f8;
+      --card: #ffffff;
+      --border: rgba(8, 12, 20, 0.12);
+      --text: #12141a;
+      --muted: #5c6478;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: 28px 24px 48px;
+    }
+    h1 { font-size: 18px; letter-spacing: -0.03em; margin: 0 0 8px; }
+    .lede { color: var(--muted); font-size: 13px; margin: 0 0 24px; max-width: 920px; }
+    .grid { display: grid; gap: 28px; }
+    .label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+    .btn {
+      appearance: none; cursor: pointer; font: inherit; color: inherit;
+      border: 1px solid var(--border); background: transparent;
+      border-radius: 12px; padding: 6px 12px; min-height: 32px;
+    }
+    .btn.ghost { background: transparent; }
+    .btn.ghost:hover { border-color: var(--border-strong); }
+    .chat-stage {
+      display: flex; min-height: 220px; border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; background: var(--bg2);
+    }
+    .transcript { flex: 1; padding: 16px 18px; min-width: 0; overflow: auto; }
+    .artifact-panel {
+      flex: 1 1 38%; min-width: min(280px, 100%); max-width: 420px;
+      display: flex; flex-direction: column; min-height: 0;
+      background: var(--card); border-left: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+    }
+    .artifact-panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .artifact-panel-head h2 {
+      margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.02em;
+    }
+    .artifact-panel-helper { margin: 0; padding: 8px 14px 0; color: var(--muted); font-size: 12px; }
+    .artifact-panel-body { flex: 1; overflow: auto; padding: 16px; }
+    .artifact-panel-error {
+      padding: 14px 16px; border: 1px solid rgba(255, 122, 144, 0.32);
+      background: rgba(255, 122, 144, 0.08); border-radius: var(--radius-sm);
+    }
+    .assistant-answer {
+      background: var(--card); border: 1px solid var(--border-strong);
+      border-radius: var(--radius); padding: 16px;
+    }
+    .assistant-answer--compact { display: none; }
+    .assistant-answer-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+    .rich-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--bg3); }
+    .msg { max-width: 520px; }
+    .role { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+    @media (max-width: 720px) {
+      .chat-stage { flex-direction: column; }
+      .artifact-panel { max-width: none; min-height: 160px; border-left: none; border-top: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Artifact panel — Voidglass states</h1>
+  <p class="lede">SPEC §4 chrome: closed/absent, open render-ok, compact live Answer, open-error. Tokens from DESIGN_SYSTEM Voidglass. No PPT / PDF / Mermaid / second highlighter.</p>
+
+  <div class="grid">
+    <section>
+      <div class="label">Closed / absent — bubble-only, no Artifact chrome</div>
+      <div class="chat-stage" style="max-width: 640px">
+        <div class="transcript">
+          <article class="msg">
+            <div class="role">You</div>
+            <div>sibling question</div>
+          </article>
+          <div class="assistant-answer-actions"><button class="btn ghost" type="button">Open</button></div>
+          <div class="assistant-answer" role="article">Full Answer dump stays here until Open.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Open render-ok — Artifact beside compact Answer chrome</div>
+      <div class="chat-stage chat-stage--artifact-open">
+        <div class="transcript">
+          <article class="msg">
+            <div class="role">You</div>
+            <div>sibling question</div>
+          </article>
+          <div class="assistant-answer-actions"><button class="btn ghost" type="button" title="Show this turn’s document beside the transcript. Closing hides the panel without deleting the turn.">Open</button></div>
+          <div class="assistant-answer assistant-answer--compact" hidden>Full dump must not be presented.</div>
+        </div>
+        <aside class="artifact-panel" aria-label="Artifact">
+          <div class="artifact-panel-head">
+            <h2>Artifact</h2>
+            <button class="btn ghost" type="button" title="Hide the side panel. The turn stays in the transcript.">Close</button>
+          </div>
+          <p class="artifact-panel-helper">Large document or grok-ui from this turn — same renderer, beside the bubble.</p>
+          <div class="artifact-panel-body">
+            <div class="rich-card"><strong>Steamed rice</strong><p>Short-grain. Carousel stays carousel.</p></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Open-error — Couldn't open this artifact. Distinct from empty</div>
+      <div class="chat-stage chat-stage--artifact-open" style="max-width: 720px">
+        <div class="transcript">
+          <article class="msg"><div class="role">You</div><div>sibling question — turn kept</div></article>
+        </div>
+        <aside class="artifact-panel" aria-label="Artifact">
+          <div class="artifact-panel-head">
+            <h2>Artifact</h2>
+            <button class="btn ghost" type="button">Close</button>
+          </div>
+          <div class="artifact-panel-body">
+            <div class="artifact-panel-error" role="alert" title="The side panel could not render this turn’s content. The transcript turn is unchanged.">Couldn't open this artifact.</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

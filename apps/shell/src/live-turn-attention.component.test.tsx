@@ -2,7 +2,8 @@ import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ActionDock } from "./ActionDock.js";
-import { mergePendingDiffs, mergePendingPermissions, pendingPermissionsFromRun } from "./runChangeList.js";
+import { CHANGES_DOCK_LABEL, ChangesDock } from "./ChangesDock.js";
+import { mergePendingDiffs, mergePendingPermissions, pendingPermissionsFromRun, projectRunChangeList } from "./runChangeList.js";
 import type { ActivityRecord, DecisionRequest, RunProjectionRun, RunSnapshot } from "./runReducer.js";
 import { RunSurface } from "./RunSurface.js";
 import { api } from "./api.js";
@@ -93,15 +94,8 @@ function emptyDock(overrides: Partial<Parameters<typeof ActionDock>[0]> = {}) {
   return (
     <ActionDock
       permissions={[]}
-      diffQueue={[]}
-      activeDiffId={null}
-      onActiveDiffId={() => undefined}
       oauth={null}
       onPermission={() => undefined}
-      onAccept={() => undefined}
-      onReject={() => undefined}
-      onAcceptAll={() => undefined}
-      onRejectAll={() => undefined}
       {...overrides}
     />
   );
@@ -141,26 +135,41 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
   }
 });
 
-test("pending diff fills ActionDock Accept/Reject until settlement", () => {
+test("pending diff fills the Changes dock's Accept/Reject until settlement", () => {
+  // DiffPanel moved from ActionDock to the Changes dock in Task 9 — same
+  // production projection (projectRunChangeList), just a different panel.
   const fixture = run({
     activities: { a1: reviewActivity() },
     decisions: { req1: diffDecision({ requestId: "req1" }) },
   });
-  const { rerender } = render(
-    emptyDock({
-      diffQueue: mergePendingDiffs([], fixture),
-      activeDiffId: "req1",
-    }),
-  );
-  const dock = screen.getByRole("region", { name: "Pending agent actions" });
+  const changesDockFor = (r: RunProjectionRun) => {
+    const projection = projectRunChangeList(r, { phase: "closed" });
+    const members = projection.state === "ready" ? projection.members.map((m) => ({ ...m, runId: r.runId })) : [];
+    return (
+      <ChangesDock
+        files={{ state: "ready", members }}
+        verify={{ state: "ready", members: [] }}
+        git={{ state: "ready", members: [] }}
+        diffQueue={mergePendingDiffs([], r)}
+        onAccept={() => undefined}
+        onReject={() => undefined}
+        onCollapse={() => undefined}
+        onOpenReview={() => undefined}
+      />
+    );
+  };
+  const { rerender } = render(changesDockFor(fixture));
+  const dock = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
   assert.ok(within(dock).getByRole("button", { name: "Accept" }));
   assert.ok(within(dock).getByRole("button", { name: "Reject" }));
   const settled = run({
     activities: { a1: reviewActivity() },
     decisions: { req1: diffDecision({ requestId: "req1", status: "accepted" }) },
   });
-  rerender(emptyDock({ diffQueue: mergePendingDiffs(mergePendingDiffs([], fixture), settled) }));
-  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }), null);
+  rerender(changesDockFor(settled));
+  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Accept" }), null);
+  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Reject" }), null);
+  assert.ok(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).getByText("Accepted"));
 });
 
 test("ActionDock is absent when nothing is pending", () => {

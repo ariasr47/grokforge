@@ -1,4 +1,4 @@
-import { Download, Paperclip, Send, Square } from "lucide-react";
+import { Paperclip, Send, Square } from "lucide-react";
 import {
   type DragEvent,
   type KeyboardEvent,
@@ -108,8 +108,6 @@ export function ComposerPane({
   densityCompact,
   onAttachFiles,
   busy,
-  hasMessages,
-  onExportChat,
   onCancel,
   onSend,
   footer,
@@ -137,8 +135,6 @@ export function ComposerPane({
   densityCompact: boolean;
   onAttachFiles: (files: FileList | File[]) => void;
   busy: boolean;
-  hasMessages: boolean;
-  onExportChat: () => void;
   onCancel: () => void;
   onSend: () => void;
   footer: ReactNode;
@@ -239,15 +235,6 @@ export function ComposerPane({
         >
           <Icon icon={Paperclip} size={15} />
           Attach
-        </Button>
-        <Button
-          variant="ghost"
-          title="Download this chat as Markdown"
-          disabled={!hasMessages}
-          onClick={onExportChat}
-        >
-          <Icon icon={Download} size={15} />
-          Export
         </Button>
         {busy ? (
           <Button onClick={onCancel}>

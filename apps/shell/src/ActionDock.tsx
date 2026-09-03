@@ -1,5 +1,4 @@
 import { memo, useEffect, useRef } from "react";
-import { DiffPanel, type PendingDiff } from "./DiffPanel";
 import type { PermissionReq } from "./runChangeList";
 import type { PlanProposedMember } from "./runReducer";
 import { Gate } from "./Gate";
@@ -39,19 +38,12 @@ interface OauthPending {
 
 interface Props {
   permissions: PermissionReq[];
-  diffQueue: PendingDiff[];
-  activeDiffId: string | null;
-  onActiveDiffId: (id: string | null) => void;
   oauth: OauthPending | null;
   onPermission: (d: "allow_once" | "allow_session" | "deny") => void;
   onTrustFolder?: () => void;
   onEditCommand?: () => void;
   /** Real, host-reported workspace name — shell gate's cwd. Omitted (not faked) when unknown. */
   workspaceName?: string | null;
-  onAccept: (id: string) => void;
-  onReject: (id: string) => void;
-  onAcceptAll: () => void;
-  onRejectAll: () => void;
   onOauthCancel?: () => void;
   planDecision?: PlanDockDecision | null;
   onPlanAccept?: () => void;
@@ -64,18 +56,11 @@ interface Props {
 /** Normal flex child above the composer — a gate rises here while Grok waits on you. */
 export const ActionDock = memo(function ActionDock({
   permissions,
-  diffQueue,
-  activeDiffId,
-  onActiveDiffId,
   oauth,
   onPermission,
   onTrustFolder,
   onEditCommand,
   workspaceName = null,
-  onAccept,
-  onReject,
-  onAcceptAll,
-  onRejectAll,
   onOauthCancel,
   planDecision = null,
   onPlanAccept,
@@ -93,15 +78,15 @@ export const ActionDock = memo(function ActionDock({
   const activeRecovery = recoveryDecision;
 
   useEffect(() => {
-    if (!head && diffQueue.length === 0 && !oauth && !hasPlan && !activeRecovery) return;
+    if (!head && !oauth && !hasPlan && !activeRecovery) return;
     // Focus dock for a11y without stealing composer permanently
     const el = dockRef.current?.querySelector<HTMLElement>(
       "button.btn.primary, a, button",
     );
     el?.focus({ preventScroll: true });
-  }, [head?.id, diffQueue.length, oauth?.user_code, hasPlan, activeRecovery?.id]);
+  }, [head?.id, oauth?.user_code, hasPlan, activeRecovery?.id]);
 
-  if (!head && diffQueue.length === 0 && !oauth && !hasPlan && !activeRecovery) return null;
+  if (!head && !oauth && !hasPlan && !activeRecovery) return null;
 
   return (
     <div
@@ -146,18 +131,6 @@ export const ActionDock = memo(function ActionDock({
           onDeny={() => onPermission("deny")}
           onEditCommand={head.kind === "shell" ? onEditCommand : undefined}
           onTrustFolder={head.kind === "write" ? onTrustFolder : undefined}
-        />
-      ) : null}
-
-      {diffQueue.length > 0 ? (
-        <DiffPanel
-          queue={diffQueue}
-          activeId={activeDiffId}
-          onActiveId={onActiveDiffId}
-          onAccept={onAccept}
-          onReject={onReject}
-          onAcceptAll={onAcceptAll}
-          onRejectAll={onRejectAll}
         />
       ) : null}
 

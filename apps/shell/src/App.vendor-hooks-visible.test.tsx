@@ -32,7 +32,7 @@ import {
 import { MCP_HEADER, MCP_STATUS_CONNECTED } from "./mcpServersProjection";
 import { BROWSER_HEADER, BROWSER_STATUS_RUNNING } from "./browserWorkProjection";
 import { CHILD_AGENTS_HEADER, CHILD_AGENTS_STATUS_RUNNING } from "./childAgentsProjection";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
+import { CHANGES_DOCK_LABEL } from "./ChangesDock";
 
 const WORKSPACE = "C:\\repo";
 const SESSION_ID = "vendor-hooks-visible-session";
@@ -595,13 +595,13 @@ describe("vendor-hooks-visible App journeys", () => {
       assert.ok(screen.getByLabelText(MCP_HEADER));
       assert.ok(screen.getByLabelText(CHILD_AGENTS_HEADER));
       assert.ok(screen.getByLabelText(BROWSER_HEADER));
-      assert.ok(screen.getByLabelText(FILE_CHANGES_HEADER));
+      assert.ok(screen.getByLabelText(CHANGES_DOCK_LABEL));
     });
     assert.ok(within(screen.getByLabelText(CHILD_AGENTS_HEADER)).getByText("Researcher"));
     assert.ok(within(screen.getByLabelText(CHILD_AGENTS_HEADER)).getByText(CHILD_AGENTS_STATUS_RUNNING));
     assert.ok(within(screen.getByLabelText(BROWSER_HEADER)).getByText("Docs page"));
     assert.ok(within(screen.getByLabelText(BROWSER_HEADER)).getByText(BROWSER_STATUS_RUNNING));
-    assert.ok(within(screen.getByLabelText(FILE_CHANGES_HEADER)).getByText("src/a.ts"));
+    assert.ok(within(screen.getByLabelText(CHANGES_DOCK_LABEL)).getByText("src/a.ts"));
     assert.ok(within(screen.getByLabelText(MCP_HEADER)).getByText("Docs"));
     assert.ok(within(screen.getByLabelText(MCP_HEADER)).getByText(MCP_STATUS_CONNECTED));
     assert.ok(within(hooksSection()!).getByText("PreTool"));

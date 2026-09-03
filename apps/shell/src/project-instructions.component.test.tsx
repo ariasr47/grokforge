@@ -2,7 +2,6 @@ import test, { after, afterEach, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import { FILE_CHANGES_HEADER } from "./FileChangesSection";
 import {
   PI_COMPOSER_EMPTY,
   PI_COMPOSER_ERROR,
@@ -13,7 +12,6 @@ import { PI_TURN_FAILED, piTurnIncluded } from "./projectInstructionsTurn";
 import { PLAN_HEADER } from "./PlanSection";
 import { RunSurface } from "./RunSurface";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
-import { VERIFY_HEADER } from "./VerifySection";
 import { reloadSessionsFromDisk } from "./sessions";
 import type { RunProjectionRun, RunSnapshot } from "./runReducer";
 
@@ -224,7 +222,7 @@ test("workspace switch clears prior path (checking while unready)", async () => 
   assert.equal(chipText.includes("—"), false);
 });
 
-test("included turn chip is a quiet pill — not a Plan/File changes/Verify section", () => {
+test("included turn chip is a quiet pill — not a Plan section or action dock", () => {
   render(
     <RunSurface
       run={run({
@@ -240,8 +238,8 @@ test("included turn chip is a quiet pill — not a Plan/File changes/Verify sect
   );
   assert.ok(screen.getByText(piTurnIncluded("AGENTS.md")));
   assert.equal(screen.queryByRole("region", { name: PLAN_HEADER }), null);
-  assert.equal(screen.queryByRole("region", { name: FILE_CHANGES_HEADER }), null);
-  assert.equal(screen.queryByRole("region", { name: VERIFY_HEADER }), null);
+  // File changes/Verify moved to the Changes dock (Task 9) — RunSurface alone
+  // never renders that region at all, so there is nothing left to assert here.
   assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }), null);
 });
 

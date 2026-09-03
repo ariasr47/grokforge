@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fileChangesDiffLines, splitUnifiedDiff } from "./diffUtil.js";
+import { countDiffLines, fileChangesDiffLines, splitDiffHunks, splitUnifiedDiff } from "./diffUtil.js";
 
 describe("splitUnifiedDiff", () => {
   it("splits before/after lines from a unified hunk", () => {
@@ -49,5 +49,77 @@ describe("splitUnifiedDiff", () => {
       "--- a\r\n+++ b\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n",
     );
     assert.deepEqual(after, ["new"]);
+  });
+});
+
+describe("countDiffLines", () => {
+  it("counts + / - lines and ignores file headers", () => {
+    const diff = "--- a/f.ts\n+++ b/f.ts\n@@ -1,2 +1,3 @@\n line1\n-old\n+new1\n+new2\n";
+    assert.deepEqual(countDiffLines(diff), { added: 2, removed: 1 });
+  });
+
+  it("is zero for a diff with no changed lines", () => {
+    assert.deepEqual(countDiffLines("--- a\n+++ b\n@@ -1 +1 @@\n line1\n"), { added: 0, removed: 0 });
+  });
+});
+
+describe("splitDiffHunks", () => {
+  it("numbers context/add lines from the new file and del lines from the old file", () => {
+    const diff = [
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -12,4 +12,5 @@ buildSummary",
+      "  const s = buildSummary({",
+      "-   turns: 3,",
+      "+   turnCount: 3,",
+      "+   // renamed in sessions v2",
+      "  branch: \"master\",",
+      "  });",
+    ].join("\n");
+    const hunks = splitDiffHunks(diff);
+    assert.equal(hunks.length, 1);
+    const hunk = hunks[0]!;
+    assert.equal(hunk.range, "@@ -12,4 +12,5 @@");
+    assert.equal(hunk.context, "buildSummary");
+    assert.deepEqual(
+      hunk.lines.map((l) => [l.kind, l.no]),
+      [
+        ["context", 12],
+        ["del", 13],
+        ["add", 13],
+        ["add", 14],
+        ["context", 15],
+        ["context", 16],
+      ],
+    );
+  });
+
+  it("splits multiple hunks and reports each independently", () => {
+    const diff = [
+      "--- a/f.ts",
+      "+++ b/f.ts",
+      "@@ -1,1 +1,1 @@",
+      "-a",
+      "+b",
+      "@@ -10,1 +10,1 @@",
+      "-c",
+      "+d",
+    ].join("\n");
+    const hunks = splitDiffHunks(diff);
+    assert.equal(hunks.length, 2);
+    assert.equal(hunks[0]!.range, "@@ -1,1 +1,1 @@");
+    assert.equal(hunks[1]!.range, "@@ -10,1 +10,1 @@");
+  });
+
+  it("folds a tiny one-hunk write with no @@ header into one synthetic hunk", () => {
+    const hunks = splitDiffHunks("--- /dev/null\n+++ b/docs/HUNK.md\n+HUNK-OK\n");
+    assert.equal(hunks.length, 1);
+    assert.equal(hunks[0]!.range, "");
+    assert.deepEqual(hunks[0]!.lines, [{ kind: "add", no: 1, text: "+HUNK-OK" }]);
+  });
+
+  it("returns no hunks for an empty diff", () => {
+    assert.deepEqual(splitDiffHunks(""), []);
+    assert.deepEqual(splitDiffHunks("--- a\n+++ b\n"), []);
   });
 });
