@@ -2,13 +2,21 @@
 // AC3 (Chat send + stream reply, no folder gate) and AC1 (mode switch keeps
 // each mode's own session list; nothing merges/wipes on switch). Mocks the
 // network boundary only (fetch + WebSocket); real App, real session store.
+//
+// Also covers the Task 11 review fix (queued-draft session scoping): a
+// queued follow-up must be bound to the session it was queued against, not
+// to whatever session happens to be selected when its run ends, and a
+// guard bail-out (offline, engine down) must leave it queued rather than
+// silently dropping it. See composerSend.ts's shouldFlushQueue.
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { listSessions, reloadSessionsFromDisk } from "./sessions";
+import { setHealthPollTestScheduler } from "./healthPollTestClock";
+import type { RunEventEnvelope, RunSnapshot } from "./runReducer";
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -27,6 +35,47 @@ function resetBrowserState(): void {
   FakeWebSocket.reset();
 }
 
+/** A real run_started/run_terminal envelope pair — busy/Stop/Queue chrome is
+ *  driven by the tracked run projection these populate, not by the raw
+ *  POST /api/prompt response (this fake host's admission ack carries no
+ *  `run`; see App.ac6.test.tsx for the same pattern this mirrors). */
+function runEnvelope(
+  sessionId: string,
+  runId: string,
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId,
+    runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
+
+function runningSnapshot(sessionId: string, runId: string, acceptedPrompt: string): RunSnapshot {
+  return {
+    sessionId,
+    runId,
+    connectionGeneration: 1,
+    state: "running",
+    acceptedPrompt,
+    admittedAt: "",
+    updatedAt: "",
+    lastEventSeq: 1,
+    policy: { effectiveMode: "review" },
+    model: { id: "grok-4.6" },
+    terminalKind: null,
+    finalAnswer: null,
+    answerVouched: false,
+    failure: null,
+  };
+}
+
 let originalFetch: typeof fetch;
 let originalWebSocket: typeof WebSocket;
 
@@ -38,6 +87,7 @@ before(() => {
 after(() => {
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
+  setHealthPollTestScheduler(null);
 });
 
 beforeEach(() => {
@@ -220,5 +270,261 @@ render(<App />);
     assert.ok(
       !codeSessionsAfter.some((s) => s.messages.some((m) => m.content.includes("Chat-only message"))),
     );
+  });
+});
+
+describe("Queue ⇧⏎ is bound to its own session (review fix, Finding 1)", () => {
+  it("never leaks a queued draft into a session switched to meanwhile, and flushes it only once its own session goes idle", async () => {
+    const partition = "chat:__sandbox__";
+    const SESSION_A = "session-a";
+    const SESSION_B = "session-b";
+    const RUN_A = "run-a";
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        [partition]: [
+          {
+            id: SESSION_A,
+            workspace: partition,
+            title: "Session A",
+            // Otherwise saveSessionMessages auto-retitles an uncommitted
+            // session from its first user message once one is sent, and
+            // "Session A" would stop matching after the send below.
+            committedName: true,
+            messages: [],
+            updatedAt: Date.now(),
+            status: "idle",
+            subagents: [],
+            open: true,
+          },
+          {
+            id: SESSION_B,
+            workspace: partition,
+            title: "Session B",
+            committedName: true,
+            messages: [{ id: "b-prior", role: "assistant", content: "prior message in B" }],
+            updatedAt: Date.now(),
+            status: "idle",
+            subagents: [],
+            open: true,
+          },
+        ],
+      },
+      activeId: { [partition]: SESSION_A },
+      pinned: [partition],
+      expanded: [partition],
+    });
+
+    const host = createFakeHost({ mode: "chat", workspace: null, busy: false });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+    const user = userEvent.setup();
+    const composer = await screen.findByLabelText("Message to agent");
+
+    // Start A's run and keep it non-terminal (busy).
+    await user.type(composer, "message for A");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
+    await waitFor(() => assert.ok(FakeWebSocket.latest()));
+    let ws = FakeWebSocket.latest()!;
+    ws.emit(
+      runEnvelope(SESSION_A, RUN_A, 1, {
+        kind: "run_started",
+        run: runningSnapshot(SESSION_A, RUN_A, "message for A"),
+      }) as unknown as Record<string, unknown>,
+    );
+    await waitFor(() => assert.ok(screen.getByRole("button", { name: "Stop" })));
+
+    // Queue a follow-up while A is busy.
+    await user.type(composer, "queued for A");
+    await user.click(screen.getByRole("button", { name: "Queue" }));
+    assert.ok(screen.getByRole("button", { name: "Queued · 1" }));
+
+    // Switch to session B.
+    const bTitle = [...document.querySelectorAll(".session-title")].find(
+      (el) => el.textContent === "Session B",
+    );
+    assert.ok(bTitle, "expected Session B's row in the sidebar");
+    fireEvent.click(bTitle!.closest("button") ?? bTitle!);
+    await waitFor(() => assert.ok(screen.getByText("prior message in B")));
+
+    // B must show no chip, and A's draft must not have leaked into B.
+    assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null);
+    assert.equal(host.callsTo("/api/prompt").length, 1);
+    assert.ok(
+      host.callsTo("/api/prompt").every((c) => c.body?.text !== "queued for A"),
+      "A's queued draft must never be sent while B is selected",
+    );
+
+    // Switch back to A — still busy, so the chip reappears (bound to A, not
+    // lost by the switch away).
+    const aTitle = [...document.querySelectorAll(".session-title")].find(
+      (el) => el.textContent === "Session A",
+    );
+    assert.ok(aTitle, "expected Session A's row in the sidebar");
+    fireEvent.click(aTitle!.closest("button") ?? aTitle!);
+    await waitFor(() => assert.ok(screen.getByRole("button", { name: "Queued · 1" })));
+
+    // A's run ends while A is selected -> the held draft flushes into A.
+    ws = FakeWebSocket.latest()!;
+    ws.emit(
+      runEnvelope(SESSION_A, RUN_A, 2, {
+        kind: "run_terminal",
+        terminalKind: "answered",
+        finalAnswer: "reply to A",
+        answerVouched: true,
+        failure: null,
+        terminalAt: "",
+      }) as unknown as Record<string, unknown>,
+    );
+
+    await waitFor(() => assert.equal(host.callsTo("/api/prompt").length, 2));
+    const secondCall = host.callsTo("/api/prompt")[1]!;
+    assert.equal(secondCall.body?.text, "queued for A");
+    assert.equal(secondCall.body?.sessionId, SESSION_A);
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
+  });
+});
+
+describe("a queued draft survives a guard bail-out instead of being dropped (review fix, Finding 1c)", () => {
+  it("a flush attempt while the engine is unreachable keeps the draft queued and surfaced, then sends once reachable again", async () => {
+    const healthClock: { trigger?: () => void } = {};
+    setHealthPollTestScheduler((poll) => {
+      healthClock.trigger = poll;
+      return () => {
+        healthClock.trigger = undefined;
+      };
+    });
+
+    const partition = "chat:__sandbox__";
+    const SESSION_A = "offline-session-a";
+    const SESSION_B = "offline-session-b";
+    const RUN_A = "offline-run";
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        [partition]: [
+          {
+            id: SESSION_A,
+            workspace: partition,
+            title: "Session A",
+            committedName: true,
+            messages: [],
+            updatedAt: Date.now(),
+            status: "idle",
+            subagents: [],
+            open: true,
+          },
+          {
+            id: SESSION_B,
+            workspace: partition,
+            title: "Session B",
+            committedName: true,
+            messages: [{ id: "b-prior", role: "assistant", content: "prior message in B" }],
+            updatedAt: Date.now(),
+            status: "idle",
+            subagents: [],
+            open: true,
+          },
+        ],
+      },
+      activeId: { [partition]: SESSION_A },
+      pinned: [partition],
+      expanded: [partition],
+    });
+
+    const host = createFakeHost({ mode: "chat", workspace: null, busy: false });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+    const user = userEvent.setup();
+    const composer = await screen.findByLabelText("Message to agent");
+
+    // Start A's run and keep it non-terminal (busy).
+    await user.type(composer, "message one");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
+    await waitFor(() => assert.ok(FakeWebSocket.latest()));
+    const ws = FakeWebSocket.latest()!;
+    ws.emit(
+      runEnvelope(SESSION_A, RUN_A, 1, {
+        kind: "run_started",
+        run: runningSnapshot(SESSION_A, RUN_A, "message one"),
+      }) as unknown as Record<string, unknown>,
+    );
+    await waitFor(() => assert.ok(screen.getByRole("button", { name: "Stop" })));
+
+    // Queue a follow-up while busy.
+    await user.type(composer, "queued while offline");
+    await user.click(screen.getByRole("button", { name: "Queue" }));
+    assert.ok(screen.getByRole("button", { name: "Queued · 1" }));
+
+    // A's run ends normally, still fully connected, but while B (not A) is
+    // selected — the queued draft must not flush into B (Finding 1a; already
+    // covered by the sibling test above), so this alone must not fire it.
+    // Doing the termination here, before going offline, keeps this test to
+    // Finding 1c's own concern (a guard bail-out must not drop the draft)
+    // without also depending on how a live run-terminal WS envelope
+    // interacts with the engine-unreachable band — a separate, pre-existing
+    // interaction outside this fix's scope (flagged separately).
+    const bTitle = [...document.querySelectorAll(".session-title")].find(
+      (el) => el.textContent === "Session B",
+    );
+    assert.ok(bTitle, "expected Session B's row in the sidebar");
+    fireEvent.click(bTitle!.closest("button") ?? bTitle!);
+    await waitFor(() => assert.ok(screen.getByText("prior message in B")));
+    ws.emit(
+      runEnvelope(SESSION_A, RUN_A, 2, {
+        kind: "run_terminal",
+        terminalKind: "answered",
+        finalAnswer: "reply one",
+        answerVouched: true,
+        failure: null,
+        terminalAt: "",
+      }) as unknown as Record<string, unknown>,
+    );
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
+    assert.equal(host.callsTo("/api/prompt").length, 1);
+
+    // The engine goes unreachable — two consecutive failed health polls
+    // (App.tsx debounces hostOk false behind streak >= 2).
+    host.healthFail = true;
+    assert.ok(healthClock.trigger);
+    healthClock.trigger!();
+    healthClock.trigger!();
+    await waitFor(() => assert.ok(document.querySelector(".transcript-offline")));
+
+    // Switch back to A: its run is already terminal, so this is exactly the
+    // busy->idle transition the flush effect waits for — except the engine
+    // is unreachable. The attempt must bail out on that guard and leave the
+    // draft queued and surfaced, not clear it and not throw it away.
+    const aTitle = [...document.querySelectorAll(".session-title")].find(
+      (el) => el.textContent === "Session A",
+    );
+    assert.ok(aTitle, "expected Session A's row in the sidebar");
+    fireEvent.click(aTitle!.closest("button") ?? aTitle!);
+    await waitFor(() => assert.ok(screen.getByRole("button", { name: "Queued · 1" })));
+    // Give the guarded flush attempt a genuine chance to run and bail out
+    // before asserting nothing happened.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(
+      host.callsTo("/api/prompt").length,
+      1,
+      "the queued draft must not fire while disconnected",
+    );
+    assert.ok(
+      screen.getByRole("button", { name: "Queued · 1" }),
+      "the queued draft must remain surfaced as waiting, not silently dropped",
+    );
+
+    // The engine comes back -> the still-held draft flushes into A.
+    host.healthFail = false;
+    healthClock.trigger!();
+    await waitFor(() => assert.equal(host.callsTo("/api/prompt").length, 2));
+    const secondCall = host.callsTo("/api/prompt")[1]!;
+    assert.equal(secondCall.body?.text, "queued while offline");
+    assert.equal(secondCall.body?.sessionId, SESSION_A);
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
   });
 });

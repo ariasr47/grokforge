@@ -58,14 +58,22 @@ export function queueAdmitted(input: { text: string; busy: boolean }): boolean {
 }
 
 /**
- * Runs on every busy transition. True exactly once per run ending, on the
- * busy→idle edge, when a draft was held — the caller sends it via the normal
- * send path (never a second, parallel path) and clears the slot.
+ * A held draft is queued against the session it was typed into (see
+ * `{ sessionId, text }` in App.tsx). It may only ever flush into that same
+ * session — never into whatever session happens to be selected when its
+ * run ends, because `sendText` always targets the live selection. True
+ * when the queued session is the one currently selected AND that session
+ * is idle: either because it just went busy→idle while selected, or
+ * because the user switched back to it after it had already finished
+ * while they were elsewhere. A different session being selected, or the
+ * queued session still being busy, both keep holding the draft.
  */
 export function shouldFlushQueue(input: {
-  wasBusy: boolean;
-  isBusy: boolean;
-  hasQueued: boolean;
+  queuedSessionId: string | null;
+  currentSessionId: string | null;
+  busy: boolean;
 }): boolean {
-  return input.wasBusy && !input.isBusy && input.hasQueued;
+  if (input.queuedSessionId == null) return false;
+  if (input.queuedSessionId !== input.currentSessionId) return false;
+  return !input.busy;
 }

@@ -332,29 +332,34 @@ export function ComposerPane({
           </Button>
           {chips}
           {contextRing}
-          {busy ? (
-            queuedCount > 0 ? (
-              <Chip
-                tone="on"
-                title="Cancel the queued message"
-                onPress={() => onCancelQueued?.()}
-              >
-                {`Queued · ${queuedCount}`}
-              </Chip>
-            ) : (
-              <Button
-                size="sm"
-                disabled={queueDisabled}
-                onClick={() => onQueue?.()}
-              >
-                <span>Queue</span>
-                {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: the kbd hint
-                    is not itself focusable; hiding it keeps the button's
-                    accessible name "Queue" instead of "Queue⇧⏎" — same
-                    convention as Gate.tsx's Allow/Deny/S kbd hints. */}
-                <kbd aria-hidden="true">⇧⏎</kbd>
-              </Button>
-            )
+          {queuedCount > 0 ? (
+            // A held draft stays surfaced for as long as it's actually held —
+            // including once its own run has ended but the flush itself
+            // hasn't gone through yet (offline, engine down, a pending gate;
+            // see App.tsx's shouldFlushQueue/sendText). Gating this on `busy`
+            // would hide a stuck draft the instant the run terminated,
+            // silently un-surfacing a message that is still only queued, not
+            // sent.
+            <Chip
+              tone="on"
+              title="Cancel the queued message"
+              onPress={() => onCancelQueued?.()}
+            >
+              {`Queued · ${queuedCount}`}
+            </Chip>
+          ) : busy ? (
+            <Button
+              size="sm"
+              disabled={queueDisabled}
+              onClick={() => onQueue?.()}
+            >
+              <span>Queue</span>
+              {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: the kbd hint
+                  is not itself focusable; hiding it keeps the button's
+                  accessible name "Queue" instead of "Queue⇧⏎" — same
+                  convention as Gate.tsx's Allow/Deny/S kbd hints. */}
+              <kbd aria-hidden="true">⇧⏎</kbd>
+            </Button>
           ) : null}
           {busy ? (
             <Button size="sm" variant="ghost" onClick={onCancel}>

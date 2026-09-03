@@ -120,25 +120,40 @@ test("Queue ⇧⏎ is admitted only while busy with a real draft", () => {
   assert.equal(queueAdmitted({ text: "hold this", busy: false }), false);
 });
 
-test("a queued message flushes exactly on the busy->idle edge", () => {
-  // The run this message was queued for ends -> flush.
+test("a queued message flushes only into its own session, once that session is idle", () => {
+  // The session it was queued against is selected and has gone idle -> flush.
   assert.equal(
-    shouldFlushQueue({ wasBusy: true, isBusy: false, hasQueued: true }),
+    shouldFlushQueue({ queuedSessionId: "A", currentSessionId: "A", busy: false }),
     true,
   );
   // Nothing was held -> nothing to flush.
   assert.equal(
-    shouldFlushQueue({ wasBusy: true, isBusy: false, hasQueued: false }),
+    shouldFlushQueue({ queuedSessionId: null, currentSessionId: "A", busy: false }),
     false,
   );
-  // Already idle on both sides of the transition -> not a real edge.
+  // Its own session is selected but still busy -> the run has not ended yet, keep holding.
   assert.equal(
-    shouldFlushQueue({ wasBusy: false, isBusy: false, hasQueued: true }),
+    shouldFlushQueue({ queuedSessionId: "A", currentSessionId: "A", busy: true }),
     false,
   );
-  // Still busy -> the run has not ended yet, keep holding.
+  // A different session is selected (idle or not) -> never flush into it, no
+  // matter what that session's own busy state is.
   assert.equal(
-    shouldFlushQueue({ wasBusy: true, isBusy: true, hasQueued: true }),
+    shouldFlushQueue({ queuedSessionId: "A", currentSessionId: "B", busy: false }),
     false,
+  );
+  assert.equal(
+    shouldFlushQueue({ queuedSessionId: "A", currentSessionId: "B", busy: true }),
+    false,
+  );
+});
+
+test("a queued message flushes on return to its own session, even if that session finished idle while elsewhere", () => {
+  // Queued for A; A ends while B is selected -> not flushed (covered above).
+  // Now the user switches back to A, which is already idle -> flush on arrival,
+  // not stuck waiting for a fresh busy->idle edge that will never come again.
+  assert.equal(
+    shouldFlushQueue({ queuedSessionId: "A", currentSessionId: "A", busy: false }),
+    true,
   );
 });

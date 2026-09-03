@@ -270,6 +270,32 @@ describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () 
     assert.equal(screen.queryByRole("button", { name: "Stop" }), null);
     assert.equal(screen.queryByText(/Queued ·/), null);
   });
+
+  it("a still-held draft stays surfaced as Queued even once its own run has ended", () => {
+    // The run this draft was queued behind already went idle, but the flush
+    // itself hasn't gone through (e.g. still offline) — App.tsx keeps
+    // queuedCount > 0 in that case, and the chip must not vanish just
+    // because `busy` dropped out from under it (that would silently
+    // un-surface a message that is still only queued, never sent). Send
+    // returns instead of Stop, since idle can compose a fresh message too.
+    let cancelled = false;
+    render(
+      <ComposerPane
+        {...base}
+        busy={false}
+        queuedCount={1}
+        onCancelQueued={() => {
+          cancelled = true;
+        }}
+      />,
+    );
+    const queuedChip = screen.getByRole("button", { name: "Queued · 1" });
+    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Stop" }), null);
+    assert.ok(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(queuedChip);
+    assert.equal(cancelled, true);
+  });
 });
 
 describe("ComposerPane has no Export control", () => {

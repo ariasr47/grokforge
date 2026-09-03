@@ -351,11 +351,16 @@ export function App() {
   // process (and flashing duplicate sockets in production).
   const onServerEventRef = useRef<(ev: ServerEvent) => void>(() => undefined);
   const [draft, setDraft] = useState("");
-  /** Queue ⇧⏎ (Task 11): a single held draft, sent via the normal send path
-   *  once the run it was queued behind ends. See composerSend.ts's
-   *  queueAdmitted/shouldFlushQueue for the pure admission/flush decisions. */
-  const [queuedDraft, setQueuedDraft] = useState<string | null>(null);
-  const wasBusyRef = useRef(false);
+  /** Queue ⇧⏎ (Task 11): a single held draft, bound to the session it was
+   *  queued against — never a bare string. `busy`, `sendText`, and the
+   *  "Queued" chip all key off whichever session is *currently selected*,
+   *  so a draft with no session id of its own would flush into (or show
+   *  in) the wrong session after a switch. `switchSession`/`newSession`
+   *  deliberately do nothing to this slot: the draft simply stays inert —
+   *  hidden and unflushed — until the user selects its own session again,
+   *  at which point it flushes as soon as that session reads idle (see
+   *  composerSend.ts's queueAdmitted/shouldFlushQueue). */
+  const [queuedDraft, setQueuedDraft] = useState<{ sessionId: string; text: string } | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
@@ -3389,6 +3394,9 @@ export function App() {
   const removeSession = useCallback(
     (workspace: string, id: string) => {
       const next = deleteSession(workspace, id);
+      // A draft held for the session being deleted has nowhere left to
+      // flush into — drop it rather than leave it inert forever.
+      setQueuedDraft((prev) => (prev && prev.sessionId === id ? null : prev));
       if (sessionId === id) {
         setArtifactOpenBinding(null);
         discardTranscriptStream();
@@ -3419,8 +3427,10 @@ export function App() {
     if (cancelInFlightRef.current && !busyRef.current) return;
     // A manual Stop means the queued follow-up should not fire once this
     // cancelled run reaches terminal — that would surprise-send a message
-    // right after the user asked to stop.
-    setQueuedDraft(null);
+    // right after the user asked to stop. Only this session's own queued
+    // draft is at risk of that (Stop cancels this session's run alone), so
+    // a draft held for a different session must survive untouched.
+    setQueuedDraft((prev) => (prev && prev.sessionId === sessionId ? null : prev));
     cancelInFlightRef.current = true;
     cancelGenerationRef.current = streamEpochRef.current;
     setRunPhaseDetail("Cancelling…");
@@ -3468,11 +3478,22 @@ export function App() {
       });
   }, [toast, reportError, runProjection, sessionId]);
 
+  /**
+   * Returns whether the send was actually admitted (every guard passed and
+   * the request was handed off) — never whether the network round-trip
+   * later succeeded. The queue flush effect relies on this: a queued draft
+   * must only be cleared once it truly left the queue's hands, never on a
+   * guard bail-out (offline, engine down, a pending gate) where dropping
+   * it would silently lose the message with no error and nothing to retry.
+   * Once admission passes, the normal send machinery owns the outcome
+   * (toast/reportError on a later failure) exactly as it would for a live
+   * Enter — the queue's job is done either way.
+   */
   const sendText = useCallback(
     async (
       raw: string,
       opts?: { skipUserBubble?: boolean; stripTrailingAssistant?: boolean },
-    ) => {
+    ): Promise<boolean> => {
       const armed = shouldClearArmedInvocation(skillsPalette) ? null : armedSkillName;
       const text = (armed ? composeArmedPromptText(armed, raw) : raw).trim();
       const skillHandoff = armed ? { name: armed } : null;
@@ -3490,7 +3511,7 @@ export function App() {
         (!connected && !codePreAcquireOk) ||
         !sessionId
       ) {
-        return;
+        return false;
       }
       if (
         oauth ||
@@ -3498,28 +3519,28 @@ export function App() {
         diffQueue.length > 0 ||
         pendingPlanDecision
       ) {
-        return;
+        return false;
       }
       // F8 / AC6 — before any credential is stored, no message is sent and
       // no unlabeled provider error appears; the composer's disabled-reason
       // chip is the only signal, so a bypass via Enter (which does not read
       // the disabled attribute) must be refused here too.
-      if (codeHardFail) return;
-      if (!state) return;
-      if (!state.hasApiKey && !vendorCode) return;
-      if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return;
+      if (codeHardFail) return false;
+      if (!state) return false;
+      if (!state.hasApiKey && !vendorCode) return false;
+      if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return false;
       const mode = state?.mode === "code" ? "code" : "chat";
       if (mode === "code" && !state?.workspace) {
         reportError("Open a project folder first — use Open folder…", {
           source: "prompt",
         });
-        return;
+        return false;
       }
       if (mode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
         reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
-        return;
+        return false;
       }
-      if (!beginPageSend()) return;
+      if (!beginPageSend()) return false;
       busyRef.current = true;
       sendInFlightRef.current = true;
       setDraft("");
@@ -3623,7 +3644,11 @@ export function App() {
             return [...prev, { id: uid(), role: "system", content: "Stopped by you." }];
           });
           toast.push("Stopped by you", "info");
-          return;
+          // Admission had already begun (beginPageSend succeeded, the draft
+          // and bubble were already committed) before this race resolved —
+          // same as a live Enter immediately followed by Stop. The queue's
+          // job is done; this is not a guard bail-out to retry.
+          return true;
         }
         // Contract path: admission returns the authoritative RunSnapshot (202).
         // A successful response without it is invalid and is never retried via
@@ -3660,7 +3685,7 @@ export function App() {
             setRunPhaseDetail(null);
             setRunFooter("Stopped by you");
             setAwaitingNextTurn(true);
-            return;
+            return true;
           }
           if (run.state === "terminal") {
             endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
@@ -3699,6 +3724,7 @@ export function App() {
             // WS resume remains authoritative and will retry on reconnect.
           }
         }
+        return true;
       } catch (err) {
         if (!normalizedRunIdRef.current) {
           pendingPromptMessageIdRef.current = null;
@@ -3711,17 +3737,22 @@ export function App() {
           setArmedSkillName(null);
           toast.push(SKILLS_UNAVAILABLE, "error");
           reportError(SKILLS_UNAVAILABLE, { source: "prompt" });
-          return;
+          return true;
         }
         if (err instanceof ApiError && err.code === "plan_engagement_unvouched") {
           reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
-          return;
+          return true;
         }
         if (err instanceof ApiError && err.code === "plan_decision_pending") {
           reportError(err.message || "plan_decision_pending", { source: "prompt" });
-          return;
+          return true;
         }
         reportError(err instanceof Error ? err.message : String(err));
+        // Admission had already succeeded (beginPageSend, draft/bubble
+        // committed) before this network failure — the same outcome a live
+        // Enter would have. Not a guard bail-out, so the queue must not
+        // hold and silently retry a message the user already saw sent.
+        return true;
       }
     },
     [
@@ -3754,30 +3785,49 @@ export function App() {
     await sendText(draft);
   }, [draft, sendText]);
 
-  /** Queue ⇧⏎ — holds the current draft; the run's Send stays unavailable
-   *  while busy, so this is the only way to compose a follow-up mid-run.
-   *  Single slot: queuing again replaces whatever was already held. */
+  /** Queue ⇧⏎ — holds the current draft against the currently selected
+   *  session; the run's Send stays unavailable while busy, so this is the
+   *  only way to compose a follow-up mid-run. Single slot: queuing again
+   *  replaces whatever was already held (for this or any other session). */
   const queueCurrentDraft = useCallback(() => {
     if (!queueAdmitted({ text: draft, busy })) return;
-    setQueuedDraft(draft.trim());
+    if (!sessionId) return;
+    setQueuedDraft({ sessionId, text: draft.trim() });
     setDraft("");
     setHistIdx(-1);
-  }, [draft, busy]);
+  }, [draft, busy, sessionId]);
 
   const cancelQueuedDraft = useCallback(() => setQueuedDraft(null), []);
 
-  // Flush exactly on the busy->idle edge — the run the draft was queued
-  // behind just reached terminal. Goes through the normal sendText path
-  // (never a second, parallel send), same as a live Enter would.
+  // Flush once the queued draft's own session is selected and idle — either
+  // because it just went busy->idle while selected, or because the user
+  // switched back to it after it had already finished elsewhere (see
+  // shouldFlushQueue). Goes through the normal sendText path (never a
+  // second, parallel send), same as a live Enter would, and only clears the
+  // slot once sendText reports the send was actually admitted — a guard
+  // bail-out (offline, engine down, a pending gate) leaves the draft queued
+  // and still surfaced as "Queued · 1" instead of silently dropping it.
   useEffect(() => {
-    const wasBusy = wasBusyRef.current;
-    wasBusyRef.current = busy;
-    if (shouldFlushQueue({ wasBusy, isBusy: busy, hasQueued: queuedDraft != null })) {
-      const text = queuedDraft as string;
-      setQueuedDraft(null);
-      void sendText(text);
+    if (!queuedDraft) return;
+    if (
+      !shouldFlushQueue({
+        queuedSessionId: queuedDraft.sessionId,
+        currentSessionId: sessionId,
+        busy,
+      })
+    ) {
+      return;
     }
-  }, [busy, queuedDraft, sendText]);
+    const pending = queuedDraft;
+    void sendText(pending.text).then((sent) => {
+      if (!sent) return;
+      setQueuedDraft((prev) =>
+        prev && prev.sessionId === pending.sessionId && prev.text === pending.text
+          ? null
+          : prev,
+      );
+    });
+  }, [busy, queuedDraft, sessionId, sendText]);
 
   // The Review surface's line comments, "Ask Grok to change this file…"
   // field, and "Commit accepted files" all go through this same composer
@@ -5621,7 +5671,7 @@ export function App() {
                 onSend={() => void send()}
                 onQueue={queueCurrentDraft}
                 onCancelQueued={cancelQueuedDraft}
-                queuedCount={queuedDraft != null ? 1 : 0}
+                queuedCount={queuedDraft && queuedDraft.sessionId === sessionId ? 1 : 0}
                 decisionPending={decisionPending}
                 chatHomeLabel={chatHomeLabel}
                 chips={composerChips}
