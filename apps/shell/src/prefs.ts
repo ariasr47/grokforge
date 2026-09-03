@@ -18,8 +18,6 @@ export interface Prefs {
   effort: EffortPref;
   /** True after user has used Code mode at least once */
   usedCode: boolean;
-  /** Chat sidebar: show optional local-files strip */
-  showChatFiles: boolean;
   /** Code sidebar: show nested subagent rows when present */
   showSubagents: boolean;
 }
@@ -32,7 +30,6 @@ const defaults: Prefs = {
   lastMode: "chat",
   effort: "auto",
   usedCode: false,
-  showChatFiles: true,
   showSubagents: true,
 };
 

@@ -3326,6 +3326,37 @@ export function App() {
     }
   }, [reportError, toast]);
 
+  // The way back from a bound folder (review finding, Task 15): binding
+  // repoints the GLOBAL chat root (api.setChatRoot), so every private-
+  // sandbox home would be unreachable without this. Mirrors bindChatFolder
+  // exactly but with a null path — the backend already treats
+  // setChatRoot(null) as "clear", this only restores the frontend's way to
+  // reach it. Never deletes anything: sessions under the bound folder's own
+  // partition key (chat:<path>) stay on disk and reappear if that folder is
+  // bound again later.
+  const clearChatFolder = useCallback(async () => {
+    try {
+      const s = await api.setChatRoot(null);
+      applyState(s);
+      const key = partitionKey("chat", s.chatRoot);
+      const active = ensureActiveSession(key, null);
+      setSessionId(active.id);
+      setSessionList(listSessions(key));
+      setMessages(
+        active.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          projectedRunId: m.projectedRunId,
+          toolMeta: m.toolMeta,
+        })),
+      );
+      toast.push("Using personal sandbox", "info");
+    } catch (e) {
+      reportError(e instanceof Error ? e.message : String(e));
+    }
+  }, [reportError, toast]);
+
   const decidePermission = useCallback(
     async (decision: "allow_once" | "allow_session" | "deny") => {
       const p = permissions[0];
@@ -5057,6 +5088,7 @@ export function App() {
             mode={productMode}
             chatSessions={chatSessions}
             chatPackFiles={vouchedPack?.members.files ?? []}
+            chatRootLabel={chatRootLabel}
             showSubagents={prefs.showSubagents}
             onNewChat={() => newSession(sessionPartition)}
             onSelectChat={(id) => void switchSession(sessionPartition, id)}
@@ -5065,6 +5097,7 @@ export function App() {
             }
             onDeleteChat={(id) => removeSession(sessionPartition, id)}
             onBindChatFolder={() => void bindChatFolder()}
+            onClearChatFolder={() => void clearChatFolder()}
             workspaces={treeWorkspaces}
             activeWorkspace={state?.workspace ?? null}
             activeSessionId={sessionId}
@@ -5413,18 +5446,6 @@ export function App() {
                     </Hint>
                   </div>
                   <label className="check-row" style={{ marginTop: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={prefs.showChatFiles}
-                      onChange={(e) =>
-                        setPrefs(
-                          patchPrefs({ showChatFiles: e.target.checked }),
-                        )
-                      }
-                    />
-                    Chat sidebar: show local files panel
-                  </label>
-                  <label className="check-row">
                     <input
                       type="checkbox"
                       checked={prefs.showSubagents}

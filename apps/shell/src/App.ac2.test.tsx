@@ -77,7 +77,6 @@ describe("AC2 — first launch with no Code history defaults to Chat", () => {
         lastMode: "code",
         effort: "auto",
         usedCode: true,
-        showChatFiles: true,
         showSubagents: true,
       }),
     );

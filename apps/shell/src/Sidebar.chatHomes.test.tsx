@@ -115,6 +115,13 @@ describe("Sidebar — Chat homes", () => {
     assert.ok(screen.getByText("Japanese study"));
   });
 
+  it("search box carries the Ctrl+P hint, matching Code's own search box", () => {
+    renderChatSidebar([]);
+    const search = screen.getByLabelText("Search chats").closest(".search");
+    assert.ok(search);
+    assert.ok(within(search as HTMLElement).getByText("Ctrl+P"));
+  });
+
   it("shows honest empty copy when there are no chats yet", () => {
     renderChatSidebar([]);
     assert.ok(screen.getByText(/No chats yet/));
@@ -142,6 +149,34 @@ describe("Sidebar — Chat homes", () => {
   it("Add is absent when onBindChatFolder is not provided", () => {
     renderChatSidebar([]);
     assert.equal(screen.queryByRole("button", { name: "Add" }) === null, true);
+  });
+
+  it("Pack: Use private folder is hidden while Chat is on the private sandbox (no chatRootLabel)", () => {
+    renderChatSidebar([], { onClearChatFolder: noop });
+    assert.equal(
+      screen.queryByRole("button", { name: "Use private folder" }) === null,
+      true,
+    );
+  });
+
+  it("Pack: Use private folder is hidden when onClearChatFolder is not provided, even with a folder bound", () => {
+    renderChatSidebar([], { chatRootLabel: "Documents" });
+    assert.equal(
+      screen.queryByRole("button", { name: "Use private folder" }) === null,
+      true,
+    );
+  });
+
+  it("Pack: Use private folder appears once a folder is bound and calls the clear path", () => {
+    let cleared = 0;
+    renderChatSidebar([], {
+      chatRootLabel: "Documents",
+      onClearChatFolder: () => {
+        cleared += 1;
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use private folder" }));
+    assert.equal(cleared, 1);
   });
 
   it("footer shows the avatar, real auth label, and version", () => {

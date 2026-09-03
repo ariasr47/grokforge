@@ -297,8 +297,20 @@ export interface SidebarProps {
   chatPackFiles?: Array<{ path: string }>;
   /** Pack section's `Add` action — opens the folder/file picker (this is
    *  also how a chat root folder gets bound; there is no separate "Local
-   *  files" panel any more). Add is hidden when this is not provided. */
+   *  files" panel any more). Add is hidden when this is not provided.
+   *  Binding repoints the shared chat root for all of Chat, not just the
+   *  active home — see the `Add` button's own title tooltip. */
   onBindChatFolder?: () => void;
+  /** The bound folder's display name (App.tsx's own `chatRootLabel`), or
+   *  null/undefined while Chat is on the private sandbox. Gates the
+   *  "Use private folder" action below — that action has nothing to do
+   *  while nothing is bound. */
+  chatRootLabel?: string | null;
+  /** Pack section's "Use private folder" action — the way back from a
+   *  bound folder (api.setChatRoot(null)). Shown only while chatRootLabel
+   *  is set AND this is provided; never deletes anything, it only switches
+   *  Chat back to the private sandbox partition. */
+  onClearChatFolder?: () => void;
   /** Code */
   workspaces: WorkspaceNode[];
   activeWorkspace: string | null;
@@ -409,6 +421,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
               placeholder="Search chats"
               aria-label="Search chats"
             />
+            <kbd>Ctrl+P</kbd>
           </div>
 
           <div className="rail-tree">
@@ -452,11 +465,28 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             <div className="group">
               <div className="label">
                 <span>Pack</span>
-                {props.onBindChatFolder && (
-                  <button type="button" className="act" onClick={props.onBindChatFolder}>
-                    Add
-                  </button>
-                )}
+                <span className="label-actions">
+                  {props.chatRootLabel && props.onClearChatFolder && (
+                    <button
+                      type="button"
+                      className="act"
+                      onClick={props.onClearChatFolder}
+                      title="Returns Chat to the private sandbox. Chats saved under the bound folder stay there — bind it again to see them."
+                    >
+                      Use private folder
+                    </button>
+                  )}
+                  {props.onBindChatFolder && (
+                    <button
+                      type="button"
+                      className="act"
+                      onClick={props.onBindChatFolder}
+                      title="Binds a folder to all of Chat, not just this home"
+                    >
+                      Add
+                    </button>
+                  )}
+                </span>
               </div>
               {chatPackFiles.map((f) => (
                 <div className="file" key={f.path} title={f.path}>

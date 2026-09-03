@@ -888,15 +888,24 @@ textarea:focus:not(:focus-visible) {
 .rail .count.amber {
   color: var(--attention);
 }
-/* Task 15 — Chat's Pack label "Add" action. */
-.rail .label .act {
+/* Task 15 — Chat's Pack label actions ("Use private folder", shown only
+ * while a folder is bound, then "Add"). Fix (review finding): the pair is
+ * pushed right as one auto-margined group — giving each `.act` its own
+ * `margin-left: auto` would split the free space between them instead of
+ * flushing the pair to the row's right edge. */
+.rail .label .label-actions {
   margin-left: auto;
+  margin: -6px -8px -6px auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rail .label .act {
   letter-spacing: 0;
   text-transform: none;
   font-weight: 400;
   color: var(--accent);
   padding: 6px 8px;
-  margin: -6px -8px -6px auto;
   border-radius: var(--r-control);
   background: transparent;
   border: 0;
