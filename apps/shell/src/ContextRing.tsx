@@ -22,7 +22,9 @@ export function ContextRing({ usage }: { usage: UsageVoucher | null }) {
   const pctLabel = Math.round(rawPct * 100);
   const arcPct = Math.min(1, Math.max(0, rawPct));
   const dashoffset = RING_CIRCUMFERENCE * (1 - arcPct);
-  const amber = rawPct >= COMPACT_THRESHOLD;
+  // Warn off the rounded label, not the raw fraction: at 79.6% the label
+  // already reads "80%", and a ring that stayed cyan would deny its own text.
+  const amber = pctLabel >= Math.round(COMPACT_THRESHOLD * 100);
   const title = `${pctLabel}% of context used · compacts at ${Math.round(COMPACT_THRESHOLD * 100)}%`;
 
   return (

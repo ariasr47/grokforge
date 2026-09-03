@@ -39,6 +39,15 @@ describe("ContextRing — house/guest rule: renders only real engine data", () =
     assert.equal(container.querySelector("circle.ring-progress")!.getAttribute("stroke"), "var(--accent)");
   });
 
+  it("warns as soon as the label reads 80%, so the colour never denies the text", () => {
+    // 79.6% raw: rounds to "80%" in the label, so the ring must warn too.
+    const { container } = render(<ContextRing usage={{ promptTokens: 398_000, contextWindow: 500_000 }} />);
+    const ring = container.querySelector(".ring");
+    assert.equal(ring!.textContent, "80%");
+    assert.equal(ring!.classList.contains("ring-amber"), true);
+    assert.equal(container.querySelector("circle.ring-progress")!.getAttribute("stroke"), "var(--attention)");
+  });
+
   it("turns amber at exactly the 80% compaction threshold — the one place amber is not \"needs you\"", () => {
     const { container } = render(<ContextRing usage={{ promptTokens: 400_000, contextWindow: 500_000 }} />);
     const ring = container.querySelector(".ring");
