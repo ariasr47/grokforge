@@ -1,6 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import type { PermissionReq } from "./runChangeList";
 import { ActionDock } from "./ActionDock";
 import { GATE_ASK_ELSE, GATE_RECOVER } from "./copyDock";
 
@@ -13,6 +14,44 @@ function baseProps() {
     onPermission: () => undefined,
   };
 }
+
+function permission(overrides: Partial<PermissionReq> = {}): PermissionReq {
+  return {
+    id: "perm-1",
+    kind: "shell",
+    detail: "npm test",
+    sessionId: "s1",
+    runId: "r1",
+    invocationId: "perm-1",
+    ...overrides,
+  };
+}
+
+/** A composer textarea alongside ActionDock, standing in for App.tsx's real
+ *  composer — ActionDock itself renders no composer. */
+function Harness({ permissions }: { permissions: PermissionReq[] }) {
+  return (
+    <>
+      <textarea aria-label="composer" />
+      <ActionDock {...baseProps()} permissions={permissions} />
+    </>
+  );
+}
+
+test("F1: a permission arriving while the composer is focused does not steal focus away from it", () => {
+  const { rerender } = render(<Harness permissions={[]} />);
+  const composer = screen.getByLabelText("composer");
+  composer.focus();
+  assert.equal(document.activeElement, composer);
+
+  // The gate now arrives mid-sentence — ActionDock's own focus-on-open
+  // effect must not yank focus off the composer (F1): doing so would let
+  // the operator's very next keystroke land on the dock's button instead,
+  // where App.tsx's global Y/N/S shortcuts would read it as a decision.
+  rerender(<Harness permissions={[permission()]} />);
+  screen.getByRole("region", { name: "Grok wants to run a command" });
+  assert.equal(document.activeElement, composer);
+});
 
 test("a pending recovery_confirmation decision renders the cyan ask gate in the dock", () => {
   let recovered = 0;

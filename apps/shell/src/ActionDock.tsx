@@ -4,6 +4,7 @@ import type { PlanProposedMember } from "./runReducer";
 import { Gate } from "./Gate";
 import { Button } from "./ui/Button";
 import { GATE_RECOVER } from "./copyDock";
+import { inEditable } from "./inEditable";
 
 export {
   PLAN_ACCEPT,
@@ -79,7 +80,15 @@ export const ActionDock = memo(function ActionDock({
 
   useEffect(() => {
     if (!head && !oauth && !hasPlan && !activeRecovery) return;
-    // Focus dock for a11y without stealing composer permanently
+    // Focus dock for a11y without stealing composer permanently — but never
+    // while the operator is actively typing into a text field (the composer,
+    // a rename box, a comment editor, …). A gate arriving mid-sentence must
+    // not yank focus onto its own button: the next ordinary character typed
+    // (e.g. a bare "s") would then land on the dock instead of the field the
+    // operator is looking at, and App.tsx's global shortcuts read a bare
+    // S/Y/N as a real decision. The `aria-live` region below still announces
+    // the new gate to assistive tech without moving focus.
+    if (inEditable(document.activeElement)) return;
     const el = dockRef.current?.querySelector<HTMLElement>(
       "button.btn.primary, a, button",
     );

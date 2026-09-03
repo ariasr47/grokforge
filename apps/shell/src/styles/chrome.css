@@ -406,16 +406,20 @@ html:not([data-motion="calm"]) .engine .dot.live {
 .channel-banner-dev strong {
   background: linear-gradient(135deg, var(--plasma), var(--mind));
 }
+/* Amber is reserved for "needs you" — a non-production build banner is not
+   that, so this stays on the violet/cyan pair (F7). Reversed emphasis from
+   .channel-banner-dev above (violet-led here vs. cyan-led there) keeps the
+   two channels visually distinct without reaching for amber. */
 .channel-banner-tst {
   background: linear-gradient(
     90deg,
-    rgba(240, 180, 90, 0.22),
-    color-mix(in srgb, var(--accent2) 14%, transparent)
+    color-mix(in srgb, var(--accent2) 20%, transparent),
+    color-mix(in srgb, var(--accent) 12%, transparent)
   );
   color: var(--text);
 }
 .channel-banner-tst strong {
-  background: linear-gradient(135deg, var(--accent3), var(--accent2));
+  background: linear-gradient(135deg, var(--mind), var(--plasma));
 }
 
 .btn {

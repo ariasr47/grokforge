@@ -25,6 +25,10 @@ export interface ThreadHeaderProps {
   overview: ReactNode;
   onExport: () => void;
   exportDisabled?: boolean;
+  /** Real member count once the changes list has loaded; omitted (never a
+   *  fabricated 0) while it is still loading or errored — see
+   *  `changesAvailable`, which the caller deliberately keeps true in both of
+   *  those states. */
   changesCount?: number;
   changesOpen: boolean;
   onToggleChanges: () => void;
@@ -60,7 +64,7 @@ export function ThreadHeader({
   overview,
   onExport,
   exportDisabled = false,
-  changesCount = 0,
+  changesCount,
   changesOpen,
   onToggleChanges,
   changesAvailable,
@@ -130,7 +134,11 @@ export function ThreadHeader({
           tone={changesOpen ? "on" : "default"}
           className="changes-chip"
           onPress={onToggleChanges}
-          trailing={<span className="changes-chip-count">{changesCount}</span>}
+          trailing={
+            changesCount != null ? (
+              <span className="changes-chip-count">{changesCount}</span>
+            ) : undefined
+          }
         >
           Changes
         </Chip>

@@ -20,7 +20,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import type { ChatSession, SubagentRecord } from "./sessions";
+import type { ChatSession } from "./sessions";
 import { chatListTitle, defaultSessionTitle, workspaceDisplayName } from "./sessions";
 import { HOME_NAME_PLACEHOLDER } from "./chatPackComposer";
 import { timeAgo } from "./timeAgo";
@@ -326,12 +326,6 @@ export interface SidebarProps {
     title: string,
   ) => void;
   onDeleteCodeSession?: (workspace: string, sessionId: string) => void;
-  onSelectSubagent?: (
-    workspace: string,
-    sessionId: string,
-    sub: SubagentRecord,
-  ) => void;
-  showSubagents?: boolean;
   /** Code: live word ("approve"/"question") per session id currently in the
    * Needs-you group, derived from the active run projection. */
   needsYouReasons?: Record<string, "approve" | "question">;
@@ -585,7 +579,19 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                   <button
                     type="button"
                     className="wshead"
-                    onClick={() => props.onToggleFolder(ws.path)}
+                    onClick={() => {
+                      // Opens/activates this workspace (F-DEAD-PROPS: this
+                      // was declared and threaded from App.tsx but never
+                      // read here, so clicking a workspace header did
+                      // nothing). onToggleFolder still runs right after so
+                      // the expand/collapse affordance keeps working — for
+                      // an already-active workspace, onSelectWorkspace's
+                      // openPath resolves synchronously and this toggle is
+                      // what actually flips it, so the header still
+                      // collapses a workspace you're already in.
+                      props.onSelectWorkspace(ws.path);
+                      props.onToggleFolder(ws.path);
+                    }}
                     title={ws.path}
                     aria-expanded={ws.expanded}
                   >

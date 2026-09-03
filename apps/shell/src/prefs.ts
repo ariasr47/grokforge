@@ -18,8 +18,6 @@ export interface Prefs {
   effort: EffortPref;
   /** True after user has used Code mode at least once */
   usedCode: boolean;
-  /** Code sidebar: show nested subagent rows when present */
-  showSubagents: boolean;
 }
 
 const defaults: Prefs = {
@@ -30,7 +28,6 @@ const defaults: Prefs = {
   lastMode: "chat",
   effort: "auto",
   usedCode: false,
-  showSubagents: true,
 };
 
 function normalize(p: Prefs): Prefs {

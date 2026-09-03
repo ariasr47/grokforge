@@ -110,7 +110,7 @@ import { ThreadHeader } from "./ThreadHeader";
 import { projectRunVerifyList } from "./runVerifyList";
 import { projectRunGitReviewList, draftCommitMessageFromGitReview } from "./runGitReviewList";
 import { ReviewSurface } from "./ReviewSurface";
-import { inEditable } from "./inEditable";
+import { inEditable, dockOwnsFocus } from "./inEditable";
 
 /** Legacy per-run phase label — superseded by derivedLivePhase's phaseCopy for
  *  display, but still threaded through several socket-event handlers below. */
@@ -4124,6 +4124,20 @@ export function App() {
     }
   }, [pendingRecoveryDecision, reportError]);
 
+  // F4: the ask gate's <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> hints (Gate.tsx)
+  // need a real handler per index. recovery_confirmation is the only live
+  // "ask" tier caller today and it always offers exactly one option (Recover,
+  // at index 0 — see ActionDock's `options={[{ label: GATE_RECOVER }]}`), so
+  // only index 0 does anything; Digit2/Digit3 stay bound (not silently
+  // missing) so their hint never lies again once a second option exists.
+  const chooseAskOption = useCallback(
+    (index: number) => {
+      if (!pendingRecoveryDecision) return;
+      if (index === 0) void recoverFromDock();
+    },
+    [pendingRecoveryDecision, recoverFromDock],
+  );
+
   const retryLastUser = useCallback(
     (_id: string, content: string) => {
       setArtifactOpenBinding((b) => (b ? clearArtifactBinding(b) : null));
@@ -4505,6 +4519,11 @@ export function App() {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (permissions.length === 0) return;
         if (inEditable(e.target)) return;
+        // F1: inEditable alone is not enough — it only rules out text
+        // fields, not "focus is somewhere that is not this gate". Require
+        // the dock to actually own focus before a bare letter can settle a
+        // permission the operator was not looking at.
+        if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
         void decidePermission("allow_once");
       },
@@ -4512,6 +4531,7 @@ export function App() {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (permissions.length === 0) return;
         if (inEditable(e.target)) return;
+        if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
         void decidePermission("deny");
       },
@@ -4519,8 +4539,33 @@ export function App() {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (permissions.length === 0) return;
         if (inEditable(e.target)) return;
+        if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
         void decidePermission("allow_session");
+      },
+      Digit1: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (!pendingRecoveryDecision) return;
+        if (inEditable(e.target)) return;
+        if (!dockOwnsFocus(e.target)) return;
+        e.preventDefault();
+        chooseAskOption(0);
+      },
+      Digit2: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (!pendingRecoveryDecision) return;
+        if (inEditable(e.target)) return;
+        if (!dockOwnsFocus(e.target)) return;
+        e.preventDefault();
+        chooseAskOption(1);
+      },
+      Digit3: (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (!pendingRecoveryDecision) return;
+        if (inEditable(e.target)) return;
+        if (!dockOwnsFocus(e.target)) return;
+        e.preventDefault();
+        chooseAskOption(2);
       },
       KeyA: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -4563,6 +4608,8 @@ export function App() {
     pendingPlanDecision,
     planSettling,
     settlePlan,
+    pendingRecoveryDecision,
+    chooseAskOption,
     view,
     changesAvailable,
     busy,
@@ -5089,7 +5136,6 @@ export function App() {
             chatSessions={chatSessions}
             chatPackFiles={vouchedPack?.members.files ?? []}
             chatRootLabel={chatRootLabel}
-            showSubagents={prefs.showSubagents}
             onNewChat={() => newSession(sessionPartition)}
             onSelectChat={(id) => void switchSession(sessionPartition, id)}
             onRenameChat={(id, title) =>
@@ -5445,26 +5491,17 @@ export function App() {
                       </Button>
                     </Hint>
                   </div>
-                  <label className="check-row" style={{ marginTop: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={prefs.showSubagents}
-                      onChange={(e) =>
-                        setPrefs(
-                          patchPrefs({ showSubagents: e.target.checked }),
-                        )
-                      }
-                    />
-                    Code sidebar: show nested subagents
-                  </label>
                 </div>
                 <div className="field">
                   <span>Shortcuts</span>
                   <p className="settings-hint">
-                    <kbd>Ctrl+K</kbd> palette · <kbd>Ctrl+L</kbd> composer ·{" "}
-                    <kbd>Ctrl+N</kbd> new chat · <kbd>Y/N/S</kbd> permissions ·{" "}
-                    <kbd>A/R</kbd> diffs · <kbd>Enter</kbd> send ·{" "}
-                    <kbd>Shift+Enter</kbd> newline
+                    {/* F6: Ctrl+N is new session (tinykeys $mod+KeyN); Ctrl+Shift+N
+                        is new chat (matches HomeScreen's own copy) — this panel
+                        previously paired Ctrl+N with "new chat", which is wrong. */}
+                    <kbd>Ctrl+K</kbd> palette · <kbd>Ctrl+N</kbd> new session ·{" "}
+                    <kbd>Ctrl+Shift+N</kbd> new chat · <kbd>Ctrl+L</kbd> composer ·{" "}
+                    <kbd>Y/N/S</kbd> permissions · <kbd>A/R</kbd> diffs ·{" "}
+                    <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline
                   </p>
                 </div>
                 <div className="field">
@@ -5660,7 +5697,9 @@ export function App() {
                 }
                 onExport={exportCurrentChat}
                 exportDisabled={messages.length === 0}
-                changesCount={changesDockFiles.state === "ready" ? changesDockFiles.members.length : 0}
+                changesCount={
+                  changesDockFiles.state === "ready" ? changesDockFiles.members.length : undefined
+                }
                 changesOpen={changesOpen}
                 onToggleChanges={() => setChangesOpen((v) => !v)}
                 changesAvailable={changesAvailable}

@@ -130,6 +130,16 @@ describe("ThreadHeader — Changes chip", () => {
     fireEvent.click(chip);
     assert.deepEqual(calls, [1]);
   });
+
+  it("F3: omits the number while loading/errored (changesCount not yet known) — never a fabricated 0", () => {
+    // App.tsx deliberately keeps changesAvailable true while the changes
+    // list is loading or errored (so the chip itself stays reachable), but
+    // must not pass a count in that state. The chip must render with no
+    // number at all rather than a hard 0 that reads as "confirmed empty".
+    render(<ThreadHeader {...baseProps()} changesAvailable changesCount={undefined} />);
+    const chip = screen.getByRole("button", { name: /Changes/ });
+    assert.equal(chip.textContent, "Changes");
+  });
 });
 
 describe("ThreadHeader — Beside chip", () => {

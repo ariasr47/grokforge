@@ -696,7 +696,9 @@ textarea:focus:not(:focus-visible) {
   background: var(--accent);
 }
 .sub-ico.plan {
-  background: var(--accent3);
+  /* Violet = thought and plan, not amber (F7) — amber stays reserved for
+     "needs you". */
+  background: var(--accent2);
 }
 .sub-name {
   font-size: 11px;
