@@ -10,12 +10,30 @@ import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { X } from "lucide-react";
 
-export type ToastKind = "info" | "success" | "error";
+/** "needs" is amber (--accent3) — the Global Constraint reserving amber for
+ *  "needs you" and nothing else. */
+export type ToastKind = "info" | "success" | "error" | "needs";
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
 
 export interface ToastItem {
   id: string;
   message: string;
   kind: ToastKind;
+  /** Optional third slot between the text and the × — e.g. needs-you's Jump. */
+  action?: ToastAction;
+}
+
+/** Leading dot color per kind — amber ("needs") never appears for any other
+ *  kind, and no other kind ever borrows it. */
+export function toastDotClass(kind: ToastKind): "ok" | "fail" | "needs" | "done" {
+  if (kind === "success") return "ok";
+  if (kind === "error") return "fail";
+  if (kind === "needs") return "needs";
+  return "done";
 }
 
 /** Pause outcome supersedes the in-flight cancel toast so Export is not covered. */
@@ -30,7 +48,7 @@ export function nextToastsAfterPush(prev: ToastItem[], incoming: ToastItem): Toa
 
 /** Stable API — consumers of push() do not re-render when toasts change. */
 interface ToastApi {
-  push: (message: string, kind?: ToastKind) => void;
+  push: (message: string, kind?: ToastKind, action?: ToastAction) => void;
   dismiss: (id: string) => void;
 }
 
@@ -52,9 +70,9 @@ function getSnapshot() {
   return toasts;
 }
 
-function pushToast(message: string, kind: ToastKind = "info") {
+function pushToast(message: string, kind: ToastKind = "info", action?: ToastAction) {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  toasts = nextToastsAfterPush(toasts, { id, message, kind });
+  toasts = nextToastsAfterPush(toasts, { id, message, kind, action });
   emit();
   window.setTimeout(() => dismissToast(id), 4200);
 }
@@ -72,7 +90,13 @@ function ToastViewport() {
     <div className="toast-stack" aria-live="polite">
       {items.map((t) => (
         <div key={t.id} className={`toast toast-${t.kind}`} role="status">
+          <span className={`dot ${toastDotClass(t.kind)}`} aria-hidden="true" />
           <span>{t.message}</span>
+          {t.action ? (
+            <Button size="sm" onClick={t.action.onClick}>
+              {t.action.label}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

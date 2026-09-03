@@ -53,12 +53,13 @@
 .ui-tooltip {
   max-width: 240px;
   padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
+  border-radius: var(--r-float);
+  background: var(--surface-float);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--stroke);
   color: var(--text);
   font-size: var(--text-xs);
-  box-shadow: var(--glow);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
   z-index: 200;
   pointer-events: none;
 }

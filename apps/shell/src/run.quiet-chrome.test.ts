@@ -264,9 +264,11 @@ describe("settled-turn chrome is quiet", () => {
     const m = chrome.match(/\.skills-palette\s*\{([^}]+)\}/);
     assert.ok(m?.[1], "missing .skills-palette");
     assert.match(m[1]!, /max-width:\s*480px/);
-    assert.match(m[1]!, /background:\s*var\(--bg\)/);
+    // Task 14: the floating surface (Task 1 tokens), not the flat --bg it
+    // used before — still a compact anchored dropdown, not a full slab.
+    assert.match(m[1]!, /background:\s*var\(--surface-float\)/);
     assert.doesNotMatch(m[1]!, /right:\s*100px/);
-    assert.doesNotMatch(m[1]!, /backdrop-filter/);
+    assert.match(m[1]!, /backdrop-filter:\s*blur\(20px\)/);
     assert.match(m[1]!, /display:\s*flex/);
     assert.match(m[1]!, /overflow:\s*hidden/);
     assert.match(m[1]!, /height:\s*min\(360px/);

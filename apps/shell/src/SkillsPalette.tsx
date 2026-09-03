@@ -11,6 +11,7 @@ export function SkillsPalette(props: {
   const { open, projection, filter, activeIndex, onSelect, onDismiss } = props;
   if (!open || projection.state === "absent") return null;
 
+  const total = projection.state === "ready" ? projection.commands.length : 0;
   const rows =
     projection.state === "ready"
       ? filterSkillCommands(projection.commands, filter)
@@ -29,7 +30,16 @@ export function SkillsPalette(props: {
         }
       }}
     >
-      <div className="skills-palette-title">{SKILLS_TITLE}</div>
+      <div className="mh">
+        <span>{SKILLS_TITLE}</span>
+        {/* Task 14: the `.menu` header's "N of M match" — only meaningful
+         *  once there is a real total to narrow from. */}
+        {projection.state === "ready" ? (
+          <span className="count">
+            {rows.length} of {total} match
+          </span>
+        ) : null}
+      </div>
       {projection.state === "checking" ? (
         <>
           <div className="skills-palette-status">{SKILLS_CHECKING}</div>
@@ -55,16 +65,17 @@ export function SkillsPalette(props: {
               type="button"
               role="option"
               id={`skills-option-${i}`}
-              className="skills-palette-option"
+              className={`mi${i === activeIndex ? " on" : ""}`}
               aria-label={cmd.name}
               aria-selected={i === activeIndex}
-              data-active={i === activeIndex ? "true" : undefined}
               onClick={() => onSelect(cmd.name)}
             >
-              <span className="skills-palette-name">{cmd.name}</span>
-              {cmd.description ? (
-                <span className="skills-palette-desc">{cmd.description}</span>
-              ) : null}
+              <span className="k">{cmd.name}</span>
+              {cmd.description ? <span className="d">{cmd.description}</span> : null}
+              {/* Every row here is sourced from the vendor engine's own
+               *  skills catalog (SkillsCatalogFact) — never Forge's own
+               *  palette actions — so "vendor" is always determinable. */}
+              <span className="src">vendor</span>
             </button>
           ))}
         </div>

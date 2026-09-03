@@ -18,4 +18,15 @@ describe("chromeStore", () => {
     useChromeStore.getState().setPaletteOpen((open) => !open);
     assert.equal(useChromeStore.getState().paletteOpen, false);
   });
+
+  it("openPalette opens with a mode and an optional query, defaulting the query to empty", () => {
+    useChromeStore.getState().openPalette("sessions", "sidebar tree");
+    assert.equal(useChromeStore.getState().paletteOpen, true);
+    assert.equal(useChromeStore.getState().paletteMode, "sessions");
+    assert.equal(useChromeStore.getState().paletteQuery, "sidebar tree");
+
+    useChromeStore.getState().openPalette("commands");
+    assert.equal(useChromeStore.getState().paletteMode, "commands");
+    assert.equal(useChromeStore.getState().paletteQuery, "");
+  });
 });

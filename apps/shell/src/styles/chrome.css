@@ -3033,10 +3033,11 @@ a {
 .palette {
   width: min(560px, 92vw);
   max-height: min(70vh, 560px);
-  background: rgba(12, 12, 18, 0.94);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), var(--glow);
+  background: var(--surface-float);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-float);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
   overflow: hidden;
 }
 .palette .overlay-dialog {
@@ -3047,13 +3048,16 @@ a {
 }
 .palette-input {
   width: 100%;
+  height: 48px;
+  box-sizing: border-box;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--stroke);
   background: transparent;
-  padding: 16px 18px;
+  padding: 0 16px;
   font-size: 15px;
   outline: none;
   color: var(--text);
+  caret-color: var(--accent);
 }
 .palette-list {
   list-style: none;
@@ -3067,12 +3071,15 @@ a {
 .palette-option,
 .palette-list button {
   width: 100%;
+  height: 36px;
+  box-sizing: border-box;
   text-align: left;
   border: none;
   background: transparent;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 9px;
+  padding: 0 12px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   color: var(--text);
@@ -3087,6 +3094,10 @@ a {
 }
 .palette-label {
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .palette-hint {
   font-family: var(--mono);
@@ -3096,6 +3107,7 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 45%;
+  flex: none;
 }
 .palette-empty {
   padding: 16px;
@@ -3106,9 +3118,8 @@ a {
   display: flex;
   flex-shrink: 0;
   gap: 14px;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  background: rgba(12, 12, 18, 0.94);
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--stroke);
   font-size: 11px;
   color: var(--muted);
   font-family: var(--mono);
@@ -3486,7 +3497,11 @@ a {
   margin-left: 2px;
 }
 
-/* Skills palette — composer-anchored Voidglass overlay (not Ctrl+K). */
+/* Skills palette — composer-anchored Voidglass overlay (not Ctrl+K).
+ * Task 14: adopts the `.menu` family's floating-surface tokens and its
+ * mh/mi/k/d/src row vocabulary (own rules, scoped under .skills-palette
+ * rather than reusing the `.menu` class itself, so Expert/Review's own
+ * `.menu .mi` column layout for wrapping hint sentences is untouched). */
 .skills-palette {
   position: absolute;
   left: 16px;
@@ -3502,24 +3517,25 @@ a {
   max-height: min(360px, 45vh);
   overflow: hidden;
   padding: 8px 8px 28px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 16px 48px color-mix(in srgb, #000 45%, transparent);
+  background: var(--surface-float);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-float);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+html:not([data-motion="calm"]) .skills-palette {
+  animation: dock-enter var(--dur-slow) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .skills-palette {
+    animation: none !important;
+  }
 }
 .skills-palette.is-compact {
   width: max-content;
   height: auto;
   max-width: min(480px, calc(100% - 32px));
   padding: 6px 10px;
-}
-.skills-palette-title {
-  flex-shrink: 0;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  padding: 6px 10px 8px;
-  color: var(--text);
-  background: var(--bg);
 }
 .skills-palette-list {
   flex: 1 1 auto;
@@ -3533,40 +3549,64 @@ a {
   color: var(--muted);
   font-size: 13px;
 }
-.skills-palette-option {
+.skills-palette .mh {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.skills-palette .mh .count {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.skills-palette .mi {
   width: 100%;
-  max-width: 100%;
-  min-width: 0;
   box-sizing: border-box;
-  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
   border: none;
   background: transparent;
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  text-align: left;
   color: var(--text);
+  font-size: 13px;
   cursor: pointer;
 }
-.skills-palette-option[data-active],
-.skills-palette-option:hover,
-.skills-palette-option:focus-visible {
-  background: rgba(92, 225, 255, 0.08);
+.skills-palette .mi:hover,
+.skills-palette .mi:focus-visible,
+.skills-palette .mi.on {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   outline: none;
-  box-shadow: 0 0 0 1px var(--border-strong);
 }
-.skills-palette-name {
+.skills-palette .mi .k {
+  flex: none;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
 }
-.skills-palette-desc {
-  font-size: 12px;
+.skills-palette .mi .d {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--muted);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.skills-palette .mi .src {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
 }
 .skill-armed-row {
   display: flex;

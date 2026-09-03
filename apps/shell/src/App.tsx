@@ -76,7 +76,7 @@ import {
   type FirstRunState,
 } from "./firstRun";
 import { Onboarding } from "./Onboarding";
-import { CommandPalette, type PaletteAction } from "./CommandPalette";
+import { CommandPalette, type PaletteAction, type PaletteSessionRow } from "./CommandPalette";
 import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { OverlayDialog } from "./ui/Dialog";
@@ -400,6 +400,9 @@ export function App() {
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const paletteOpen = useChromeStore((s) => s.paletteOpen);
   const setPaletteOpen = useChromeStore((s) => s.setPaletteOpen);
+  const paletteMode = useChromeStore((s) => s.paletteMode);
+  const paletteQuery = useChromeStore((s) => s.paletteQuery);
+  const openPalette = useChromeStore((s) => s.openPalette);
   const peek = useChromeStore((s) => s.peek);
   const setPeek = useChromeStore((s) => s.setPeek);
   const dragOver = useChromeStore((s) => s.dragOver);
@@ -3027,6 +3030,18 @@ export function App() {
       if (!prevIds.has(id)) {
         setSessionNeedsYou(sessionPartition, id, true);
         changed = true;
+        // Task 14 — the needs-you toast: real title only, never a fabricated
+        // one. sessionList is this partition's own current list, so today's
+        // architecture (needsYou only ever lands on the active session —
+        // see Task 5's report) means it's always found; skip rather than
+        // guess a name on the off chance it isn't.
+        const flagged = sessionList.find((s) => s.id === id);
+        if (flagged) {
+          toast.push(`${chatListTitle(flagged)} needs you`, "needs", {
+            label: "Jump",
+            onClick: () => openHomeSession(sessionPartition, id),
+          });
+        }
       }
     }
     for (const id of prevIds) {
@@ -3146,6 +3161,32 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionList, expandTick]);
 
+  // Task 14 — Ctrl+P's sessions mode: every session in every pinned Code
+  // workspace (not just each workspace's latest, unlike homeRecentWorkspaces
+  // above), flattened and sorted most-recent-first so the palette can fuzzy
+  // search across all of them. Same staleness ceiling as homeRecentWorkspaces
+  // — a background workspace's own data only refreshes when sessionList
+  // (the active partition) or expandTick changes, which is the established,
+  // accepted pattern here (Task 13).
+  const paletteSessions: PaletteSessionRow[] = useMemo(() => {
+    const rows: PaletteSessionRow[] = [];
+    for (const path of listPinnedWorkspaces()) {
+      const workspaceName = workspaceDisplayName(path);
+      for (const s of listSessions(path)) {
+        rows.push({
+          id: s.id,
+          workspacePath: path,
+          workspaceName,
+          title: chatListTitle(s),
+          branch: s.branch ?? null,
+          updatedAt: s.updatedAt,
+        });
+      }
+    }
+    return rows.sort((a, b) => b.updatedAt - a.updatedAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionList, expandTick]);
+
   // PARKED (Task 13) — listing real Chat homes. HomeScreen fully supports
   // it (HomeScreen.test.tsx, copyInvariants.test.tsx render real fixtures
   // through it) and `onNewChatHome`/`onOpenChatHome` below are still wired,
@@ -3240,10 +3281,22 @@ export function App() {
   // (e.g. right after a mode switch, before the next turn's first message
   // lands) — every token would re-render the whole Home tree for no reason.
   const homeOnOpenFolder = useCallback(() => void browseFolder(), [browseFolder]);
-  const homeOnFieldOrAllSessions = useCallback(() => setPaletteOpen(true), [setPaletteOpen]);
+  // Home's field and its "All sessions" link both open Ctrl+P's sessions
+  // mode (Task 14) rather than the command list — "jump to a session" is
+  // Home's whole purpose. The field's typed text lands straight in the
+  // palette's own input; All-sessions opens the same list unfiltered.
+  const homeOnFieldQuery = useCallback(
+    (text: string) => openPalette("sessions", text),
+    [openPalette],
+  );
+  const homeOnAllSessions = useCallback(() => openPalette("sessions", ""), [openPalette]);
   const homeOnOpenChatHome = useCallback(
     (id: string) => openHomeSession(homeChatPartition, id),
     [openHomeSession, homeChatPartition],
+  );
+  const onSelectPaletteSession = useCallback(
+    (row: PaletteSessionRow) => openHomeSession(row.workspacePath, row.id),
+    [openHomeSession],
   );
 
   const bindChatFolder = useCallback(async () => {
@@ -4340,7 +4393,14 @@ export function App() {
       "$mod+KeyK": (e) => {
         if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
-        setPaletteOpen((v) => !v);
+        if (paletteOpen && paletteMode === "commands") setPaletteOpen(false);
+        else openPalette("commands");
+      },
+      "$mod+KeyP": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        if (paletteOpen && paletteMode === "sessions") setPaletteOpen(false);
+        else openPalette("sessions");
       },
       "$mod+KeyL": (e) => {
         if (!e.ctrlKey && !e.metaKey) return;
@@ -4481,6 +4541,8 @@ export function App() {
     startNewChatHome,
     peek,
     paletteOpen,
+    paletteMode,
+    openPalette,
     skillsOpen,
     diffQueue,
     oauth,
@@ -4937,8 +4999,12 @@ export function App() {
       </a>
       <CommandPalette
         open={paletteOpen}
+        mode={paletteMode}
         actions={paletteActions}
+        sessions={paletteSessions}
+        initialQuery={paletteQuery}
         onClose={() => setPaletteOpen(false)}
+        onSelectSession={onSelectPaletteSession}
       />
 
       {channelBadge() && (
@@ -4969,7 +5035,7 @@ export function App() {
         onRetryHost={() => void retryHost()}
         view={view}
         onToggleSettings={() => setView(view === "settings" ? "chat" : "settings")}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenPalette={() => openPalette("commands")}
       />
 
       {!hostOk ? (
@@ -5683,11 +5749,11 @@ export function App() {
                       recentWorkspaces={homeRecentWorkspaces}
                       chatHomes={homeChatHomes}
                       footer={homeFooter}
-                      onFieldQuery={homeOnFieldOrAllSessions}
+                      onFieldQuery={homeOnFieldQuery}
                       onOpenNeedsYou={openHomeSession}
                       onOpenWorkspace={openHomeSession}
                       onOpenChatHome={homeOnOpenChatHome}
-                      onAllSessions={homeOnFieldOrAllSessions}
+                      onAllSessions={homeOnAllSessions}
                       onNewChatHome={startNewChatHome}
                       onOpenFolder={homeOnOpenFolder}
                       onNewSession={startNewCodeSession}

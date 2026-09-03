@@ -390,16 +390,54 @@
 .toast {
   pointer-events: auto;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(12, 14, 20, 0.92);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 8px 0 14px;
+  border-radius: var(--r-float);
+  border: 1px solid var(--stroke);
+  background: var(--surface-float);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
   font-size: 13px;
   color: var(--text);
+}
+.toast > span:not(.dot) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Leading status dot — amber (.needs) is exclusive to the needs-you kind;
+ * no other kind ever borrows it (Global Constraints). */
+.toast .dot {
+  margin-top: 0;
+  flex: none;
+}
+.toast .dot.ok {
+  background: var(--success);
+}
+.toast .dot.fail {
+  background: var(--danger);
+}
+.toast .dot.done {
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+.toast .dot.needs {
+  background: var(--attention);
+}
+html:not([data-motion="calm"]) .toast .dot.needs {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+html[data-motion="calm"] .toast .dot.needs {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast .dot.needs {
+    animation: none !important;
+  }
 }
 .toast-success {
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
@@ -410,9 +448,13 @@
      .boot-msg.error — themed token instead. */
   color: var(--danger);
 }
+.toast-needs {
+  border-color: color-mix(in srgb, var(--attention) 35%, transparent);
+}
 .toast-x {
   margin-left: auto;
   line-height: 1;
+  flex: none;
 }
 
 /* —— Path peek —— */

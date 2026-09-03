@@ -177,6 +177,52 @@ describe("SkillsPalette", () => {
     assert.equal(screen.queryByRole("option"), null);
   });
 
+  it("ready header shows N of M match, unfiltered", () => {
+    render(
+      <SkillsPalette
+        open
+        projection={ready}
+        filter=""
+        activeIndex={0}
+        onSelect={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    assert.ok(screen.getByText("2 of 2 match"));
+  });
+
+  it("filtering narrows the header's match count, not just the rows", () => {
+    render(
+      <SkillsPalette
+        open
+        projection={ready}
+        filter="other"
+        activeIndex={0}
+        onSelect={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    assert.ok(screen.getByText("1 of 2 match"));
+    assert.equal(screen.getAllByRole("option").length, 1);
+  });
+
+  it("each row carries a right-aligned vendor source label", () => {
+    render(
+      <SkillsPalette
+        open
+        projection={ready}
+        filter=""
+        activeIndex={0}
+        onSelect={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    const fixture = screen.getByRole("option", { name: "/forge-skill-fixture" });
+    const src = fixture.querySelector(".src");
+    assert.ok(src);
+    assert.equal(src!.textContent, "vendor");
+  });
+
   it("Escape dismisses and never paints Started ·", () => {
     let dismissed = false;
     const { container } = render(
