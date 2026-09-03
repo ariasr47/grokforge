@@ -1,3 +1,112 @@
+/* ============================================================
+   Motion system — the single home for every @keyframes rule in
+   the shell. Tokens (tokens.css): --dur-fast 120ms, --dur 200ms,
+   --dur-slow 360ms, --ease-out cubic-bezier(0.22,1,0.36,1),
+   --ease-spring cubic-bezier(0.34,1.4,0.64,1).
+
+   Nothing loops except live dots (pulse/breathe) and one shimmer.
+   Every animation below is disabled under prefers-reduced-motion
+   and the app's own calm mode — see the two blocks at the bottom
+   of this file, which cover every keyframe name defined here (and
+   every selector that uses it, wherever it lives).
+   ============================================================ */
+
+/* Live dot ring — the busy/live indicator (sidebar dot, spine node,
+   run-dot, the API-online chip, the assistant presence mark). */
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Needs-you dot: breathing amber, distinct from the busy/live pulse
+   above (spine node, sidebar dot, home badge, toast). */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Generic entrance: gate rises from the composer edge (360ms), a
+   receipt tail fades in (120ms), a line comment unfolds (200ms). */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Receipt dot draws in once a tool call completes. */
+@keyframes check-draw {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Text-gradient sweep — the loading skeleton and a live receipt's
+   "Running" verb. */
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Streaming answer's 2px caret. */
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Changes dock slides in from the right. */
+@keyframes dock-slide {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Accepted hunk: a mint highlight sweeps left to right, then clears. */
+@keyframes mint-sweep {
+  from {
+    background-position: -160% 0;
+  }
+  to {
+    background-position: 260% 0;
+  }
+}
+
+/* Utility loading spinner (boot screen, inline tool spinner). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes dock-enter {
   from {
     opacity: 0;
@@ -64,16 +173,118 @@
   pointer-events: none;
 }
 
+/* ============================================================
+   Reduced motion / calm — one block each, covering every keyframe
+   above plus a few transition-only defensive resets that used to
+   be scattered next to their own selectors.
+   ============================================================ */
 @media (prefers-reduced-motion: reduce) {
-  .action-dock,
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* pulse, breathe */
+  .engine .dot.live,
+  .hstat .dot,
+  .node--filled,
+  .node--amber,
+  .home .dot.needs,
+  .rail .dot.live,
+  .rail .dot.needs,
+  .run-dot,
+  .chip.api::before,
+  .msg.assistant .role::before,
+  .toast .dot.needs,
+  /* rise */
   .gate,
+  .rrow .tail,
+  .lc,
+  /* check-draw */
+  .ri-dot,
+  /* shimmer */
+  .thinking-skeleton span,
+  .rrow-live .verb,
+  /* caret-blink */
+  .md-caret,
+  /* dock-slide */
+  .changes,
+  /* mint-sweep */
+  .hunk.accepted,
+  /* spin */
+  .boot-spinner,
+  .tool-spinner,
+  /* dock-enter */
+  .action-dock,
+  .overview-popover,
+  .menu,
+  .skills-palette,
+  /* toast-in */
   .toast {
-    animation: none;
+    animation: none !important;
+  }
+
+  .run-live,
+  .policy-saving,
+  .bypass-danger {
+    animation: none !important;
+    transition: none !important;
+  }
+  .aeon-field {
+    will-change: auto;
+  }
+  .btn:hover:not(:disabled),
+  .composer > .btn.primary:hover:not(:disabled),
+  .rich-choice:hover,
+  .rich-card:hover,
+  .sample-chip:hover {
+    transform: none;
   }
 }
 
-html[data-motion="calm"] .action-dock,
+/* pulse, breathe */
+html[data-motion="calm"] .engine .dot.live,
+html[data-motion="calm"] .hstat .dot,
+html[data-motion="calm"] .node--filled,
+html[data-motion="calm"] .node--amber,
+html[data-motion="calm"] .home .dot.needs,
+html[data-motion="calm"] .rail .dot.live,
+html[data-motion="calm"] .rail .dot.needs,
+html[data-motion="calm"] .run-dot,
+html[data-motion="calm"] .chip.api::before,
+html[data-motion="calm"] .msg.assistant .role::before,
+html[data-motion="calm"] .toast .dot.needs,
+/* rise */
 html[data-motion="calm"] .gate,
+html[data-motion="calm"] .rrow .tail,
+html[data-motion="calm"] .lc,
+/* check-draw */
+html[data-motion="calm"] .ri-dot,
+/* shimmer */
+html[data-motion="calm"] .thinking-skeleton span,
+html[data-motion="calm"] .rrow-live .verb,
+/* caret-blink */
+html[data-motion="calm"] .md-caret,
+/* dock-slide */
+html[data-motion="calm"] .changes,
+/* mint-sweep */
+html[data-motion="calm"] .hunk.accepted,
+/* spin */
+html[data-motion="calm"] .boot-spinner,
+html[data-motion="calm"] .tool-spinner,
+/* dock-enter */
+html[data-motion="calm"] .action-dock,
+html[data-motion="calm"] .overview-popover,
+html[data-motion="calm"] .menu,
+html[data-motion="calm"] .skills-palette,
+/* toast-in */
 html[data-motion="calm"] .toast {
-  animation: none;
+  animation: none !important;
+}
+html[data-motion="calm"] .aeon-field {
+  opacity: 0.55;
+  will-change: auto;
 }

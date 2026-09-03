@@ -178,6 +178,16 @@
 }
 .hunk.accepted {
   border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background-color: rgba(0, 0, 0, 0.35);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--success) 20%, transparent),
+    transparent
+  );
+  background-repeat: no-repeat;
+  background-size: 60% 100%;
+  animation: mint-sweep 240ms var(--ease-spring) forwards;
 }
 .hunk .hh {
   display: flex;

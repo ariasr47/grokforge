@@ -187,17 +187,6 @@
   color: var(--muted);
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 .diff-collapse {
   border: none;
   background: transparent;
@@ -422,14 +411,6 @@
 html:not([data-motion="calm"]) .toast .dot.needs {
   animation: breathe 2.4s ease-in-out infinite;
 }
-html[data-motion="calm"] .toast .dot.needs {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .toast .dot.needs {
-    animation: none !important;
-  }
-}
 .toast-success {
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -505,6 +486,7 @@ html[data-motion="calm"] .toast .dot.needs {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  animation: dock-slide var(--dur-slow) var(--ease-out);
 }
 .chead {
   display: flex;

@@ -102,6 +102,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--muted);
+  animation: check-draw 160ms var(--ease-out);
 }
 .ri-dot.tone-ok {
   background: var(--success);
@@ -119,6 +120,22 @@
   color: color-mix(in srgb, var(--text) 90%, transparent);
   flex: none;
 }
+/* A live receipt's verb ("Ran", "Edited"…) shimmers while the row is
+   still running — .rrow-live is the same class the wrapper already
+   carries for an in-flight tool call. */
+.rrow-live .verb {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 55%, transparent) 0%,
+    var(--text) 40%,
+    color-mix(in srgb, var(--text) 55%, transparent) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
 .rrow .what {
   font-family: var(--mono);
   font-size: 12px;
@@ -134,6 +151,7 @@
   font-size: 11.5px;
   color: var(--muted);
   flex: none;
+  animation: rise var(--dur-fast) var(--ease-out);
 }
 .tail.tone-ok,
 .tail .tone-ok {
@@ -190,28 +208,7 @@
   border-radius: 50%;
   background: var(--plasma);
   box-shadow: 0 0 12px var(--plasma);
-  animation: aeon-pulse 1.2s ease-in-out infinite;
-}
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-/* Needs-you dot: breathing amber, distinct from the busy/live pulse above. */
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-@keyframes aeon-pulse {
-  50% {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
+  animation: pulse 1.2s ease-in-out infinite;
 }
 .think-aloud {
   margin: 0 0 10px;
@@ -296,14 +293,6 @@
 }
 .thinking-skeleton span:nth-child(3) {
   width: 64%;
-}
-@keyframes shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -100% 0;
-  }
 }
 
 /* —— Turn delimiter (agent finished) —— */
@@ -585,15 +574,6 @@ button:focus:not(:focus-visible),
 input:focus:not(:focus-visible),
 textarea:focus:not(:focus-visible) {
   outline: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
 }
 .sidebar h2 {
   margin-top: 4px;
@@ -1104,24 +1084,12 @@ textarea:focus:not(:focus-visible) {
 html:not([data-motion="calm"]) .rail .dot.live {
   animation: pulse 1.8s var(--ease-out) infinite;
 }
-html[data-motion="calm"] .rail .dot.live {
-  animation: none !important;
-}
 .rail .dot.needs {
   background: var(--attention);
   box-shadow: 0 0 8px color-mix(in srgb, var(--attention) 45%, transparent);
 }
 html:not([data-motion="calm"]) .rail .dot.needs {
   animation: breathe 2.4s ease-in-out infinite;
-}
-html[data-motion="calm"] .rail .dot.needs {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .rail .dot.live,
-  .rail .dot.needs {
-    animation: none !important;
-  }
 }
 .rail .railfoot {
   margin-top: auto;
@@ -1158,15 +1126,6 @@ html[data-motion="calm"] .rail .dot.needs {
   line-height: 1.55;
   color: #d8dee9;
 }
-@keyframes tool-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
 .md-body.streaming .md-caret,
 .assistant-partial.streaming .md-caret {
   display: inline-block;
@@ -1175,7 +1134,7 @@ html[data-motion="calm"] .rail .dot.needs {
   margin-left: 2px;
   vertical-align: text-bottom;
   background: var(--accent);
-  animation: tool-pulse 1s ease-in-out infinite;
+  animation: caret-blink 1s steps(2, jump-none) infinite;
 }
 .md-p {
   margin: 0 0 0.65em;

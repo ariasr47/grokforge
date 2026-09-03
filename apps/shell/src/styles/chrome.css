@@ -209,36 +209,8 @@ button:disabled {
     drop-shadow(0 0 16px color-mix(in srgb, var(--accent2) 22%, transparent));
 }
 
-/* Full motion only: 5.2s breathe, scale ≤ 1.04, transform+filter only */
-html:not([data-motion="calm"]) .brand-mark {
-  animation: aeon-breathe 5.2s ease-in-out infinite;
-}
-
-@keyframes aeon-breathe {
-  0%,
-  100% {
-    transform: translateZ(0) scale(1);
-    filter:
-      drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 28%, transparent))
-      drop-shadow(0 0 10px color-mix(in srgb, var(--accent2) 18%, transparent));
-  }
-  50% {
-    transform: translateZ(0) scale(1.04);
-    filter:
-      drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 48%, transparent))
-      drop-shadow(0 0 16px color-mix(in srgb, var(--accent2) 32%, transparent));
-  }
-}
-
-html[data-motion="calm"] .brand-mark {
-  animation: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-mark {
-    animation: none !important;
-  }
-}
+/* Static glow only — the redesign's motion table has nothing loop
+   except live dots and one shimmer; the brand mark no longer breathes. */
 
 .brand-word {
   font-weight: 700;
@@ -319,14 +291,6 @@ html[data-motion="calm"] .brand-mark {
 }
 html:not([data-motion="calm"]) .engine .dot.live {
   animation: pulse 1.8s var(--ease-out) infinite;
-}
-html[data-motion="calm"] .engine .dot.live {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .engine .dot.live {
-    animation: none !important;
-  }
 }
 
 .kbd-btn {
@@ -663,9 +627,6 @@ html[data-motion="calm"] .engine .dot.live {
 
 .run-content,.activity-output,.terminal-detail { overflow-wrap:anywhere; min-width:0; }
 :where(button,input,select,summary):focus-visible { outline:2px solid var(--accent); outline-offset:2px; box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent); }
-@media (prefers-reduced-motion: reduce) {
-  .run-live,.policy-saving,.bypass-danger { animation:none !important; transition:none !important; }
-}
 /* —— Thread header: 44px bar above the transcript — title, model/effort/
    elapsed meta, live status, Overview/Export, and the Changes toggle chip. —— */
 .thead {
@@ -724,14 +685,6 @@ html:not([data-motion="calm"]) .hstat .dot.live {
 html:not([data-motion="calm"]) .hstat .dot.needs {
   animation: breathe 2.4s ease-in-out infinite;
 }
-html[data-motion="calm"] .hstat .dot {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .hstat .dot {
-    animation: none !important;
-  }
-}
 .overview-popover {
   position: absolute;
   top: 100%;
@@ -748,11 +701,6 @@ html[data-motion="calm"] .hstat .dot {
 }
 html:not([data-motion="calm"]) .overview-popover {
   animation: dock-enter var(--dur-slow) var(--ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
-  .overview-popover {
-    animation: none !important;
-  }
 }
 .changes-chip .changes-chip-count {
   color: var(--muted);
@@ -817,9 +765,6 @@ html:not([data-motion="calm"]) .overview-popover {
 html:not([data-motion="calm"]) .node--filled {
   animation: pulse 1.8s var(--ease-out) infinite;
 }
-html[data-motion="calm"] .node--filled {
-  animation: none !important;
-}
 .node--amber {
   border-color: transparent;
   background: var(--attention);
@@ -828,9 +773,6 @@ html[data-motion="calm"] .node--filled {
 html:not([data-motion="calm"]) .node--amber {
   animation: breathe 2.4s ease-in-out infinite;
 }
-html[data-motion="calm"] .node--amber {
-  animation: none !important;
-}
 .node--rose {
   border-color: transparent;
   background: var(--danger);
@@ -838,12 +780,6 @@ html[data-motion="calm"] .node--amber {
 .node--done {
   border-color: transparent;
   background: color-mix(in srgb, var(--muted) 50%, transparent);
-}
-@media (prefers-reduced-motion: reduce) {
-  .node--filled,
-  .node--amber {
-    animation: none !important;
-  }
 }
 .run-decision-dock-hint {
   margin: 8px 0 0;
@@ -2121,14 +2057,6 @@ html[data-density="compact"] .hooks-row {
 html:not([data-motion="calm"]) .home .dot.needs {
   animation: breathe 2.4s ease-in-out infinite;
 }
-html[data-motion="calm"] .home .dot.needs {
-  animation: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .home .dot.needs {
-    animation: none !important;
-  }
-}
 .home-quick {
   display: flex;
   align-items: center;
@@ -2484,11 +2412,6 @@ html[data-motion="calm"] .home .dot.needs {
 }
 html:not([data-motion="calm"]) .menu {
   animation: dock-enter var(--dur-slow) var(--ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
-  .menu {
-    animation: none !important;
-  }
 }
 .menu .mi {
   display: flex;
@@ -2900,12 +2823,6 @@ html:not([data-motion="calm"]) .menu {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   box-shadow: var(--glow);
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .onboarding {
@@ -3608,11 +3525,6 @@ a {
 }
 html:not([data-motion="calm"]) .skills-palette {
   animation: dock-enter var(--dur-slow) var(--ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
-  .skills-palette {
-    animation: none !important;
-  }
 }
 .skills-palette.is-compact {
   width: max-content;

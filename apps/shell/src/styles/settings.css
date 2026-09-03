@@ -187,20 +187,6 @@ html[data-density="compact"] .run-footer {
 .side-shell.mode-chat .session-title {
   font-size: 13px;
 }
-.sidebar-stack[data-mode="chat"] .side-shell,
-.sidebar-stack[data-mode="code"] .side-shell {
-  animation: side-mode-in 0.16s ease;
-}
-@keyframes side-mode-in {
-  from {
-    opacity: 0.55;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 .mode-switch {
   transition: box-shadow 0.12s ease;
 }
@@ -892,9 +878,6 @@ html[data-theme="light"] .tok-plain {
   animation: spin 0.7s linear infinite;
   vertical-align: middle;
 }
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 
 /* New rich blocks */
 .rich-progress-head {
@@ -1097,30 +1080,6 @@ html[data-theme="light"] .tok-plain {
   letter-spacing: -0.01em;
 }
 
-/* Aeon: respect reduced motion / calm dogfood */
-@media (prefers-reduced-motion: reduce) {
-  .brand-mark,
-  .run-dot,
-  .boot-spinner,
-  .thinking-skeleton span,
-  .tool-spinner {
-    animation: none !important;
-  }
-  .rich-choice:hover,
-  .rich-card:hover,
-  .sample-chip:hover {
-    transform: none;
-  }
-}
-
-html[data-motion="calm"] .brand-mark,
-html[data-motion="calm"] .run-dot {
-  animation: none;
-}
-html[data-motion="calm"] .aeon-field {
-  opacity: 0.55;
-  will-change: auto;
-}
 
 /* ========== Rounds 4–9: Aeon system polish ========== */
 
@@ -1352,10 +1311,7 @@ h2,
   background: var(--plasma);
   box-shadow: 0 0 8px var(--plasma);
   flex-shrink: 0;
-  animation: aeon-pulse 1.8s ease-in-out infinite;
-}
-html[data-motion="calm"] .chip.api::before {
-  animation: none;
+  animation: pulse 1.8s ease-in-out infinite;
 }
 
 :focus-visible {
@@ -1368,12 +1324,11 @@ html[data-motion="calm"] .chip.api::before {
   outline-offset: 2px;
 }
 
-/* Palette / modal / toast Aeon glass */
+/* Palette / modal / toast glass */
 .palette-overlay,
 .modal-overlay {
   background: rgba(3, 4, 10, 0.62);
   backdrop-filter: blur(10px) saturate(1.1);
-  animation: aeon-fade-in var(--dur) var(--ease-out);
 }
 .palette,
 .modal {
@@ -1388,7 +1343,6 @@ html[data-motion="calm"] .chip.api::before {
     0 28px 80px rgba(0, 0, 0, 0.55),
     0 0 48px color-mix(in srgb, var(--accent) 8%, transparent),
     0 0 64px color-mix(in srgb, var(--accent2) 6%, transparent);
-  animation: aeon-rise var(--dur-slow) var(--ease-out);
 }
 .palette-option,
 .palette-list button {
@@ -1427,7 +1381,6 @@ html[data-motion="calm"] .chip.api::before {
   border-radius: 16px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), var(--glow);
   backdrop-filter: blur(16px);
-  animation: aeon-rise var(--dur) var(--ease-out);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }
@@ -1436,25 +1389,6 @@ html[data-motion="calm"] .chip.api::before {
 }
 .toast-error {
   border-color: rgba(255, 122, 144, 0.45);
-}
-
-@keyframes aeon-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes aeon-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 /* Empty / onboarding / boot */
@@ -1544,7 +1478,6 @@ html[data-motion="calm"] .chip.api::before {
     color-mix(in srgb, var(--accent) 8%, transparent),
     color-mix(in srgb, var(--accent2) 8%, transparent)
   );
-  animation: aeon-rise var(--dur) var(--ease-out);
 }
 /* Dock stays amber = attention gravity (not plasma chrome) */
 .action-dock {
@@ -1556,7 +1489,6 @@ html[data-motion="calm"] .chip.api::before {
   );
   box-shadow: 0 -8px 32px rgba(240, 180, 90, 0.08);
   backdrop-filter: blur(16px);
-  animation: aeon-rise var(--dur) var(--ease-out);
   transform: translateZ(0);
 }
 .action-dock-label {
@@ -1759,13 +1691,10 @@ html[data-theme="light"] .btn.primary {
   background: var(--plasma);
   box-shadow: 0 0 8px var(--plasma);
   vertical-align: middle;
-  animation: aeon-pulse 1.4s ease-in-out infinite;
-}
-html[data-motion="calm"] .msg.assistant .role::before {
-  animation: none;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
-/* Settings callout Aeon */
+/* Settings callout */
 .callout {
   border-left-color: var(--mind);
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent2) 14%, transparent), transparent);
@@ -1776,21 +1705,3 @@ html[data-motion="calm"] .msg.assistant .role::before {
   background: color-mix(in srgb, var(--accent2) 8%, transparent);
 }
 
-/* Reduce expensive filters on low power */
-@media (prefers-reduced-motion: reduce) {
-  .aeon-field {
-    will-change: auto;
-  }
-  .btn:hover:not(:disabled),
-  .composer > .btn.primary:hover:not(:disabled),
-  .rich-choice:hover,
-  .sample-chip:hover {
-    transform: none;
-  }
-  .palette,
-  .modal,
-  .toast,
-  .perm-card {
-    animation: none;
-  }
-}
