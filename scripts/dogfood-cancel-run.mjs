@@ -32,7 +32,14 @@ const body = (await page.locator("body").innerText()).slice(0, 2500);
 console.log(JSON.stringify({
   clicks,
   waiting: /Waiting for model|A run is in progress/.test(body),
-  yourTurn: /\bYour turn\b/.test(body),
+  // 2819b97 deleted the "Your turn" delimiter — the newest response turn's
+  // spine node carries run state now: filled live / amber waiting for a
+  // decision / rose failed / done answered.
+  turnNode: await page.evaluate(() => {
+    const nodes = document.querySelectorAll(".response-turn .node");
+    const el = nodes[nodes.length - 1];
+    return el ? (el.className.match(/node--(\w+)/) || [])[1] || null : null;
+  }),
   planHelper: /Explore and propose/.test(body),
   acceptPlan: await page.getByRole("button", { name: "Accept plan" }).count(),
   bodyTail: body.slice(-800),

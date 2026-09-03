@@ -44,18 +44,29 @@ await composer.fill(
 );
 await page.getByRole("button", { name: "Send" }).click();
 
+// 2819b97 deleted the "Your turn" delimiter — the newest response turn's spine
+// node carries run state now: filled live / amber waiting for a decision / rose
+// failed / done answered. A settled node is what the delimiter used to mean.
+const turnNodeState = () =>
+  page.evaluate(() => {
+    const nodes = document.querySelectorAll(".response-turn .node");
+    const el = nodes[nodes.length - 1];
+    return el ? (el.className.match(/node--(\w+)/) || [])[1] || null : null;
+  });
+
 const deadline = Date.now() + 90000;
 let outcome = "timeout";
 while (Date.now() < deadline) {
   const body = await page.locator("body").innerText();
   const waiting = body.includes("Waiting for model") || body.includes("Waiting for Grok");
-  const yourTurn = /\bYour turn\b/.test(body);
+  const node = await turnNodeState();
+  const settled = node === "done" || node === "rose";
   const answerHit = await page.getByText("FORGE-CODE-OK", { exact: false }).count();
-  if (!waiting && yourTurn && answerHit >= 2) {
+  if (!waiting && settled && answerHit >= 2) {
     outcome = "answered";
     break;
   }
-  if (!waiting && yourTurn && body.includes("Run failed")) {
+  if (!waiting && settled && body.includes("Run failed")) {
     outcome = "failed-chrome";
     break;
   }
