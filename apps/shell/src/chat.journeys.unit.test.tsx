@@ -12,7 +12,6 @@ import { ArtifactPanel } from "./ArtifactPanel.js";
 import { elevateArtifact } from "./artifactEligibility.js";
 import { RunSurface } from "./RunSurface.js";
 import type { RunProjectionRun } from "./runReducer.js";
-import { EmptyStates } from "./EmptyStates.js";
 import { formatAttachBlock } from "./contextAttach.js";
 import { MENTION_ATTACH_MARKER, visibleUserPrompt } from "./expandMentions.js";
 import { mergeLiveRunsForExport, transcriptToMarkdown } from "./exportChat.js";
@@ -27,25 +26,6 @@ describe("C1 Open — Chat send must not crash on deleted forgeFx", () => {
   it("RunSurface source does not reference forgeFx", () => {
     const src = fs.readFileSync(fileURLToPath(new URL("./RunSurface.tsx", import.meta.url)), "utf8");
     assert.equal(src.includes("forgeFx"), false);
-  });
-});
-
-describe("C1 Open — Chat empty is Chat with Grok, not Code continuum", () => {
-  it("Chat ready empty names Chat with Grok and offers Chat samples", () => {
-    const filled: string[] = [];
-    render(
-      createElement(EmptyStates, {
-        kind: "ready",
-        productMode: "chat",
-        onSamplePrompt: (text: string) => filled.push(text),
-      }),
-    );
-    assert.ok(screen.getByRole("heading", { name: /^Chat with Grok$/ }));
-    assert.equal(screen.queryByText("Code continuum"), null);
-    const email = screen.getByRole("button", { name: /Draft a short professional Gmail/i });
-    fireEvent.click(email);
-    assert.equal(filled.length, 1);
-    assert.match(filled[0]!, /Gmail/i);
   });
 });
 

@@ -178,8 +178,12 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     render(<App />);
     const user = userEvent.setup();
 
-    // Launch: Code's ordinary empty state — nothing was lost.
-    assert.ok(await screen.findByText("Open a project"));
+    // Launch: Code's ordinary empty state — nothing was lost. Task 13 —
+    // "Open a project" is gone; the Home screen's search field is the
+    // stable signal that the ordinary (non-alarm) empty state is showing.
+    assert.ok(
+      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+    );
     assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
 
     await user.click(screen.getByRole("radio", { name: "Chat" }));

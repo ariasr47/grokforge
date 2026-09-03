@@ -45,7 +45,7 @@ function resetBrowserState(): void {
 }
 
 describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
-  it("priorConversations:true + a named empty Chat session -> Chat with Grok, not the not-found alarm", async () => {
+  it("priorConversations:true + a named empty Chat session -> the ordinary Home screen, not the not-found alarm", async () => {
     resetBrowserState();
     const partition = "chat:__sandbox__";
     const s = createSession(partition, "New chat");
@@ -61,7 +61,11 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByRole("heading", { name: /^Chat with Grok$/ }));
+    // Task 13 — "Chat with Grok" (the old ready-kind EmptyStates heading) is
+    // gone; the Home screen renders instead.
+    assert.ok(
+      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+    );
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
   });
 
@@ -207,7 +211,13 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByText("Open a project"));
+    // Task 13 — "Open a project" (the old no-workspace EmptyStates heading)
+    // is gone; the Home screen's search field is the stable, mode-agnostic
+    // signal that Code's ordinary (non-alarm, non-welcome) empty state is
+    // showing.
+    assert.ok(
+      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+    );
     assert.equal(
       screen.queryByText("Forge didn't find your earlier conversations."),
       null,
@@ -249,7 +259,13 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByText("Open a project"));
+    // Task 13 — "Open a project" (the old no-workspace EmptyStates heading)
+    // is gone; the Home screen's search field is the stable, mode-agnostic
+    // signal that Code's ordinary (non-alarm, non-welcome) empty state is
+    // showing.
+    assert.ok(
+      await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
+    );
     assert.equal(screen.queryByText("Welcome to Forge"), null);
     assert.equal(
       screen.queryByText("Forge didn't find your earlier conversations."),
@@ -297,7 +313,9 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
     assert.equal(screen.queryByText("Welcome to Forge"), null);
-    assert.ok(screen.getByText("Code continuum"));
+    // Task 13 — "Code continuum" (the old ready-kind EmptyStates heading) is
+    // gone; the Home screen renders instead, regardless of product mode.
+    assert.ok(screen.getByPlaceholderText("Open a folder, jump to a session, or ask Grok…"));
     assert.equal(screen.getAllByText("New session").length >= 1, true);
     assert.equal(screen.queryByText("New chat"), null);
   });

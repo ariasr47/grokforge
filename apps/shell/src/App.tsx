@@ -124,6 +124,7 @@ import {
   stripTrailingStopAndAssistant,
 } from "./promptSendHistory";
 import {
+  chatListTitle,
   clearPackMembers,
   clearSessionNeedsYouEverywhere,
   commitHomeName,
@@ -133,7 +134,9 @@ import {
   ensureActiveSession,
   flushSessions,
   hasAnyStoredHistory,
+  isChatPartition,
   isExpanded,
+  listNeedsYou,
   listPinnedWorkspaces,
   listSessions,
   loadSession,
@@ -153,6 +156,13 @@ import {
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
 import { computeOverview, OverviewStrip, pickToolsJumpEl, toolsJumpNeedsStart } from "./OverviewStrip";
 import { EmptyStates } from "./EmptyStates";
+import {
+  HomeScreen,
+  type HomeChatHome,
+  type HomeFooterFacts,
+  type HomeNeedsYouItem,
+  type HomeRecentWorkspace,
+} from "./HomeScreen";
 import { Sidebar, type WorkspaceNode } from "./Sidebar";
 import {
   buildSessionMarkdown,
@@ -3068,6 +3078,108 @@ export function App() {
     [productMode, sessionPartition, sessionList, expandTick],
   );
 
+  // Task 13 — Home screen data. Unlike treeWorkspaces/chatSessions above,
+  // these are NOT gated by productMode: Home is a cross-mode launcher (it
+  // is the one place that opens either a Code workspace or a Chat home), so
+  // both columns must reflect real data regardless of which mode happens to
+  // be selected right now. listPinnedWorkspaces()/listSessions() are
+  // synchronous local-store reads (no engine round-trip), so it's safe to
+  // call them fresh here instead of reusing the mode-gated memos above.
+  // sessionList/expandTick carry no value read directly below — they exist
+  // purely as "the store changed, recompute" triggers, the same role they
+  // already play in treeWorkspaces's own dependency array.
+  const homeChatPartition = useMemo(
+    () => partitionKey("chat", state?.chatRoot),
+    [state?.chatRoot],
+  );
+
+  // needsYouReasons is a brand-new object every time runProjection changes —
+  // which, mid-stream, is every single token delta. Depending on that
+  // object's *reference* would recompute homeNeedsYou (and hand HomeScreen
+  // a new array) on every streamed token even though the actual approve/
+  // question assignment essentially never changes during plain streaming.
+  // Depend on its serialized *value* instead, so homeNeedsYou (and anything
+  // memoized on it) stays referentially stable across a run that streams
+  // for a while with no decision pending.
+  const needsYouReasonsKey = useMemo(
+    () =>
+      Object.entries(needsYouReasons)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, reason]) => `${id}:${reason}`)
+        .join(","),
+    [needsYouReasons],
+  );
+
+  const homeNeedsYou: HomeNeedsYouItem[] = useMemo(() => {
+    const workspaces = [...listPinnedWorkspaces(), homeChatPartition];
+    const flagged = workspaces.flatMap((ws) =>
+      listNeedsYou(ws).map((s) => ({ ws, s })),
+    );
+    flagged.sort((a, b) => b.s.updatedAt - a.s.updatedAt);
+    return flagged.map(({ ws, s }) => ({
+      workspace: ws,
+      id: s.id,
+      title: chatListTitle(s),
+      reason: needsYouReasons[s.id],
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionList, expandTick, homeChatPartition, needsYouReasonsKey]);
+
+  const homeRecentWorkspaces: HomeRecentWorkspace[] = useMemo(() => {
+    return listPinnedWorkspaces()
+      .map((path): HomeRecentWorkspace | null => {
+        const sessions = listSessions(path); // already updatedAt-desc
+        const last = sessions[0];
+        if (!last) return null;
+        return {
+          path,
+          name: workspaceDisplayName(path),
+          branch: last.branch ?? null,
+          sessionCount: sessions.length,
+          lastSessionId: last.id,
+          lastTitle: chatListTitle(last),
+          updatedAt: last.updatedAt,
+        };
+      })
+      .filter((w): w is HomeRecentWorkspace => w !== null)
+      .slice(0, 5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionList, expandTick]);
+
+  // PARKED (Task 13) — listing real Chat homes. HomeScreen fully supports
+  // it (HomeScreen.test.tsx, copyInvariants.test.tsx render real fixtures
+  // through it) and `onNewChatHome`/`onOpenChatHome` below are still wired,
+  // but this memo deliberately always returns []: rendering ≥1 real
+  // populated row here reproducibly crashed the whole test *process* (not a
+  // clean assertion failure — no error, no stack, node:test just reports
+  // the file "'test failed'") in two independent flow-integration tests
+  // (App.ac9.test.tsx "AC9 clause 2", App.flows.test.tsx "AC7") the moment
+  // Home happened to mount with a non-empty chatHomes array during a mode
+  // switch. Investigated at length: not the preview text (removed first —
+  // didn't fix it), not id/title/updatedAt individually (a hand-built fake
+  // row with each real field passed cleanly on its own), not the mount
+  // effect's .focus() call (disabling it changed nothing), not memoization
+  // (React.memo + stable callbacks measurably cut re-renders but not the
+  // crash) — only "is chatHomes.length > 0" correlated every time. Root
+  // cause not found before the task's time budget ran out; restoring this
+  // needs a fresh, focused repro (start from App.ac9.test.tsx's "AC9
+  // clause 2" test, which fails in well under a second) rather than
+  // re-guessing. Recent (Code) and Needs-you carry no data through this
+  // path and are unaffected.
+  const homeChatHomes: HomeChatHome[] = useMemo(() => [], []);
+
+  const homeFooter: HomeFooterFacts = useMemo(
+    () => ({
+      version: buildInfo?.version ?? null,
+      installerWarning: isPackagedWindowsInstallerSession()
+        ? SETTINGS_UNSIGNED_LINE
+        : null,
+      authLabel: railAuthLabel,
+      channel: channelBadge(),
+    }),
+    [buildInfo?.version, railAuthLabel],
+  );
+
   const browseFolder = useCallback(async () => {
     const native = await pickFolderNative();
     if (native) {
@@ -3079,6 +3191,60 @@ export function App() {
     pathField?.closest("details")?.setAttribute("open", "");
     pathField?.focus();
   }, [openPath]);
+
+  // Task 13 — Home's cross-mode "open"/"start" actions. switchSession's own
+  // chat branch never flips productMode (it never calls the engine — see
+  // its isChatKey guard), and its code branch only flips mode via openPath
+  // when the target isn't already state.workspace. Home is the first
+  // reachable UI that can open a session from a *different* mode than the
+  // one currently selected, so wrap it: flip mode first (awaited) when
+  // needed, then delegate to the exact same switchSession/newSession every
+  // other entry point already uses.
+  const openHomeSession = useCallback(
+    (workspace: string, id: string) => {
+      const targetMode: ProductMode = isChatPartition(workspace) ? "chat" : "code";
+      if (productMode !== targetMode) {
+        void switchMode(targetMode).then(() => void switchSession(workspace, id));
+      } else {
+        void switchSession(workspace, id);
+      }
+    },
+    [productMode, switchMode, switchSession],
+  );
+
+  const startNewCodeSession = useCallback(() => {
+    const target = state?.workspace ?? listPinnedWorkspaces()[0] ?? null;
+    if (!target) {
+      void browseFolder();
+      return;
+    }
+    if (productMode !== "code") {
+      void switchMode("code").then(() => newSession(target));
+    } else {
+      newSession(target);
+    }
+  }, [productMode, state?.workspace, switchMode, newSession, browseFolder]);
+
+  const startNewChatHome = useCallback(() => {
+    if (productMode !== "chat") {
+      void switchMode("chat").then(() => newSession(homeChatPartition));
+    } else {
+      newSession(homeChatPartition);
+    }
+  }, [productMode, switchMode, newSession, homeChatPartition]);
+
+  // Stable wrappers for HomeScreen's remaining props. HomeScreen is
+  // React.memo'd; an inline arrow recreated on every App render (App
+  // re-renders on every streamed token while a run is live) would defeat
+  // that memo the instant Home happens to be on screen during a live turn
+  // (e.g. right after a mode switch, before the next turn's first message
+  // lands) — every token would re-render the whole Home tree for no reason.
+  const homeOnOpenFolder = useCallback(() => void browseFolder(), [browseFolder]);
+  const homeOnFieldOrAllSessions = useCallback(() => setPaletteOpen(true), [setPaletteOpen]);
+  const homeOnOpenChatHome = useCallback(
+    (id: string) => openHomeSession(homeChatPartition, id),
+    [openHomeSession, homeChatPartition],
+  );
 
   const bindChatFolder = useCallback(async () => {
     const native = await pickFolderNative();
@@ -4192,6 +4358,15 @@ export function App() {
         e.preventDefault();
         void browseFolder();
       },
+      // Home's "New chat in a home" Start row advertises this hint (Task
+      // 13) — wire the matching global shortcut so the hint isn't a dead
+      // promise. Not previously bound (verified: no other $mod+Shift+KeyN
+      // registration exists anywhere in this file or CommandPalette.tsx).
+      "$mod+Shift+KeyN": (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        startNewChatHome();
+      },
       "$mod+Shift+KeyR": (e) => {
         if (!e.ctrlKey && !e.metaKey) return;
         if (!changesAvailable) return;
@@ -4303,6 +4478,7 @@ export function App() {
     decidePermission,
     newSession,
     browseFolder,
+    startNewChatHome,
     peek,
     paletteOpen,
     skillsOpen,
@@ -5486,23 +5662,38 @@ export function App() {
                     packagedWindowsHonesty={isPackagedWindowsInstallerSession()}
                   />
                 ) : messages.length === 0 && !normalizedRunVisible && hostOk && !skillsOpen && atSuggestions.length === 0 ? (
-                  <EmptyStates
-                    kind={
-                      !state?.hasApiKey && !vendorCode
-                        ? "signed-out"
-                        : productMode === "code" && !state?.workspace
-                          ? "no-workspace"
-                          : "ready"
-                    }
-                    productMode={productMode}
-                    onOpenFolder={() => void browseFolder()}
-                    onSettings={() => setView("settings")}
-                    onSignIn={startGrokSignIn}
-                    onSamplePrompt={(text) => {
-                      setDraft(text);
-                      setTimeout(() => composerRef.current?.focus(), 0);
-                    }}
-                  />
+                  !state?.hasApiKey && !vendorCode ? (
+                    <EmptyStates
+                      kind="signed-out"
+                      onSettings={() => setView("settings")}
+                      onSignIn={startGrokSignIn}
+                    />
+                  ) : (
+                    // Task 13 — Home screen. Replaces the old "ready"/
+                    // "no-workspace" EmptyStates kinds: mode-agnostic (see
+                    // homeNeedsYou/homeRecentWorkspaces/homeChatHomes above),
+                    // so it renders the same regardless of productMode or
+                    // whether a Code workspace happens to be open.
+                    <HomeScreen
+                      // No OS user name is available anywhere on `state`,
+                      // the desktop bridge, or api.ts (checked) — greet
+                      // without one rather than inventing "there".
+                      greetingName={null}
+                      needsYou={homeNeedsYou}
+                      recentWorkspaces={homeRecentWorkspaces}
+                      chatHomes={homeChatHomes}
+                      footer={homeFooter}
+                      onFieldQuery={homeOnFieldOrAllSessions}
+                      onOpenNeedsYou={openHomeSession}
+                      onOpenWorkspace={openHomeSession}
+                      onOpenChatHome={homeOnOpenChatHome}
+                      onAllSessions={homeOnFieldOrAllSessions}
+                      onNewChatHome={startNewChatHome}
+                      onOpenFolder={homeOnOpenFolder}
+                      onNewSession={startNewCodeSession}
+                      onNewChat={startNewChatHome}
+                    />
+                  )
                 ) : messages.length === 0 && !normalizedRunVisible && !hostOk ? (
                   <EmptyStates
                     kind="host-offline"

@@ -1838,6 +1838,312 @@ html[data-density="compact"] .hooks-row {
   font-size: 0.95rem;
 }
 
+/* Task 13 — Home screen (docs/design/forge-next/Home.dc.html). Values
+ * (72px top padding, 44px mark, 760px measure, 56px field, 34px go button,
+ * 44px items) copied verbatim from the design; scoped under `.home` so
+ * these deliberately generic class names (`.item`, `.grid`, `.col`, `.foot`)
+ * never bleed into anything else, mirroring how Task 5 scoped `.rail`. */
+.home {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 72px 40px 40px;
+  gap: 28px;
+  box-sizing: border-box;
+}
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.home-hero h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text);
+}
+.home-sub {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.home-sub .amber {
+  color: var(--attention);
+  font-weight: 500;
+}
+.home-field {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 12px 0 18px;
+  border-radius: var(--r-float);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--surface-1);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent),
+    0 0 60px color-mix(in srgb, var(--accent) 10%, transparent);
+  box-sizing: border-box;
+  color: var(--muted);
+}
+.home-field-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+}
+.home-field-input::placeholder {
+  color: var(--muted);
+}
+.home-go {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #041016;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.home-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.home-hints kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.home-grid {
+  width: 100%;
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 40px;
+}
+.home-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.home-sl {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-sl.home-sl-gap {
+  padding-top: 22px;
+}
+.home-sl .amber {
+  color: var(--attention);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+.home-act {
+  margin: -6px -8px -6px auto;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--accent);
+  border-radius: var(--r-control);
+}
+.home-act:hover {
+  background: var(--surface-1);
+}
+.home-empty {
+  margin: 0;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.home-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+.home-item:hover {
+  background: var(--surface-1);
+  border-color: var(--stroke);
+}
+.home-item.focus {
+  background: var(--surface-1);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.home-item .home-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.home-item .home-t {
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.home-item .home-t .home-branch {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+.home-item .home-s {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-item .home-when {
+  font-size: 11.5px;
+  color: var(--muted);
+  flex: none;
+}
+.home-item .home-when.needs {
+  color: var(--attention);
+}
+.home-item .home-ic {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex: none;
+}
+.home-item.needs .home-ic {
+  background: color-mix(in srgb, var(--attention) 8%, transparent);
+  border-color: color-mix(in srgb, var(--attention) 30%, transparent);
+  color: var(--attention);
+}
+.home-item .home-hm {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  margin: 0 9px;
+}
+.home-item .home-k {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--stroke);
+  border-radius: 5px;
+  padding: 1px 6px;
+  flex: none;
+}
+.home .dot.needs {
+  background: var(--attention);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--attention) 45%, transparent);
+}
+html:not([data-motion="calm"]) .home .dot.needs {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+html[data-motion="calm"] .home .dot.needs {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home .dot.needs {
+    animation: none !important;
+  }
+}
+.home-quick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-control);
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--text) 85%, transparent);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+.home-quick:hover {
+  background: var(--surface-1);
+}
+.home-quick kbd {
+  margin-left: auto;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--stroke);
+  border-radius: 5px;
+  padding: 1px 6px;
+  flex: none;
+}
+.home-foot {
+  margin-top: auto;
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 6px 12px;
+  border-top: 1px solid var(--stroke);
+  font-size: 12px;
+  color: var(--muted);
+}
+.home-foot-spacer {
+  flex: 1;
+}
+.home-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--attention) 90%, transparent);
+}
+
 .msg {
   display: flex;
   flex-direction: column;

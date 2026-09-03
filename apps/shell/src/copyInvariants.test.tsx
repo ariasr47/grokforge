@@ -14,8 +14,10 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { App } from "./App";
 import { LaunchFailureCard } from "./LaunchFailureCard";
 import { EmptyStates } from "./EmptyStates";
+import { HomeScreen } from "./HomeScreen";
 import type { DesktopHostStatus, LaunchReason } from "./api";
 import { CARD_COPY } from "./failureCard";
+import { SETTINGS_UNSIGNED_LINE } from "./installerHonesty";
 import {
   createFakeHost,
   FakeWebSocket,
@@ -211,6 +213,65 @@ describe("F9 — AC-U4/AC-U14: EmptyStates surfaces (engine-stopped, sign-in, no
     assertNoMemoryClaim(text, "conversations-not-found");
     // Names no cause, does not claim the data is unrecoverable.
     assert.equal(/gone|lost forever|unrecoverable|deleted permanently/i.test(text), false);
+  });
+});
+
+// Task 13 — Home replaces the old "ready"/"no-workspace" EmptyStates kinds
+// (docs/design/forge-next/Home.dc.html) and is itself a launch surface, so
+// it must keep passing the same banned-token check the five original kinds
+// get above. Rendered directly (component-level, matching this file's own
+// pattern) with a fixture that exercises every text path at once: a
+// Needs-you item, a Recent workspace with a branch, a Chat home with a
+// preview, and a non-null installer warning + channel badge in the footer
+// — the two facts the brief specifically warned could leak a banned token
+// ("host"/"port"/"8787") if they were ever rendered as a raw path.
+describe("F9/Task 13 — AC-U4/AC-U14: the Home screen carries no banned token", () => {
+  it("every section (Needs you, Recent, Chat homes, Start, footer) is clean", () => {
+    const { container } = render(
+      <HomeScreen
+        now={new Date(2026, 0, 1, 9, 0)}
+        greetingName={null}
+        needsYou={[
+          { workspace: "C:\\Dev\\grokforge", id: "s1", title: "Approve a command", reason: "approve" },
+        ]}
+        recentWorkspaces={[
+          {
+            path: "C:\\Dev\\grokforge",
+            name: "grokforge",
+            branch: "master",
+            sessionCount: 4,
+            lastSessionId: "s1",
+            lastTitle: "Fix typecheck in apps/shell",
+            updatedAt: Date.now(),
+          },
+        ]}
+        chatHomes={[
+          { id: "home-1", title: "Family admin", preview: "Landlord email draft", updatedAt: Date.now() },
+        ]}
+        footer={{
+          version: "0.7.0",
+          installerWarning: SETTINGS_UNSIGNED_LINE,
+          authLabel: "Grok · subscription",
+          channel: "DEV",
+        }}
+        onFieldQuery={() => {}}
+        onOpenNeedsYou={() => {}}
+        onOpenWorkspace={() => {}}
+        onOpenChatHome={() => {}}
+        onAllSessions={() => {}}
+        onNewChatHome={() => {}}
+        onOpenFolder={() => {}}
+        onNewSession={() => {}}
+        onNewChat={() => {}}
+      />,
+    );
+    const text = visibleText(container);
+    assertNoBannedTokens(text, "Home screen");
+    assertNoMemoryClaim(text, "Home screen");
+    // The brief's own warning, made concrete: no raw port/path leaks in
+    // place of the generic "data folder" phrasing (this build renders
+    // neither — the footer never mentions a data location at all).
+    assert.equal(/:8787|%USERPROFILE%/i.test(text), false);
   });
 });
 
