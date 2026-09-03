@@ -641,5 +641,3 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   );
 });
 
-/** @deprecated use Sidebar — kept for import compatibility */
-export { Sidebar as SidebarTree };

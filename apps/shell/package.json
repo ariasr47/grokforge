@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test:e2e-tool-activity": "node scripts/e2e-tool-activity.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run && node --max-old-space-size=1024 --import tsx --import ./src/testEnv.ts --test --test-timeout=30000 \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",

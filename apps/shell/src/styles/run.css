@@ -295,32 +295,6 @@
   width: 64%;
 }
 
-/* —— Turn delimiter (agent finished) —— */
-.turn-delimiter {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 20px 16px 8px;
-  user-select: none;
-}
-.turn-delimiter-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--border),
-    transparent
-  );
-}
-.turn-delimiter-label {
-  font-size: 11px;
-  font-family: var(--mono);
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
 .activity-chip-stop {
   border-color: rgba(255, 160, 100, 0.4);
   color: #ffb080;
@@ -389,46 +363,6 @@
 .btn.active-toggle {
   border-color: var(--border-strong);
   color: var(--accent);
-}
-
-/* —— Inline permission —— */
-.perm-card {
-  align-self: stretch;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  padding: 14px;
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  box-shadow: var(--glow);
-}
-.perm-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.perm-card .kind {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-}
-.perm-keys {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--muted);
-}
-.perm-card .detail {
-  margin: 0 0 12px;
-  padding: 10px;
-  border-radius: 10px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: 12px;
-  white-space: pre-wrap;
-  max-height: 88px;
-  overflow: auto;
 }
 
 /* —— Composer —— */
@@ -1237,7 +1171,7 @@ html:not([data-motion="calm"]) .rail .dot.needs {
   padding: 2px 6px 0;
 }
 .md-code-wrap.is-plain .md-copy-btn {
-  min-height: 22px;
+  min-height: 28px;
   padding: 2px 8px !important;
 }
 .md-code-bar {

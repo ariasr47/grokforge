@@ -51,6 +51,12 @@ export function FieldLayer() {
     let w = 0;
     let h = 0;
     let dpr = 1;
+    // Set whenever a resize is skipped because the field wasn't "stars" at
+    // the time (aurora paints nothing, so seeding for a viewport no one is
+    // about to see would be wasted work). Consumed by start() so a later
+    // switch to "stars" reseeds for the current viewport instead of reusing
+    // positions computed for a stale one.
+    let needsReseed = false;
 
     const seed = () => {
       const count = Math.min(72, Math.floor((w * h) / 28000) + 28);
@@ -78,9 +84,15 @@ export function FieldLayer() {
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Resizing the canvas already clears it; skip seeding/painting when
-      // the static aurora (CSS) is what should show through instead.
-      if (!isStarsDom()) return;
+      // the static aurora (CSS) is what should show through instead. Flag
+      // the skip so a later switch to "stars" knows the existing stars (if
+      // any) were seeded for a viewport that no longer matches.
+      if (!isStarsDom()) {
+        needsReseed = true;
+        return;
+      }
       seed();
+      needsReseed = false;
       paint(performance.now(), true);
     };
 
@@ -156,7 +168,10 @@ export function FieldLayer() {
         ctx.clearRect(0, 0, w, h);
         return;
       }
-      if (stars.length === 0) seed();
+      if (stars.length === 0 || needsReseed) {
+        seed();
+        needsReseed = false;
+      }
       if (raf) return;
       if (prefersReducedMotion() || isCalmDom()) {
         paint(performance.now(), true);

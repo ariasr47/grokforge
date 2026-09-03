@@ -69,6 +69,8 @@ Mood art:
 | **Marketing / mood** | Imagine | Full aesthetic freedom |
 
 Avoid: using a downscaled photoreal blob as the in-app logo.
+
+**Redesign confirmation (2026-09-03, `redesign/voidglass-refined`):** the in-app mark — topbar, boot, and every wordmark lockup — is `BrandMark.tsx`'s hand-crafted inline SVG (sourced from `public/brand-mark.svg`); nothing in that path is a PNG or photo. The PNG/ICO master under `src-tauri/icons/*` remains the desktop icon, taskbar icon, and installer art only, per the rule above.
 | **Motion** | Full / Calm pref + `prefers-reduced-motion` |
 | **Theme** | `aeon` (default) \| `light` (legacy `voidglass` migrates) |
 | **Icons** | `apps/shell/src-tauri/icons/*` + `apps/shell/public/forge-icon.png` |

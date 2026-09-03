@@ -415,7 +415,7 @@ html:not([data-motion="calm"]) .engine .dot.live {
   color: var(--text);
 }
 .channel-banner-tst strong {
-  background: linear-gradient(135deg, #f0b45a, #c4b5fd);
+  background: linear-gradient(135deg, var(--accent3), var(--accent2));
 }
 
 .btn {

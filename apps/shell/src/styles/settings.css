@@ -1106,10 +1106,6 @@ h2,
   font-size: var(--text-xs);
   text-transform: uppercase;
 }
-.workspace-label {
-  font-size: var(--text-xs);
-  letter-spacing: 0.01em;
-}
 .chip,
 .effort-label,
 .effort-chip,
@@ -1464,20 +1460,11 @@ h2,
   transform: scale(0.99);
 }
 
-/* Tool / permission / diff / dock */
-.tool-activity,
-.perm-card,
+/* Diff / dock */
 .diff-pane {
   border-radius: var(--radius-md);
   border-color: color-mix(in srgb, var(--accent) 16%, transparent);
   transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
-}
-.perm-card {
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 8%, transparent),
-    color-mix(in srgb, var(--accent2) 8%, transparent)
-  );
 }
 /* Dock stays amber = attention gravity (not plasma chrome) */
 .action-dock {

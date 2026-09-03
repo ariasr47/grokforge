@@ -178,6 +178,7 @@ describe("settled-turn chrome is quiet", () => {
 
   it("the retired turn-delimiter chip is gone from the stylesheet", () => {
     assert.doesNotMatch(chrome, /\.turn-delimiter\s*[,{]/);
+    assert.doesNotMatch(css, /\.turn-delimiter\s*[,{]/);
   });
 
   it("transcript keeps the end of the stream above the composer fold", () => {

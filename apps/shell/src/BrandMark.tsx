@@ -45,7 +45,6 @@ export function BrandMark({
         height="100%"
         viewBox="0 0 64 64"
         fill="none"
-        role="img"
         aria-hidden="true"
       >
         <defs>
