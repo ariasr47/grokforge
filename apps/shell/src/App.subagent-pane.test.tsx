@@ -291,7 +291,7 @@ describe("subagent-pane App journeys", () => {
       assert.ok(within(section).getByText(CHILD_AGENTS_STATUS_DONE));
       assert.ok(within(section).getByText("Boom"));
       assert.ok(within(section).getByText(CHILD_AGENTS_STATUS_FAILED));
-      assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING), null);
+      assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING) === null, true);
     });
   });
 
@@ -303,7 +303,7 @@ describe("subagent-pane App journeys", () => {
       childAgents: { disposition: "absent_non_code_or_non_vendor", members: null },
     });
     assert.equal(childAgentsSection(), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER), null);
+    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER) === null, true);
     assert.equal(decorativeRoster(), null);
   });
 
@@ -315,7 +315,7 @@ describe("subagent-pane App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(childAgentsSection(), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER), null);
+    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER) === null, true);
   });
 
   it("hard_fail never mounts Child agents", async () => {
@@ -326,7 +326,7 @@ describe("subagent-pane App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(childAgentsSection(), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER), null);
+    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER) === null, true);
   });
 
   it("ready + [] is quiet absent — no section, no load-error copy", async () => {
@@ -334,8 +334,8 @@ describe("subagent-pane App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(childAgentsSection(), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_LOADING), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_FAILED), null);
+    assert.equal(screen.queryByText(CHILD_AGENTS_LOADING) === null, true);
+    assert.equal(screen.queryByText(CHILD_AGENTS_FAILED) === null, true);
   });
 
   it("hydrating shows Loading child agents… and keeps prior members", async () => {
@@ -443,10 +443,10 @@ describe("subagent-pane App journeys", () => {
       const section = childAgentsSection();
       assert.ok(section);
       assert.ok(within(section).getByText("Researcher"));
-      assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING), null);
+      assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING) === null, true);
       assert.ok(within(section).getByText(CHILD_AGENTS_STATUS_DONE));
       assert.ok(within(section).getByText(CHILD_AGENTS_RECONNECT_SHORT));
-      assert.equal(within(section).queryByText("1 running"), null);
+      assert.equal(within(section).queryByText("1 running") === null, true);
     });
   });
 
@@ -491,7 +491,7 @@ describe("subagent-pane App journeys", () => {
       assert.ok(screen.getByText("parent thinking"));
     });
     assert.equal(childAgentsSection(), null);
-    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER), null);
+    assert.equal(screen.queryByText(CHILD_AGENTS_HEADER) === null, true);
   });
 
   it("permission settle stays in the dock; Child agents is not an ask surface; Your turn stays locked", async () => {
@@ -513,11 +513,11 @@ describe("subagent-pane App journeys", () => {
       return el!;
     });
     assert.ok(within(section).getByText("Researcher"));
-    assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Deny" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Deny" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
     const text = section.textContent ?? "";
     assert.equal(/stuck/i.test(text), false);
     assert.equal(/status unconfirmed/i.test(text), false);

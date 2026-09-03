@@ -64,8 +64,8 @@ function ready(overrides: Partial<Extract<BrowserWorkProjection, { state: "ready
 test("absent renders no Browser section", () => {
   const { container } = render(<BrowserSection projection={{ state: "absent" }} />);
   assert.equal(container.textContent, "");
-  assert.equal(container.querySelector("[aria-label='Browser']"), null);
-  assert.equal(screen.queryByText(BROWSER_HEADER), null);
+  assert.equal(container.querySelector("[aria-label='Browser']") === null, true);
+  assert.equal(screen.queryByText(BROWSER_HEADER) === null, true);
 });
 
 test("loading shows Loading browser work…", () => {
@@ -76,8 +76,8 @@ test("loading shows Loading browser work…", () => {
   );
   assert.ok(screen.getByText(BROWSER_LOADING));
   assert.ok(screen.getByLabelText(BROWSER_HEADER));
-  assert.equal(screen.queryByText("0 pages"), null);
-  assert.equal(screen.queryByText(BROWSER_OFFLINE), null);
+  assert.equal(screen.queryByText("0 pages") === null, true);
+  assert.equal(screen.queryByText(BROWSER_OFFLINE) === null, true);
 });
 
 test("loading keeps prior members inspectable", () => {
@@ -108,15 +108,15 @@ test("hydrating loading never paints offline reconnect as section lead", () => {
     />,
   );
   assert.ok(screen.getByText(BROWSER_LOADING));
-  assert.equal(screen.queryByText(BROWSER_OFFLINE), null);
-  assert.equal(screen.queryByText(BROWSER_RECONNECT_SHORT), null);
+  assert.equal(screen.queryByText(BROWSER_OFFLINE) === null, true);
+  assert.equal(screen.queryByText(BROWSER_RECONNECT_SHORT) === null, true);
 });
 
 test("error shows Couldn't load browser work. as alert", () => {
   render(<BrowserSection projection={{ state: "error", message: BROWSER_FAILED }} />);
   const alert = screen.getByRole("alert");
   assert.equal(alert.textContent, BROWSER_FAILED);
-  assert.equal(screen.queryByText(BROWSER_LOADING), null);
+  assert.equal(screen.queryByText(BROWSER_LOADING) === null, true);
 });
 
 test("ready header, count, live Running chip, identity, and helper", () => {
@@ -157,9 +157,9 @@ test("withheld historical running has identity but no live Running chip and is n
   );
   const section = screen.getByLabelText(BROWSER_HEADER);
   assert.ok(within(section).getByText("Docs"));
-  assert.equal(within(section).queryByText(BROWSER_STATUS_RUNNING), null);
+  assert.equal(within(section).queryByText(BROWSER_STATUS_RUNNING) === null, true);
   assert.ok(within(section).getByText(BROWSER_STATUS_DONE));
-  assert.equal(within(section).queryByText("1 running"), null);
+  assert.equal(within(section).queryByText("1 running") === null, true);
   assert.ok(within(section).getByText("1 done"));
   assert.ok(within(section).getByText(BROWSER_OFFLINE));
 });
@@ -175,7 +175,7 @@ test("parent-terminal reconnect copy is the short string", () => {
     />,
   );
   assert.ok(screen.getByText(BROWSER_RECONNECT_SHORT));
-  assert.equal(screen.queryByText(BROWSER_OFFLINE), null);
+  assert.equal(screen.queryByText(BROWSER_OFFLINE) === null, true);
 });
 
 test("Done and Failed chips carry meaning in text and tooltip", () => {
@@ -252,12 +252,12 @@ test("unrestorable paints Unavailable beside restored peer, not Failed, no inven
   assert.ok(within(section).getByText("A"));
   assert.ok(within(section).getByText(BROWSER_UNAVAILABLE));
   assert.ok(within(section).getByText(BROWSER_GENERIC_IDENTITY));
-  assert.equal(within(section).queryByText("https://should-not-paint.example"), null);
-  assert.equal(within(section).queryByText(BROWSER_SNAPSHOT), null);
+  assert.equal(within(section).queryByText("https://should-not-paint.example") === null, true);
+  assert.equal(within(section).queryByText(BROWSER_SNAPSHOT) === null, true);
   const failedChips = within(section).queryAllByText(BROWSER_STATUS_FAILED);
   assert.equal(failedChips.length, 0);
   assert.ok(within(section).getByText("2"));
-  assert.equal(within(section).queryByText("1 failed"), null);
+  assert.equal(within(section).queryByText("1 failed") === null, true);
 });
 
 test("snapshot caption only when journaled; no img or data-URL", () => {
@@ -275,7 +275,7 @@ test("snapshot caption only when journaled; no img or data-URL", () => {
   assert.ok(within(section).getByText(BROWSER_SNAPSHOT_MUTED));
   const snap = within(section).getByText(BROWSER_SNAPSHOT);
   assert.equal(snap.getAttribute("title") ?? snap.parentElement?.getAttribute("title"), BROWSER_TOOLTIP_SNAPSHOT);
-  assert.equal(container.querySelector("img"), null);
+  assert.equal(container.querySelector("img") === null, true);
   assert.equal((container.innerHTML || "").includes("data:"), false);
 
   rerender(
@@ -287,8 +287,8 @@ test("snapshot caption only when journaled; no img or data-URL", () => {
       })}
     />,
   );
-  assert.equal(screen.queryByText(BROWSER_SNAPSHOT), null);
-  assert.equal(screen.queryByText(BROWSER_SNAPSHOT_MUTED), null);
+  assert.equal(screen.queryByText(BROWSER_SNAPSHOT) === null, true);
+  assert.equal(screen.queryByText(BROWSER_SNAPSHOT_MUTED) === null, true);
 });
 
 test("neither URL nor title paints generic Browser work — no invented host", () => {
@@ -300,7 +300,7 @@ test("neither URL nor title paints generic Browser work — no invented host", (
     />,
   );
   assert.ok(screen.getByText(BROWSER_GENERIC_IDENTITY));
-  assert.equal(screen.queryByText("https://"), null);
+  assert.equal(screen.queryByText("https://") === null, true);
 });
 
 test("title+url shows title primary and muted url", () => {
@@ -321,7 +321,7 @@ test("header toggle collapses and expands rows", async () => {
   render(<BrowserSection projection={ready()} />);
   assert.ok(screen.getByText("Docs"));
   await user.click(screen.getByRole("button", { name: /Browser/i }));
-  assert.equal(screen.queryByText("Docs"), null);
+  assert.equal(screen.queryByText("Docs") === null, true);
   await user.click(screen.getByRole("button", { name: /Browser/i }));
   assert.ok(screen.getByText("Docs"));
 });
@@ -343,10 +343,10 @@ test("long URL is in title and accessible name", () => {
 test("Browser never hosts settle controls", () => {
   render(<BrowserSection projection={ready()} />);
   const section = screen.getByLabelText(BROWSER_HEADER);
-  assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Decline" }), null);
+  assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Decline" }) === null, true);
 });
 
 test("banned Stuck / Status unconfirmed copy is not painted", () => {

@@ -135,7 +135,7 @@ describe("Q2 Chat is Chat — Plan section is not Chat chrome", () => {
     } as unknown as RunProjectionRun;
     render(createElement(RunSurface, { run, productMode: "chat" }));
     assert.equal(document.querySelector(".plan-section"), null);
-    assert.equal(screen.queryByText(/Restoring this run’s plan/i), null);
+    assert.equal(screen.queryByText(/Restoring this run’s plan/i) === null, true);
   });
 });
 

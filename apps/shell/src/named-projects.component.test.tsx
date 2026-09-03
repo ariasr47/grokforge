@@ -100,7 +100,7 @@ test("Chat footer: pack chip before composer-meta; placeholder name", async () =
   const pack = text.indexOf(PACK_COMPOSER_EMPTY);
   const meta = text.indexOf("Chat");
   assert.ok(pack >= 0 && meta >= 0 && pack < meta);
-  assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+  assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
 });
 
 test("Code renders no Chat pack chrome", async () => {
@@ -131,10 +131,10 @@ test("Code renders no Chat pack chrome", async () => {
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
   await screen.findByLabelText("Message to agent");
-  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY), null);
-  assert.equal(screen.queryByText(PACK_COMPOSER_LOADING), null);
-  assert.equal(screen.queryByText(HOME_NAME_PLACEHOLDER), null);
-  assert.equal(screen.queryByText("Pack ·"), null);
+  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY) === null, true);
+  assert.equal(screen.queryByText(PACK_COMPOSER_LOADING) === null, true);
+  assert.equal(screen.queryByText(HOME_NAME_PLACEHOLDER) === null, true);
+  assert.equal(screen.queryByText("Pack ·") === null, true);
 });
 
 test("Code with a pinned workspace shows the gradient New session CTA, not Open folder", async () => {
@@ -168,7 +168,7 @@ test("Code with a pinned workspace shows the gradient New session CTA, not Open 
 
   // Folder opening moves off the sidebar entirely once a workspace is
   // pinned (command palette / Ctrl+O instead) — no compact icon button.
-  assert.equal(screen.queryByRole("button", { name: "Open folder…" }), null);
+  assert.equal(screen.queryByRole("button", { name: "Open folder…" }) === null, true);
   assert.equal(document.querySelector(".open-folder-btn-compact"), null);
 
   const newSession = screen.getByRole("button", { name: "New session" });
@@ -196,8 +196,8 @@ test("armed chip is not Included; hydrate drop is not empty", async () => {
   await screen.findByLabelText("Message to agent");
   await waitFor(() => assert.ok(screen.getAllByText(PACK_COMPOSER_HYDRATE_PATH).length >= 1));
   assert.ok(screen.getByText("notes/ok.md"));
-  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY), null);
-  assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY) === null, true);
+  assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
   const chip = screen.getByRole("button", { name: PACK_COMPOSER_HYDRATE_PATH });
   assert.notEqual(chip.getAttribute("title"), PACK_COMPOSER_ARMED_TOOLTIP);
 });
@@ -231,5 +231,5 @@ test("pin refuse from WS is not empty and keeps prior members", async () => {
   FakeWebSocket.latest()?.emit({ type: "state", state: { ...host.state } });
   await waitFor(() => assert.ok(screen.getAllByText(PACK_COMPOSER_PIN_FAILED).length >= 1));
   assert.ok(screen.getByText("notes/ok.md"));
-  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY), null);
+  assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY) === null, true);
 });

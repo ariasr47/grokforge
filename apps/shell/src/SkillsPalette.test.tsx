@@ -46,7 +46,7 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.equal(container.textContent, "");
-    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
+    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
   });
 
   it("checking shows Checking skills… and no armable options", () => {
@@ -63,9 +63,9 @@ describe("SkillsPalette", () => {
     assert.ok(screen.getByText(SKILLS_TITLE));
     assert.ok(screen.getByText(SKILLS_CHECKING));
     assert.ok(document.querySelector(".skills-palette.is-compact"));
-    assert.equal(screen.queryByRole("option"), null);
-    assert.equal(screen.queryByText(SKILLS_EMPTY), null);
-    assert.equal(screen.queryByText(SKILLS_RECONNECT), null);
+    assert.equal(screen.queryByRole("option") === null, true);
+    assert.equal(screen.queryByText(SKILLS_EMPTY) === null, true);
+    assert.equal(screen.queryByText(SKILLS_RECONNECT) === null, true);
   });
 
   it("optional reconnect hint is non-selectable status only", () => {
@@ -80,7 +80,7 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.ok(screen.getByText(SKILLS_RECONNECT));
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("ready empty copy is No skills from Grok Code", () => {
@@ -95,8 +95,8 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.ok(screen.getByText(SKILLS_EMPTY));
-    assert.equal(screen.queryByText(SKILLS_FAILED), null);
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByText(SKILLS_FAILED) === null, true);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("obtain_failed copy is Couldn't load skills.", () => {
@@ -111,8 +111,8 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.ok(screen.getByText(SKILLS_FAILED));
-    assert.equal(screen.queryByText(SKILLS_EMPTY), null);
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByText(SKILLS_EMPTY) === null, true);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("ready lists vouched /name rows and descriptions only when vouched", () => {
@@ -158,8 +158,8 @@ describe("SkillsPalette", () => {
     );
     assert.ok(screen.getByRole("option", { name: "/a" }));
     assert.ok(screen.getByRole("option", { name: /\/b/ }));
-    assert.equal(screen.queryByRole("option", { name: "no-slash" }), null);
-    assert.equal(screen.queryByText(SKILLS_FAILED), null);
+    assert.equal(screen.queryByRole("option", { name: "no-slash" }) === null, true);
+    assert.equal(screen.queryByText(SKILLS_FAILED) === null, true);
   });
 
   it("filter miss shows No matches — not invented rows", () => {
@@ -174,7 +174,7 @@ describe("SkillsPalette", () => {
       />,
     );
     assert.ok(screen.getByText(SKILLS_NO_MATCHES));
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("ready header shows N of M match, unfiltered", () => {

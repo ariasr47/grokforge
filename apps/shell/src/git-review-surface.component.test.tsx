@@ -183,12 +183,12 @@ test("Code run: Files/Verify/Git tabs stay independent; Activity keeps its own p
   // File changes/Verify/Git review no longer render inside RunSurface at all
   // (Task 9) — they're the Changes dock now, a separate panel App.tsx mounts
   // beside the thread, not ordered against Activity in the same tree.
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
 });
 
 test("Chat productMode never gets a Changes dock (AC-26)", () => {
   renderChangesDock(triple(), { productMode: "chat" });
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
 });
 
 test("multi-member status+diff on one Git tab without Dirty/Ahead chips (AC-01/02/03)", async () => {
@@ -240,8 +240,8 @@ test("status/diff without gh pr does not invent a PR member (AC-06)", async () =
   renderChangesDock(triple());
   const dock = changesRegion();
   await openTab(dock, /Git/);
-  assert.equal(within(dock).queryByText("PR"), null);
-  assert.equal(within(dock).queryByText("gh pr view"), null);
+  assert.equal(within(dock).queryByText("PR") === null, true);
+  assert.equal(within(dock).queryByText("gh pr view") === null, true);
 });
 
 test("complete empty including uninspected dirty tree shows no Git evidence, Files/Verify stay (AC-08)", async () => {
@@ -316,12 +316,12 @@ test("health-poll closed catch-up does not open Loading over a ready list (W3)",
   renderChangesDock(triple());
   let dock = changesRegion();
   await openTab(dock, /Git/);
-  assert.equal(within(dock).queryByText("Loading git review…"), null);
+  assert.equal(within(dock).queryByText("Loading git review…") === null, true);
   cleanup();
   renderChangesDock(triple());
   dock = changesRegion();
   await openTab(dock, /Git/);
-  assert.equal(within(dock).queryByText("Loading git review…"), null);
+  assert.equal(within(dock).queryByText("Loading git review…") === null, true);
   assert.ok(within(dock).getByText("git status -sb"));
 });
 
@@ -342,7 +342,7 @@ test("catch-up failed shows load-failure copy, not empty, no Retry (AC-14)", asy
   const dock = changesRegion();
   await openTab(dock, /Git/);
   assert.equal(within(dock).getByRole("alert").textContent, message);
-  assert.equal(within(dock).queryByRole("button", { name: /retry/i }), null);
+  assert.equal(within(dock).queryByRole("button", { name: /retry/i }) === null, true);
 });
 
 test("mixed list retains unrestorable pr beside restored status (AC-15)", async () => {
@@ -372,18 +372,18 @@ test("File changes / Verify / Git review membership stay on their own tab (AC-16
   const dock = changesRegion();
   // Files tab is the default.
   assert.ok(within(dock).getByText("a.txt"));
-  assert.equal(within(dock).queryByText("git status -sb"), null);
-  assert.equal(within(dock).queryByText("npm test"), null);
+  assert.equal(within(dock).queryByText("git status -sb") === null, true);
+  assert.equal(within(dock).queryByText("npm test") === null, true);
 
   await openTab(dock, /Verify/);
   assert.ok(within(dock).getByText("npm test"));
-  assert.equal(within(dock).queryByText("git status -sb"), null);
-  assert.equal(within(dock).queryByText("a.txt"), null);
+  assert.equal(within(dock).queryByText("git status -sb") === null, true);
+  assert.equal(within(dock).queryByText("a.txt") === null, true);
 
   await openTab(dock, /Git/);
   assert.ok(within(dock).getByText("git status -sb"));
-  assert.equal(within(dock).queryByText("npm test"), null);
-  assert.equal(within(dock).queryByText("a.txt"), null);
+  assert.equal(within(dock).queryByText("npm test") === null, true);
+  assert.equal(within(dock).queryByText("a.txt") === null, true);
 });
 
 test("log and show appear on the same Git tab (AC-29)", async () => {
@@ -533,5 +533,5 @@ test("Running / Not run / Failed / settled-unavailable chrome (AC-33, W-FAIL-BOD
   assert.ok(within(dock).getByText("Not run"));
   assert.ok(within(dock).getByText("Failed"));
   assert.ok(within(dock).getByText("unavailable"));
-  assert.equal(within(dock).queryByText("Passed"), null);
+  assert.equal(within(dock).queryByText("Passed") === null, true);
 });

@@ -125,6 +125,7 @@ import {
 } from "./promptSendHistory";
 import {
   chatListTitle,
+  chatSessionPreview,
   clearPackMembers,
   clearSessionNeedsYouEverywhere,
   commitHomeName,
@@ -3187,27 +3188,28 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionList, expandTick]);
 
-  // PARKED (Task 13) — listing real Chat homes. HomeScreen fully supports
-  // it (HomeScreen.test.tsx, copyInvariants.test.tsx render real fixtures
-  // through it) and `onNewChatHome`/`onOpenChatHome` below are still wired,
-  // but this memo deliberately always returns []: rendering ≥1 real
-  // populated row here reproducibly crashed the whole test *process* (not a
-  // clean assertion failure — no error, no stack, node:test just reports
-  // the file "'test failed'") in two independent flow-integration tests
-  // (App.ac9.test.tsx "AC9 clause 2", App.flows.test.tsx "AC7") the moment
-  // Home happened to mount with a non-empty chatHomes array during a mode
-  // switch. Investigated at length: not the preview text (removed first —
-  // didn't fix it), not id/title/updatedAt individually (a hand-built fake
-  // row with each real field passed cleanly on its own), not the mount
-  // effect's .focus() call (disabling it changed nothing), not memoization
-  // (React.memo + stable callbacks measurably cut re-renders but not the
-  // crash) — only "is chatHomes.length > 0" correlated every time. Root
-  // cause not found before the task's time budget ran out; restoring this
-  // needs a fresh, focused repro (start from App.ac9.test.tsx's "AC9
-  // clause 2" test, which fails in well under a second) rather than
-  // re-guessing. Recent (Code) and Needs-you carry no data through this
-  // path and are unaffected.
-  const homeChatHomes: HomeChatHome[] = useMemo(() => [], []);
+  // Chat homes column (Task 13; un-parked — see
+  // .superpowers/sdd/crash-diagnosis.md). Mirrors homeRecentWorkspaces
+  // above: listSessions() already returns updatedAt-desc, capped to the 5
+  // most recent so this column reads as bounded the same way Recent does.
+  // The crash that parked this was never in this data wiring — it was
+  // App.ac9.test.tsx's own `assert.equal` called with a live rendered DOM
+  // element, which walks React's Fiber tree at unbounded depth the moment
+  // the comparison legitimately fails. That assertion (and the same hazard
+  // elsewhere in the suite) is fixed, so this can derive real rows again.
+  const homeChatHomes: HomeChatHome[] = useMemo(() => {
+    return listSessions(homeChatPartition)
+      .map(
+        (s): HomeChatHome => ({
+          id: s.id,
+          title: chatListTitle(s),
+          preview: chatSessionPreview(s),
+          updatedAt: s.updatedAt,
+        }),
+      )
+      .slice(0, 5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionList, expandTick, homeChatPartition]);
 
   const homeFooter: HomeFooterFacts = useMemo(
     () => ({

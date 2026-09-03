@@ -63,10 +63,10 @@ describe("F4 — stored-history branch of launch failure (AC-U6, AC-U7)", () => 
     // not a blank transcript region.
     assert.equal(document.querySelector(".transcript"), null);
     // (c) no surface says the conversations are gone
-    assert.equal(screen.queryByText(/gone|lost|deleted|cannot be recovered/i), null);
+    assert.equal(screen.queryByText(/gone|lost|deleted|cannot be recovered/i) === null, true);
     // (d) no model/workspace/auth value from a previous session appears —
     // the failure card renders none of PublicState's engine-sourced fields.
-    assert.equal(screen.queryByText(/grok-4|grok-3/i), null);
+    assert.equal(screen.queryByText(/grok-4|grok-3/i) === null, true);
 
     restoreTauri();
   });
@@ -89,8 +89,7 @@ describe("F4 — stored-history branch of launch failure (AC-U6, AC-U7)", () => 
     assert.equal(
       screen.queryByText(
         "Your conversations are saved and will be here when Forge starts.",
-      ),
-      null,
+      ) === null, true,
     );
 
     restoreTauri();

@@ -244,7 +244,7 @@ describe("live-turn-attention App wiring", () => {
       assert.ok(host.callsTo("/api/permission").length >= 1);
     });
     assert.equal(document.querySelector(".banner-error"), null);
-    assert.equal(screen.queryByText("no pending permission"), null);
+    assert.equal(screen.queryByText("no pending permission") === null, true);
   });
 
   it("GET /api/runs catch-up rebuilds dock and rail including Diff proposed path", async () => {
@@ -294,8 +294,8 @@ describe("live-turn-attention App wiring", () => {
     await waitFor(() => {
       assert.ok(screen.getByRole("button", { name: "Stop" }));
     });
-    assert.equal(screen.queryByText(TURN_COPY), null);
-    assert.equal(screen.queryByRole("button", { name: "Send" }), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
+    assert.equal(screen.queryByRole("button", { name: "Send" }) === null, true);
   });
 
   it("AC10 live permission wait uses busy/Stop chrome, not Attention required Send", async () => {
@@ -303,14 +303,14 @@ describe("live-turn-attention App wiring", () => {
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
     await screen.findByRole("region", { name: "Grok wants to run a command" });
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
     assert.ok(screen.getByRole("button", { name: "Stop" }));
-    assert.equal(screen.queryByRole("button", { name: "Send" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Send" }) === null, true);
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     assert.equal(composer.disabled, true);
     assert.equal(composer.placeholder, "Settle the card below");
-    assert.equal(screen.queryByText("Run stalled"), null);
-    assert.equal(screen.queryByText("No response"), null);
+    assert.equal(screen.queryByText("Run stalled") === null, true);
+    assert.equal(screen.queryByText("No response") === null, true);
   });
 
   it("terminal leftover permission drops the card and unlocks Send", async () => {
@@ -328,7 +328,7 @@ describe("live-turn-attention App wiring", () => {
     }, 3) as unknown as Record<string, unknown>);
     const send = await screen.findByRole("button", { name: "Send" });
     assert.notEqual(send.getAttribute("title"), "Attention required");
-    assert.equal(screen.queryByRole("region", { name: "Grok wants to run a command" }), null);
+    assert.equal(screen.queryByRole("region", { name: "Grok wants to run a command" }) === null, true);
   });
 
   it("clean finish paints the response node done and unlocks Send", async () => {
@@ -362,7 +362,7 @@ describe("live-turn-attention App wiring", () => {
     }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByRole("button", { name: "Stop" })));
     await new Promise((resolve) => setTimeout(resolve, 40));
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
   });
 
   it("settle failure keeps the dock item and does not unlock turn-ready", async () => {
@@ -381,7 +381,7 @@ describe("live-turn-attention App wiring", () => {
       await waitFor(() => {
         assert.ok(screen.getByRole("region", { name: "Grok wants to run a command" }));
       });
-      assert.equal(screen.queryByText(TURN_COPY), null);
+      assert.equal(screen.queryByText(TURN_COPY) === null, true);
       assert.ok(screen.getByRole("button", { name: "Stop" }));
     } finally {
       api.runPermission = original;
@@ -424,7 +424,7 @@ describe("live-turn-attention App wiring", () => {
     ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 4) as unknown as Record<string, unknown>);
     await screen.findByRole("region", { name: "Grok wants to run a command" });
     assert.equal(head.getAttribute("aria-expanded"), "false");
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
   });
 
   it("Chat and Code share dock presence and withheld Your turn for the same pending permission", async () => {
@@ -436,7 +436,7 @@ describe("live-turn-attention App wiring", () => {
       ws.emit(envelope({ kind: "decision_request", request: shellPermission() }, 2) as unknown as Record<string, unknown>);
       const dock = await screen.findByRole("region", { name: "Pending agent actions" });
       assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
-      assert.equal(screen.queryByText(TURN_COPY), null);
+      assert.equal(screen.queryByText(TURN_COPY) === null, true);
       assert.ok(screen.getByRole("button", { name: "Stop" }));
     }
     await assertParity("code");

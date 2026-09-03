@@ -62,8 +62,8 @@ function ready(overrides: Partial<Extract<HooksProjection, { state: "ready" }>> 
 test("absent renders no Hooks section", () => {
   const { container } = render(<HooksSection projection={{ state: "absent" }} />);
   assert.equal(container.textContent, "");
-  assert.equal(container.querySelector("[aria-label='Hooks']"), null);
-  assert.equal(screen.queryByText(HOOKS_HEADER), null);
+  assert.equal(container.querySelector("[aria-label='Hooks']") === null, true);
+  assert.equal(screen.queryByText(HOOKS_HEADER) === null, true);
 });
 
 test("loading shows Loading hooks…", () => {
@@ -74,8 +74,8 @@ test("loading shows Loading hooks…", () => {
   );
   assert.ok(screen.getByText(HOOKS_LOADING));
   assert.ok(screen.getByLabelText(HOOKS_HEADER));
-  assert.equal(screen.queryByText(HOOKS_OFFLINE), null);
-  assert.equal(screen.queryByText(HOOKS_FAILED), null);
+  assert.equal(screen.queryByText(HOOKS_OFFLINE) === null, true);
+  assert.equal(screen.queryByText(HOOKS_FAILED) === null, true);
 });
 
 test("loading keeps prior members inspectable", () => {
@@ -106,15 +106,15 @@ test("hydrating loading never paints offline reconnect as section lead", () => {
     />,
   );
   assert.ok(screen.getByText(HOOKS_LOADING));
-  assert.equal(screen.queryByText(HOOKS_OFFLINE), null);
-  assert.equal(screen.queryByText(HOOKS_RECONNECT_SHORT), null);
+  assert.equal(screen.queryByText(HOOKS_OFFLINE) === null, true);
+  assert.equal(screen.queryByText(HOOKS_RECONNECT_SHORT) === null, true);
 });
 
 test("error without members shows Couldn't load hooks. as alert", () => {
   render(<HooksSection projection={{ state: "error", message: HOOKS_FAILED, members: null }} />);
   const alert = screen.getByRole("alert");
   assert.equal(alert.textContent, HOOKS_FAILED);
-  assert.equal(screen.queryByText(HOOKS_LOADING), null);
+  assert.equal(screen.queryByText(HOOKS_LOADING) === null, true);
 });
 
 test("error keep-visible paints Couldn't load hooks. and retained members", () => {
@@ -163,7 +163,7 @@ test("Idle-only roster mounts section with Idle chip — not quiet empty", () =>
   assert.ok(within(section).getByText("1 idle"));
   assert.ok(within(section).getByText("SessionStart"));
   assert.ok(within(section).getByText(HOOKS_STATUS_IDLE));
-  assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING), null);
+  assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING) === null, true);
 });
 
 test("withheld historical running has identity but no live Running chip, tooltip, or live count", () => {
@@ -189,10 +189,10 @@ test("withheld historical running has identity but no live Running chip, tooltip
   );
   const section = screen.getByLabelText(HOOKS_HEADER);
   assert.ok(within(section).getByText("PreTool"));
-  assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING), null);
-  assert.equal(within(section).queryByTitle(HOOKS_TOOLTIP_RUNNING), null);
+  assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING) === null, true);
+  assert.equal(within(section).queryByTitle(HOOKS_TOOLTIP_RUNNING) === null, true);
   assert.ok(within(section).getByText(HOOKS_STATUS_IDLE));
-  assert.equal(within(section).queryByText("1 running"), null);
+  assert.equal(within(section).queryByText("1 running") === null, true);
   assert.ok(within(section).getByText("1 idle"));
   assert.ok(within(section).getByText("2"));
   assert.ok(within(section).getByText(HOOKS_OFFLINE));
@@ -209,7 +209,7 @@ test("parent-terminal reconnect copy is the short string", () => {
     />,
   );
   assert.ok(screen.getByText(HOOKS_RECONNECT_SHORT));
-  assert.equal(screen.queryByText(HOOKS_OFFLINE), null);
+  assert.equal(screen.queryByText(HOOKS_OFFLINE) === null, true);
 });
 
 test("Idle / Done / Failed chips carry meaning in text and tooltip; Running ≠ Done", () => {
@@ -299,11 +299,11 @@ test("unrestorable paints Unavailable beside restored peer, not Failed, no inven
   assert.ok(within(section).getByText("SessionStart"));
   assert.ok(within(section).getByText(HOOKS_UNAVAILABLE));
   assert.ok(within(section).getByText(HOOKS_GENERIC_IDENTITY));
-  assert.equal(within(section).queryByText("Should not paint"), null);
+  assert.equal(within(section).queryByText("Should not paint") === null, true);
   const failedChips = within(section).queryAllByText(HOOKS_STATUS_FAILED);
   assert.equal(failedChips.length, 0);
   assert.ok(within(section).getByText("2"));
-  assert.equal(within(section).queryByText("1 failed"), null);
+  assert.equal(within(section).queryByText("1 failed") === null, true);
 });
 
 test("name-null identity paints generic Hook with status chip", () => {
@@ -352,8 +352,8 @@ test("header {N} is membership size including Unavailable and Idle, not live run
   );
   const section = screen.getByLabelText(HOOKS_HEADER);
   assert.ok(within(section).getByText("3"));
-  assert.equal(within(section).queryByText("0"), null);
-  assert.equal(within(section).queryByText("1 running"), null);
+  assert.equal(within(section).queryByText("0") === null, true);
+  assert.equal(within(section).queryByText("1 running") === null, true);
 });
 
 test("header toggle collapses and expands rows", async () => {
@@ -361,7 +361,7 @@ test("header toggle collapses and expands rows", async () => {
   render(<HooksSection projection={ready()} />);
   assert.ok(screen.getByText("PreTool"));
   await user.click(screen.getByRole("button", { name: /Hooks/i }));
-  assert.equal(screen.queryByText("PreTool"), null);
+  assert.equal(screen.queryByText("PreTool") === null, true);
   await user.click(screen.getByRole("button", { name: /Hooks/i }));
   assert.ok(screen.getByText("PreTool"));
 });
@@ -383,10 +383,10 @@ test("long name is in title and accessible name", () => {
 test("Hooks never hosts settle controls", () => {
   render(<HooksSection projection={ready()} />);
   const section = screen.getByLabelText(HOOKS_HEADER);
-  assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Decline" }), null);
+  assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Decline" }) === null, true);
 });
 
 test("banned Stuck / Status unconfirmed / Healthy / Connected / Error copy is not painted", () => {

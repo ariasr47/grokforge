@@ -43,7 +43,7 @@ test("shell tier: no workspace name means no cwd is invented", () => {
   const { container } = render(
     <Gate tier="shell" detail="echo hi" onAllow={() => {}} onAllowSession={() => {}} onDeny={() => {}} />,
   );
-  assert.equal(container.querySelector(".gate .cmd .cwd"), null);
+  assert.equal(container.querySelector(".gate .cmd .cwd") === null, true);
 });
 
 test("shell tier: a real workspace name renders as cwd", () => {
@@ -97,7 +97,7 @@ test("shell tier: an unrecognized command falls back to the generic session labe
     <Gate tier="shell" detail="echo hi" onAllow={() => {}} onAllowSession={() => {}} onDeny={() => {}} />,
   );
   assert.ok(screen.getByRole("button", { name: "Allow for this session" }));
-  assert.equal(screen.queryByRole("button", { name: /^Allow \w+ for this session$/ }), null);
+  assert.equal(screen.queryByRole("button", { name: /^Allow \w+ for this session$/ }) === null, true);
 });
 
 test("shell tier: Edit command fires its handler and never appears on write", () => {
@@ -152,7 +152,7 @@ test("write tier: amber header names writing a file, path shown, no why line, Ed
   const gate = screen.getByRole("region", { name: "Grok wants to write a file" });
   assert.ok(within(gate).getByText("Review policy · asks before write"));
   assert.ok(within(gate).getByText("notes.md"));
-  assert.equal(screen.queryByRole("button", { name: GATE_EDIT_COMMAND }), null);
+  assert.equal(screen.queryByRole("button", { name: GATE_EDIT_COMMAND }) === null, true);
   assert.ok(within(gate).getByRole("button", { name: "Allow for this session" }));
 });
 
@@ -184,15 +184,15 @@ test("write tier: no diff on the request means no stat and no snippet are invent
   const { container } = render(
     <Gate tier="write" detail="notes.md" onAllow={() => {}} onAllowSession={() => {}} onDeny={() => {}} />,
   );
-  assert.equal(container.querySelector(".gate .snip"), null);
-  assert.equal(container.querySelector(".gate .cmd .cwd"), null);
+  assert.equal(container.querySelector(".gate .snip") === null, true);
+  assert.equal(container.querySelector(".gate .cmd .cwd") === null, true);
 });
 
 test("write tier: Trust this folder appears only when the caller provides it, and fires once", () => {
   const { rerender } = render(
     <Gate tier="write" detail="notes.md" onAllow={() => {}} onAllowSession={() => {}} onDeny={() => {}} />,
   );
-  assert.equal(screen.queryByRole("button", { name: GATE_TRUST_FOLDER }), null);
+  assert.equal(screen.queryByRole("button", { name: GATE_TRUST_FOLDER }) === null, true);
   let trusted = 0;
   rerender(
     <Gate
@@ -231,14 +231,14 @@ test("plan tier: ready headline counts members and lists each as path · summary
   const accept = screen.getByRole("button", { name: PLAN_ACCEPT });
   assert.equal(within(accept).getByText("⏎").tagName, "KBD");
   assert.ok(screen.getByRole("button", { name: PLAN_KEEP }));
-  assert.equal(screen.queryByRole("button", { name: /reject/i }), null);
+  assert.equal(screen.queryByRole("button", { name: /reject/i }) === null, true);
 });
 
 test("plan tier: empty plan uses the complete/no-changes copy and End Plan action", () => {
   render(<Gate tier="plan" empty members={[]} onAccept={() => {}} onKeepPlanning={() => {}} />);
   assert.ok(screen.getByRole("region", { name: PLAN_DOCK_EMPTY }));
   assert.ok(screen.getByRole("button", { name: PLAN_END_EMPTY }));
-  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
+  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }) === null, true);
 });
 
 test("plan tier: settling disables Accept and shows the settling status", () => {
@@ -261,7 +261,7 @@ test("plan tier: a decision failure shows the error and a Try again in place of 
     />,
   );
   assert.ok(screen.getByRole("alert"));
-  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
+  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }) === null, true);
   assert.ok(screen.getByRole("button", { name: "Try again" }));
 });
 

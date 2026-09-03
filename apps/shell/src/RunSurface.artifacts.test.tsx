@@ -114,8 +114,8 @@ describe("RunSurface You card", () => {
         productMode: "code",
       }),
     );
-    assert.equal(screen.queryByText("Show more"), null);
-    assert.equal(screen.queryByText("Show less"), null);
+    assert.equal(screen.queryByText("Show more") === null, true);
+    assert.equal(screen.queryByText("Show less") === null, true);
   });
 
   it("You card hides attached @file dump", () => {
@@ -351,7 +351,7 @@ describe("RunSurface artifact Open + compact", () => {
         onOpenArtifact: () => {},
       }),
     );
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
   });
 
   it("when artifactOpen, .assistant-answer is compact: full dump not presented; no overflow scroll", () => {

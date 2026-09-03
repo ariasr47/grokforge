@@ -72,7 +72,7 @@ describe("F8 — sign-in gate: one gate, corrected copy (AC5, AC6, AC-U12)", () 
     // Enter (which bypasses the disabled Send button).
     await user.type(composer, "{Enter}");
     assert.equal(host.callsTo("/api/prompt").length, 0);
-    assert.equal(screen.queryByText(/error/i), null);
+    assert.equal(screen.queryByText(/error/i) === null, true);
   });
 
   it("'You only need to do this once.' is withdrawn — replaced by 'Forge remembers this on this PC.'", async () => {
@@ -90,7 +90,7 @@ describe("F8 — sign-in gate: one gate, corrected copy (AC5, AC6, AC-U12)", () 
 
     await screen.findByText("Sign in to chat.");
     assert.ok(screen.getByText(/Forge remembers this on this PC\./));
-    assert.equal(screen.queryByText(/only need to do this once/i), null);
+    assert.equal(screen.queryByText(/only need to do this once/i) === null, true);
   });
 
   it("AC5 (operator ruling 2026-08-14) — primary `Sign in with Grok` starts the shared subscription sign-in from this state, with `Open Settings` demoted to secondary and no Settings navigation first", async () => {
@@ -126,7 +126,7 @@ describe("F8 — sign-in gate: one gate, corrected copy (AC5, AC6, AC-U12)", () 
     await user.click(primary);
 
     assert.equal(host.callsTo("/api/oauth/start").length, 1);
-    assert.equal(screen.queryByRole("heading", { name: "Settings" }), null);
+    assert.equal(screen.queryByRole("heading", { name: "Settings" }) === null, true);
 
     // Its pending/device-code surface is the existing action-dock OAuth
     // pending surface (no new pattern) — driven by the server's
@@ -141,7 +141,7 @@ describe("F8 — sign-in gate: one gate, corrected copy (AC5, AC6, AC-U12)", () 
     assert.ok(await screen.findByText("Complete Grok sign-in"));
     assert.ok(screen.getByText("ABCD-1234"));
     // Still no Settings navigation, even after sign-in is under way.
-    assert.equal(screen.queryByRole("heading", { name: "Settings" }), null);
+    assert.equal(screen.queryByRole("heading", { name: "Settings" }) === null, true);
   });
 
   it("a signed-out state whose only action opens Settings fails AC5 — regression guard for a demoted sign-in button", async () => {

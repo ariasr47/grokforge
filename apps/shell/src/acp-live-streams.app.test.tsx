@@ -191,7 +191,7 @@ describe("acp-live-streams App path", () => {
     await waitFor(() => {
       assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("Chat mid-turn answer"));
     });
-    assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+    assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
   });
 
   it("private Awaiting presence does not beat in-flight journal tool", async () => {
@@ -204,8 +204,8 @@ describe("acp-live-streams App path", () => {
       assert.equal(document.querySelectorAll("[data-activity-id='read-1']").length, 1);
       assert.ok(document.body.textContent?.includes("Reading notes.md"));
     });
-    assert.equal(screen.queryByText("Awaiting presence…"), null);
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(screen.queryByText("Awaiting presence…") === null, true);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
   });
 
   it("Chat and Code share message_delta journal path", async () => {
@@ -278,7 +278,7 @@ describe("acp-live-streams App path", () => {
       assert.ok(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("pong"));
       assert.ok(document.querySelector(".node--done"), "answered turn's node paints done (muted)");
     });
-    assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+    assert.equal(screen.queryByLabelText("Mid-turn narration") === null, true);
     assert.equal(document.body.textContent?.includes("Writing…"), false);
     assert.equal(document.body.textContent?.includes("Answered"), false);
   });
@@ -374,8 +374,8 @@ describe("acp-live-streams App path", () => {
       assert.ok(screen.getByText("Run failed"));
     });
     assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("partial words"));
-    assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
-    assert.equal(screen.queryByText("Answered"), null);
+    assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
+    assert.equal(screen.queryByText("Answered") === null, true);
     assert.equal(document.body.textContent?.includes("Writing…"), false);
   });
 
@@ -394,7 +394,7 @@ describe("acp-live-streams App path", () => {
     await waitFor(() => {
       assert.equal(document.body.textContent?.includes("Writing…"), false);
     });
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
   });
 
   it("App source does not treat private thinking_delta/text_delta/tool_run as live authority when a journal run is bound", () => {

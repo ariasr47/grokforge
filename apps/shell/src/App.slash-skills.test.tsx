@@ -207,12 +207,11 @@ describe("slash-skills journeys", () => {
       assert.ok(screen.getByRole("listbox", { name: SKILLS_TITLE }));
     });
     assert.ok(screen.getByRole("option", { name: FIXTURE }));
-    assert.equal(screen.queryByRole("option", { name: "/invented" }), null);
-    assert.equal(screen.queryByPlaceholderText("Type a command…"), null);
-    assert.equal(screen.queryByText("Code continuum"), null);
+    assert.equal(screen.queryByRole("option", { name: "/invented" }) === null, true);
+    assert.equal(screen.queryByPlaceholderText("Type a command…") === null, true);
+    assert.equal(screen.queryByText("Code continuum") === null, true);
     assert.equal(
-      screen.queryByText("Summarize this repo structure and the main entrypoints."),
-      null,
+      screen.queryByText("Summarize this repo structure and the main entrypoints.") === null, true,
     );
   });
 
@@ -254,9 +253,9 @@ describe("slash-skills journeys", () => {
     await waitFor(() => assert.ok(screen.getByRole("listbox", { name: SKILLS_TITLE })));
     assert.ok(screen.getByRole("option", { name: "/a" }));
     assert.ok(screen.getByRole("option", { name: /\/b/ }));
-    assert.equal(screen.queryByText(SKILLS_FAILED), null);
-    assert.equal(screen.queryByText(SKILLS_CHECKING), null);
-    assert.equal(screen.queryByRole("option", { name: "no-slash" }), null);
+    assert.equal(screen.queryByText(SKILLS_FAILED) === null, true);
+    assert.equal(screen.queryByText(SKILLS_CHECKING) === null, true);
+    assert.equal(screen.queryByRole("option", { name: "no-slash" }) === null, true);
   });
 
   it("WS replace-shrink paints this payload only (stale name gone)", async () => {
@@ -290,8 +289,8 @@ describe("slash-skills journeys", () => {
       assert.ok(screen.getByRole("option", { name: "/keep" }));
       assert.ok(screen.getByRole("option", { name: /\/new/ }));
     });
-    assert.equal(screen.queryByRole("option", { name: "/stale" }), null);
-    assert.equal(screen.queryByText(SKILLS_FAILED), null);
+    assert.equal(screen.queryByRole("option", { name: "/stale" }) === null, true);
+    assert.equal(screen.queryByText(SKILLS_FAILED) === null, true);
   });
 
   it("select surviving /name after mixed voucher still posts skillHandoff", async () => {
@@ -342,9 +341,9 @@ describe("slash-skills journeys", () => {
     });
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "/");
-    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
-    assert.equal(screen.queryByText(SKILLS_CHECKING), null);
-    assert.equal(screen.queryByText(SKILLS_EMPTY), null);
+    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
+    assert.equal(screen.queryByText(SKILLS_CHECKING) === null, true);
+    assert.equal(screen.queryByText(SKILLS_EMPTY) === null, true);
   });
 
   it("Mini-Grok fallback has no Skills palette", async () => {
@@ -354,8 +353,8 @@ describe("slash-skills journeys", () => {
     });
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "/");
-    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
-    assert.equal(screen.queryByText(SKILLS_ARMED(FIXTURE)), null);
+    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
+    assert.equal(screen.queryByText(SKILLS_ARMED(FIXTURE)) === null, true);
   });
 
   it("awaiting_first_valid shows Checking skills… with no armable rows", async () => {
@@ -367,8 +366,8 @@ describe("slash-skills journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(SKILLS_CHECKING));
     });
-    assert.equal(screen.queryByText(SKILLS_EMPTY), null);
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByText(SKILLS_EMPTY) === null, true);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("ready + [] shows No skills from Grok Code", async () => {
@@ -380,8 +379,8 @@ describe("slash-skills journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(SKILLS_EMPTY));
     });
-    assert.equal(screen.queryByText(SKILLS_FAILED), null);
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByText(SKILLS_FAILED) === null, true);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("obtain_failed shows Couldn't load skills.", async () => {
@@ -393,8 +392,8 @@ describe("slash-skills journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(SKILLS_FAILED));
     });
-    assert.equal(screen.queryByText(SKILLS_EMPTY), null);
-    assert.equal(screen.queryByRole("option"), null);
+    assert.equal(screen.queryByText(SKILLS_EMPTY) === null, true);
+    assert.equal(screen.queryByRole("option") === null, true);
   });
 
   it("fallback after arm clears the chip immediately", async () => {
@@ -419,7 +418,7 @@ describe("slash-skills journeys", () => {
       assert.equal(document.body.textContent?.includes(CODE_AGENT_FALLBACK_CLI), true);
       assert.equal(document.body.textContent?.includes(SKILLS_ARMED(FIXTURE)), false);
     });
-    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
+    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
   });
 
   it("armed missing at send shows Skill no longer available. and does not freestyle-retry", async () => {
@@ -439,7 +438,7 @@ describe("slash-skills journeys", () => {
       assert.ok(screen.getAllByText(SKILLS_UNAVAILABLE).length >= 1);
     });
     await waitFor(() => {
-      assert.equal(screen.queryByText(SKILLS_ARMED(FIXTURE)), null);
+      assert.equal(screen.queryByText(SKILLS_ARMED(FIXTURE)) === null, true);
     });
     const prompts = host.callsTo("/api/prompt");
     assert.equal(prompts.length, 1);
@@ -474,7 +473,7 @@ describe("slash-skills journeys", () => {
     await waitFor(() => assert.ok(screen.getByRole("listbox", { name: SKILLS_TITLE })));
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
+      assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
     });
     await user.clear(composer);
     await user.type(composer, "/not-a-listed-skill");
@@ -551,8 +550,8 @@ describe("slash-skills catch-up / dock / thought adversaries", () => {
       assert.equal(send.hasAttribute("disabled"), true);
       assert.equal(send.getAttribute("title"), SETTLE_CARD_BELOW);
     }
-    assert.equal(screen.queryByText(TURN_COPY), null);
-    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }), null);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
+    assert.equal(screen.queryByRole("listbox", { name: SKILLS_TITLE }) === null, true);
   });
 
   it("thought is not the Answer on a skill-handoff run", async () => {

@@ -2137,6 +2137,10 @@ html[data-motion="calm"] .home .dot.needs {
 .home-foot-spacer {
   flex: 1;
 }
+/* Unsigned-installer warning (SETTINGS_UNSIGNED_LINE) — the codebase's
+   second sanctioned amber exception (see .ring-amber above): a caution
+   about this install, not a "needs you" decision, but still worth the
+   same visual weight as a heads-up. */
 .home-warn {
   display: inline-flex;
   align-items: center;

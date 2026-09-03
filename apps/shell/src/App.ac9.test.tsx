@@ -190,8 +190,26 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
         "true",
       );
     });
-    // Code opens idle — the Chat transcript must not leak in.
-    assert.equal(screen.queryByText(/Once upon a time/), null);
+    // Code opens idle: with Home's Chat-homes column wired to real data
+    // (Task 13), Home may legitimately preview this same chat's own last
+    // message — that is not a leak, it's Home working as designed
+    // (mode-agnostic, docs/design/forge-next/Home.dc.html). What this
+    // assertion actually guards is narrower: the live Chat transcript/
+    // message list itself must not still be what's rendering the text.
+    // So: collect every match, drop any that live inside Home's own
+    // surface, and require zero survivors. Comparing a length (a number)
+    // rather than a live DOM node keeps this safe even when it fails —
+    // node:assert's failure-message builder walks a live element's React
+    // Fiber tree at unbounded depth and freezes the process (see
+    // .superpowers/sdd/crash-diagnosis.md); numbers never trigger that.
+    const leakedOutsideHome = screen
+      .queryAllByText(/Once upon a time/)
+      .filter((el) => !el.closest(".home"));
+    assert.equal(
+      leakedOutsideHome.length,
+      0,
+      "the streaming Chat reply must not render outside Home's own preview",
+    );
 
     // Back to Chat: the partial text must still be there.
     const chatSeg = screen.getByRole("radio", { name: "Chat" });
@@ -275,6 +293,6 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
         "the completed first turn must survive a plain reload",
       );
     });
-    assert.equal(screen.queryByText(/^Chat with Grok$/), null);
+    assert.equal(screen.queryByText(/^Chat with Grok$/) === null, true);
   });
 });

@@ -47,7 +47,7 @@ test("uncommitted auto-title is shown so chats are distinguishable", () => {
       name: "Reply with exactly CHAT-GLANCE-OK and stop. Do not edit files.",
     }),
   );
-  assert.equal(screen.queryByRole("button", { name: HOME_NAME_PLACEHOLDER }), null);
+  assert.equal(screen.queryByRole("button", { name: HOME_NAME_PLACEHOLDER }) === null, true);
 });
 
 test("committed shows title", () => {

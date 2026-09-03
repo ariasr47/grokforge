@@ -68,7 +68,7 @@ describe("ArtifactPanel", () => {
       }),
     );
     assert.ok(screen.getByText("Couldn't open this artifact."));
-    assert.equal(screen.queryByText("Pick one"), null);
+    assert.equal(screen.queryByText("Pick one") === null, true);
     assert.ok(screen.getByRole("button", { name: /^Close$/i }));
     } finally {
       console.error = prevError;
@@ -83,6 +83,6 @@ describe("ArtifactPanel", () => {
         onClose: () => {},
       }),
     );
-    assert.equal(container.querySelector(".artifact-panel"), null);
+    assert.equal(container.querySelector(".artifact-panel") === null, true);
   });
 });

@@ -60,7 +60,7 @@ describe("MessageList historical artifact Open + compact", () => {
         onOpenArtifact: () => {},
       }),
     );
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
   });
 
   it("when artifactOpenMessageId matches, bubble body is compact; sibling remains", () => {

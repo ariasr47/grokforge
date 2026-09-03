@@ -51,7 +51,7 @@ test("empty happy path vs load-failure copy", () => {
     />,
   );
   assert.ok(screen.getByText(/couldn’t be loaded/i));
-  assert.equal(screen.queryByText(/No Trusted command classes yet/i), null);
+  assert.equal(screen.queryByText(/No Trusted command classes yet/i) === null, true);
 });
 
 test("Review helper says list does not skip approvals; closed catalog only", () => {
@@ -72,7 +72,7 @@ test("Review helper says list does not skip approvals; closed catalog only", () 
   );
   assert.ok(screen.getByText(/does not skip approvals while Policy is Review/i));
   assert.ok(screen.getByText("npm"));
-  assert.equal(screen.queryByRole("textbox"), null);
+  assert.equal(screen.queryByRole("textbox") === null, true);
 });
 
 test("save error retains draft and shows exact copy", async () => {
@@ -116,7 +116,7 @@ test("mid-run refuse copy", async () => {
       ),
     ),
   );
-  assert.equal(screen.queryByText("Trusted command classes saved."), null);
+  assert.equal(screen.queryByText("Trusted command classes saved.") === null, true);
   assert.ok(screen.getByRole("button", { name: /Remove cargo/i }));
 });
 
@@ -140,7 +140,7 @@ test("§4 editor states use exact copy and keep Save host-authoritative", () => 
       />,
     );
     assert.ok(screen.getByText(copy, { exact: true }));
-    assert.equal(screen.queryByRole("button", { name: /Save classes/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /Save classes/i }) === null, true);
   }
 });
 
@@ -162,7 +162,7 @@ test("invalid store uses load-failure copy, not the empty happy path", () => {
       { exact: true },
     ),
   );
-  assert.equal(screen.queryByText(/No Trusted command classes yet/i), null);
+  assert.equal(screen.queryByText(/No Trusted command classes yet/i) === null, true);
 });
 
 test("successful save announces exact copy and does not invent a free-text field", async () => {
@@ -187,7 +187,7 @@ test("successful save announces exact copy and does not invent a free-text field
   fireEvent.click(screen.getByRole("button", { name: /Save classes/i }));
   await waitFor(() => assert.ok(screen.getByText("Trusted command classes saved.", { exact: true })));
   assert.deepEqual(saved, ["npm"]);
-  assert.equal(screen.queryByRole("textbox"), null);
+  assert.equal(screen.queryByRole("textbox") === null, true);
 });
 
 test("CAS retry keeps the draft and resends after parent refreshes expectedRevision", async () => {
@@ -244,8 +244,8 @@ test("product noun is Trusted command classes; source bans bare allowlist and sa
   );
   assert.ok(screen.getByRole("group", { name: "Trusted command classes" }));
   assert.ok(screen.getByText("Saved for this workspace"));
-  assert.equal(screen.queryByText(/allowlist/i), null);
-  assert.equal(screen.queryByText(/permission mode/i), null);
+  assert.equal(screen.queryByText(/allowlist/i) === null, true);
+  assert.equal(screen.queryByText(/permission mode/i) === null, true);
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const source = fs.readFileSync(path.join(here, "TrustedCommandClassesControl.tsx"), "utf8");

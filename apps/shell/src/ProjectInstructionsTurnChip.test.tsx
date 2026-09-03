@@ -29,13 +29,13 @@ test("included → Included · {path}", () => {
     />,
   );
   assert.ok(screen.getByText(piTurnIncluded("AGENTS.md")));
-  assert.equal(screen.queryByText(/Followed/i), null);
+  assert.equal(screen.queryByText(/Followed/i) === null, true);
 });
 
 test("not_included → muted No project instructions for this turn or quiet absence", () => {
   render(<ProjectInstructionsTurnChip projection={{ state: "not_included" }} />);
   assert.ok(screen.getByText(PI_TURN_NOT_INCLUDED));
-  assert.equal(screen.queryByText(/Included/), null);
+  assert.equal(screen.queryByText(/Included/) === null, true);
 });
 
 test("failed → Couldn’t resolve project instructions for this turn. (no path print)", () => {
@@ -46,7 +46,7 @@ test("failed → Couldn’t resolve project instructions for this turn. (no path
   );
   assert.ok(screen.getByText(PI_TURN_FAILED));
   assert.equal(container.textContent?.includes("AGENTS.md"), false);
-  assert.equal(screen.queryByText(PI_TURN_NOT_INCLUDED), null);
+  assert.equal(screen.queryByText(PI_TURN_NOT_INCLUDED) === null, true);
 });
 
 test("restored keeps failed", () => {
@@ -57,7 +57,7 @@ test("restored keeps failed", () => {
   );
   assert.ok(screen.getByText(PI_TURN_FAILED));
   assert.equal(container.textContent?.includes("AGENTS.md"), false);
-  assert.equal(screen.queryByText(PI_TURN_NOT_INCLUDED), null);
+  assert.equal(screen.queryByText(PI_TURN_NOT_INCLUDED) === null, true);
 });
 
 test("Chat / no voucher → absent", () => {
@@ -74,5 +74,5 @@ test("restored included paints Included · path; never Followed", () => {
     />,
   );
   assert.ok(screen.getByText(piTurnIncluded("CLAUDE.md")));
-  assert.equal(screen.queryByText(/Followed/i), null);
+  assert.equal(screen.queryByText(/Followed/i) === null, true);
 });

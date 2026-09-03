@@ -189,8 +189,8 @@ describe("ChangesDock — Files tab rows", () => {
     );
     const dock = screen.getByRole("region", { name: "Changes" });
     assert.ok(within(dock).getByText("Pending"));
-    assert.equal(within(dock).queryByRole("button", { name: "Accept" }), null);
-    assert.equal(within(dock).queryByRole("button", { name: "Reject" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Accept" }) === null, true);
+    assert.equal(within(dock).queryByRole("button", { name: "Reject" }) === null, true);
   });
 
   it("accepted settlement shows an Accepted check, not action buttons", () => {
@@ -203,7 +203,7 @@ describe("ChangesDock — Files tab rows", () => {
     );
     const dock = screen.getByRole("region", { name: "Changes" });
     assert.ok(within(dock).getByText("Accepted"));
-    assert.equal(within(dock).queryByRole("button", { name: "Accept" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Accept" }) === null, true);
   });
 
   it("rejected settlement shows a Rejected label, not action buttons", () => {
@@ -216,8 +216,8 @@ describe("ChangesDock — Files tab rows", () => {
     );
     const dock = screen.getByRole("region", { name: "Changes" });
     assert.ok(within(dock).getByText("Rejected"));
-    assert.equal(within(dock).queryByRole("button", { name: "Accept" }), null);
-    assert.equal(within(dock).queryByRole("button", { name: "Reject" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Accept" }) === null, true);
+    assert.equal(within(dock).queryByRole("button", { name: "Reject" }) === null, true);
   });
 });
 
@@ -233,7 +233,7 @@ describe("ChangesDock — hunk preview", () => {
       />,
     );
     const dock = screen.getByRole("region", { name: "Changes" });
-    assert.equal(within(dock).queryByText("@@ -12,4 +12,5 @@"), null);
+    assert.equal(within(dock).queryByText("@@ -12,4 +12,5 @@") === null, true);
     fireEvent.click(within(dock).getByRole("button", { name: "View diff" }));
     assert.ok(within(dock).getByText("@@ -12,4 +12,5 @@"));
     assert.ok(within(dock).getByText("buildSummary"));
@@ -255,14 +255,14 @@ describe("ChangesDock — hunk preview", () => {
     );
     const dock = screen.getByRole("region", { name: "Changes" });
     const toggles = () => within(dock).getAllByRole("button", { name: /View diff|Hide diff/ });
-    assert.equal(within(dock).queryByText("a-new", { exact: false }), null);
+    assert.equal(within(dock).queryByText("a-new", { exact: false }) === null, true);
     fireEvent.click(toggles()[0]!);
     assert.ok(within(dock).getByText("a-new", { exact: false }));
     fireEvent.click(toggles()[1]!);
     assert.ok(within(dock).getByText("b-new", { exact: false }));
-    assert.equal(within(dock).queryByText("a-new", { exact: false }), null);
+    assert.equal(within(dock).queryByText("a-new", { exact: false }) === null, true);
     fireEvent.click(within(dock).getByRole("button", { name: "Hide diff" }));
-    assert.equal(within(dock).queryByText("b-new", { exact: false }), null);
+    assert.equal(within(dock).queryByText("b-new", { exact: false }) === null, true);
   });
 
   it("stale-hunk handling: when the open file disappears from members, the preview closes instead of showing stale content", () => {
@@ -286,14 +286,14 @@ describe("ChangesDock — hunk preview", () => {
         }}
       />,
     );
-    assert.equal(within(dock()).queryByText("a-new", { exact: false }), null);
-    assert.equal(within(dock()).queryByText("b-new", { exact: false }), null);
+    assert.equal(within(dock()).queryByText("a-new", { exact: false }) === null, true);
+    assert.equal(within(dock()).queryByText("b-new", { exact: false }) === null, true);
     assert.ok(within(dock()).getByRole("button", { name: "View diff" }));
   });
 
   it("no diff preview renders when the list is empty", () => {
     render(<ChangesDock {...baseProps()} verify={{ state: "ready", members: [verifyMember()] }} />);
-    assert.equal(screen.queryByText(/^@@/), null);
+    assert.equal(screen.queryByText(/^@@/) === null, true);
   });
 });
 
@@ -358,8 +358,8 @@ describe("ChangesDock — revert / applied note", () => {
       />,
     );
     const dock = screen.getByRole("region", { name: "Changes" });
-    assert.equal(within(dock).queryByRole("button", { name: "Restore file" }), null);
-    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Restore file" }) === null, true);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }) === null, true);
   });
 
   it("a content-kind member offers Revert edit, not Restore file or Revert rename", () => {
@@ -375,8 +375,8 @@ describe("ChangesDock — revert / applied note", () => {
     );
     const dock = screen.getByRole("region", { name: "Changes" });
     assert.ok(within(dock).getByRole("button", { name: "Revert edit" }));
-    assert.equal(within(dock).queryByRole("button", { name: "Restore file" }), null);
-    assert.equal(within(dock).queryByRole("button", { name: "Revert rename" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Restore file" }) === null, true);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert rename" }) === null, true);
   });
 
   it("settlement conflict shows the kind's conflict copy as an alert and hides the revert control", () => {
@@ -393,7 +393,7 @@ describe("ChangesDock — revert / applied note", () => {
     const alert = within(dock).getByRole("alert");
     assert.ok(within(alert).getByText("Edit not reverted"));
     assert.match(alert.textContent ?? "", /changed after Forge applied this edit/);
-    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }) === null, true);
   });
 
   it("recoveryFlash reverted overrides settlement to show the kind's success copy, keyed by editId", () => {
@@ -413,8 +413,8 @@ describe("ChangesDock — revert / applied note", () => {
     const status = within(dock).getByRole("status");
     assert.ok(within(status).getByText("Edit reverted"));
     assert.match(status.textContent ?? "", /restored to its state immediately before this edit/);
-    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }), null);
-    assert.equal(within(dock).queryByText(/Applied automatically/), null);
+    assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }) === null, true);
+    assert.equal(within(dock).queryByText(/Applied automatically/) === null, true);
   });
 
   it("recoveryFlash falls back to the activityId key when the editId is not flashed", () => {
@@ -463,7 +463,7 @@ describe("ChangesDock — tabs", () => {
     const dock = screen.getByRole("region", { name: "Changes" });
     fireEvent.click(within(dock).getByRole("tab", { name: /Verify/ }));
     assert.ok(within(dock).getByText("npm test -- OverviewStrip"));
-    assert.equal(within(dock).queryByText("OverviewStrip.tsx"), null);
+    assert.equal(within(dock).queryByText("OverviewStrip.tsx") === null, true);
   });
 
   it("switching to the Git tab shows git evidence rows", () => {

@@ -8,12 +8,12 @@ afterEach(() => cleanup());
 describe("ContextRing — house/guest rule: renders only real engine data", () => {
   it("renders nothing when there is no usage at all", () => {
     const { container } = render(<ContextRing usage={null} />);
-    assert.equal(container.querySelector(".ring"), null);
+    assert.equal(container.querySelector(".ring") === null, true);
   });
 
   it("renders nothing when the model catalog has no context window for the active model", () => {
     const { container } = render(<ContextRing usage={{ promptTokens: 4200, contextWindow: null }} />);
-    assert.equal(container.querySelector(".ring"), null);
+    assert.equal(container.querySelector(".ring") === null, true);
   });
 
   it("renders the percentage and the exact arc offset from real usage", () => {

@@ -63,7 +63,7 @@ test("run-tools group stays open while live and collapses after a clean settleme
   assert.ok(screen.getByRole("region", { name: "Receipt details" }));
   rerender(<Receipts tools={tools} groupKey="run-tools:abc" live={false} />);
   assert.equal(screen.getByRole("button", { name: /action/i }).getAttribute("aria-expanded"), "false");
-  assert.equal(screen.queryByRole("region", { name: "Receipt details" }), null);
+  assert.equal(screen.queryByRole("region", { name: "Receipt details" }) === null, true);
 });
 
 test("run-tools group stays open after settlement when a tool failed", () => {
@@ -102,7 +102,7 @@ test("explicit collapse mid-burst does not auto-expand on new rows", () => {
   assert.equal(head.getAttribute("aria-expanded"), "false");
   rerender(<Receipts tools={[...initial, row(3), row(4)]} groupKey="activity-run:collapse" />);
   assert.equal(head.getAttribute("aria-expanded"), "false");
-  assert.equal(screen.queryByRole("region", { name: "Receipt details" }), null);
+  assert.equal(screen.queryByRole("region", { name: "Receipt details" }) === null, true);
 });
 
 test("header shows the action count and, when given, the duration", () => {
@@ -195,7 +195,7 @@ test("unavailable vendor TUI tool paints Skipped, not Failed", () => {
   );
   assert.ok(screen.getByText("Skipped"));
   assert.ok(screen.getByText("not available in Forge"));
-  assert.equal(screen.queryByText("Failed"), null);
+  assert.equal(screen.queryByText("Failed") === null, true);
 });
 
 test("list-auto executed shell shows the Ran verb and the trusted-class tail", () => {
@@ -240,7 +240,7 @@ test("generic shell rows show the command as what, not the raw tool name", () =>
     />,
   );
   assert.ok(screen.getAllByText("cd apps/shell; node --test src/ComposerPane.test.tsx").length >= 1);
-  assert.equal(screen.queryByText("run terminal command", { exact: false }), null);
+  assert.equal(screen.queryByText("run terminal command", { exact: false }) === null, true);
 });
 
 test("failed shell whose vendor body is just completed peeks Non-zero exit", () => {
@@ -261,7 +261,7 @@ test("failed shell whose vendor body is just completed peeks Non-zero exit", () 
     />,
   );
   assert.ok(screen.getByText("Non-zero exit"));
-  assert.equal(screen.queryByText("completed"), null);
+  assert.equal(screen.queryByText("completed") === null, true);
 });
 
 function pdfReadTool(overrides: {
@@ -303,7 +303,7 @@ test("PDF extract-failed read_file paints failed with vouched class, never OCR",
     />,
   );
   assert.ok(screen.getByText("Couldn't extract text from enc.pdf. (encrypted)"));
-  assert.equal(screen.queryByText(/OCR/i), null);
+  assert.equal(screen.queryByText(/OCR/i) === null, true);
 });
 
 test("missing/confine read_file failure does not reuse extract-failed copy", () => {
@@ -319,7 +319,7 @@ test("missing/confine read_file failure does not reuse extract-failed copy", () 
     />,
   );
   assert.ok(screen.getByText("File not found"));
-  assert.equal(screen.queryByText(/Couldn't extract text/i), null);
+  assert.equal(screen.queryByText(/Couldn't extract text/i) === null, true);
 });
 
 const followScrollTop = new WeakMap<HTMLElement, number>();

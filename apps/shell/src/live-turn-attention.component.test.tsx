@@ -124,8 +124,8 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
     );
     const group = screen.getByRole("group", { name: "Run shell" });
     assert.ok(within(group).getByText("echo live-turn-attention"));
-    assert.equal(within(group).queryByRole("button", { name: "Allow" }), null);
-    assert.equal(within(group).queryByRole("button", { name: "Decline" }), null);
+    assert.equal(within(group).queryByRole("button", { name: "Allow" }) === null, true);
+    assert.equal(within(group).queryByRole("button", { name: "Decline" }) === null, true);
     assert.ok(within(group).getByText("Settle this in the card below."));
     assert.equal(permissionCalls, 0);
     assert.equal(diffCalls, 0);
@@ -167,14 +167,14 @@ test("pending diff fills the Changes dock's Accept/Reject until settlement", () 
     decisions: { req1: diffDecision({ requestId: "req1", status: "accepted" }) },
   });
   rerender(changesDockFor(settled));
-  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Accept" }), null);
-  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Reject" }), null);
+  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Accept" }) === null, true);
+  assert.equal(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).queryByRole("button", { name: "Reject" }) === null, true);
   assert.ok(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).getByText("Accepted"));
 });
 
 test("ActionDock is absent when nothing is pending", () => {
   render(emptyDock());
-  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }), null);
+  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }) === null, true);
 });
 
 test("pending permission card uses pinned title chrome and detail pass-through", () => {
@@ -188,7 +188,7 @@ test("pending permission card uses pinned title chrome and detail pass-through",
   assert.ok(within(dock).getByRole("button", { name: "Allow" }));
   assert.ok(within(dock).getByRole("button", { name: "Allow for this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
-  assert.equal(screen.queryByRole("button", { name: "Trust this folder" }), null);
+  assert.equal(screen.queryByRole("button", { name: "Trust this folder" }) === null, true);
 });
 
 test("write permission card offers Trust this folder when a workspace can be trusted", () => {
@@ -211,5 +211,5 @@ test("mergePendingPermissions drops a settled permission from the dock input", (
   const settled = run({ decisions: { a: permissionDecision({ status: "accepted" }) } });
   const merged = mergePendingPermissions(pendingPermissionsFromRun(pending), settled);
   render(emptyDock({ permissions: merged }));
-  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }), null);
+  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }) === null, true);
 });

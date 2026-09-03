@@ -357,7 +357,7 @@ describe("vendor-hooks-visible App journeys", () => {
       assert.ok(within(section).getByText("SessionStart"));
       assert.ok(within(section).getByText(HOOKS_STATUS_IDLE));
       assert.ok(within(section).getByText("1"));
-      assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING), null);
+      assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING) === null, true);
     });
   });
 
@@ -370,7 +370,7 @@ describe("vendor-hooks-visible App journeys", () => {
       hooks: { disposition: "absent_for_non_code_or_non_vendor", members: null },
     });
     assert.equal(hooksSection(), null);
-    assert.equal(screen.queryByText(HOOKS_HEADER), null);
+    assert.equal(screen.queryByText(HOOKS_HEADER) === null, true);
   });
 
   it("Mini-Grok fallback never mounts Hooks", async () => {
@@ -381,7 +381,7 @@ describe("vendor-hooks-visible App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(hooksSection(), null);
-    assert.equal(screen.queryByText(HOOKS_HEADER), null);
+    assert.equal(screen.queryByText(HOOKS_HEADER) === null, true);
   });
 
   it("hard_fail never mounts Hooks", async () => {
@@ -392,7 +392,7 @@ describe("vendor-hooks-visible App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(hooksSection(), null);
-    assert.equal(screen.queryByText(HOOKS_HEADER), null);
+    assert.equal(screen.queryByText(HOOKS_HEADER) === null, true);
   });
 
   it("ready + [] is quiet absent — no section, no load-error copy", async () => {
@@ -400,8 +400,8 @@ describe("vendor-hooks-visible App journeys", () => {
     ws.emit(envelope({ kind: "run_started", run: runSnapshot() }, 1) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(document.querySelector("[data-run-id]")));
     assert.equal(hooksSection(), null);
-    assert.equal(screen.queryByText(HOOKS_LOADING), null);
-    assert.equal(screen.queryByText(HOOKS_FAILED), null);
+    assert.equal(screen.queryByText(HOOKS_LOADING) === null, true);
+    assert.equal(screen.queryByText(HOOKS_FAILED) === null, true);
   });
 
   it("hydrating shows Loading hooks…, keeps prior members, and wins over offline copy", async () => {
@@ -507,10 +507,10 @@ describe("vendor-hooks-visible App journeys", () => {
       const section = hooksSection();
       assert.ok(section);
       assert.ok(within(section).getByText("PreTool"));
-      assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING), null);
+      assert.equal(within(section).queryByText(HOOKS_STATUS_RUNNING) === null, true);
       assert.ok(within(section).getByText(HOOKS_STATUS_IDLE));
       assert.ok(within(section).getByText(HOOKS_RECONNECT_SHORT));
-      assert.equal(within(section).queryByText("1 running"), null);
+      assert.equal(within(section).queryByText("1 running") === null, true);
     });
   });
 
@@ -525,9 +525,9 @@ describe("vendor-hooks-visible App journeys", () => {
       assert.ok(within(section).getByText("SessionStart"));
       assert.ok(within(section).getByText(HOOKS_UNAVAILABLE));
       assert.ok(within(section).getByText(HOOKS_GENERIC_IDENTITY));
-      assert.equal(within(section).queryByText(HOOKS_STATUS_FAILED), null);
+      assert.equal(within(section).queryByText(HOOKS_STATUS_FAILED) === null, true);
       assert.ok(within(section).getByText("2"));
-      assert.equal(within(section).queryByText("1 failed"), null);
+      assert.equal(within(section).queryByText("1 failed") === null, true);
     });
   });
 
@@ -541,7 +541,7 @@ describe("vendor-hooks-visible App journeys", () => {
       assert.ok(screen.getByLabelText("Activity"));
     });
     assert.equal(hooksSection(), null);
-    assert.equal(screen.queryByText(HOOKS_HEADER), null);
+    assert.equal(screen.queryByText(HOOKS_HEADER) === null, true);
   });
 
   it("mutating a fake journal hook_update does not change Hooks chrome", async () => {
@@ -571,7 +571,7 @@ describe("vendor-hooks-visible App journeys", () => {
       assert.ok(section);
       assert.ok(within(section).getByText("PreTool"));
     });
-    assert.equal(screen.queryByText("Ghost journal hook"), null);
+    assert.equal(screen.queryByText("Ghost journal hook") === null, true);
     assert.ok(within(hooksSection()!).getByText("1"));
   });
 
@@ -623,11 +623,11 @@ describe("vendor-hooks-visible App journeys", () => {
       return el!;
     });
     assert.ok(within(section).getByText("PreTool"));
-    assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Deny" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-    assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-    assert.equal(screen.queryByText(TURN_COPY), null);
+    assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Deny" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+    assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+    assert.equal(screen.queryByText(TURN_COPY) === null, true);
     const text = section.textContent ?? "";
     assert.equal(/stuck/i.test(text), false);
     assert.equal(/status unconfirmed/i.test(text), false);

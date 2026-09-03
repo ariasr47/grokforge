@@ -24,20 +24,20 @@ test("armed shows helper Explore and propose without applying edits", () => {
 test("blocked_unvouched exact copy; no Reject", () => {
   render(<PlanArmControl projection={{ state: "blocked_unvouched" }} />);
   assert.ok(screen.getByText(PLAN_ARM_BLOCKED_UNVOUCHED));
-  assert.equal(screen.queryByRole("button", { name: /reject/i }), null);
+  assert.equal(screen.queryByRole("button", { name: /reject/i }) === null, true);
   assert.equal(screen.getByRole("button", { name: "Plan" }).hasAttribute("disabled"), true);
 });
 
 test("Chat absent_chat renders no Plan control", () => {
   const { container } = render(<PlanArmControl projection={{ state: "absent_chat" }} />);
   assert.equal(container.textContent, "");
-  assert.equal(screen.queryByRole("button", { name: "Plan" }), null);
+  assert.equal(screen.queryByRole("button", { name: "Plan" }) === null, true);
 });
 
 test("offline exact copy is distinct from blocked_unvouched", () => {
   render(<PlanArmControl projection={{ state: "offline" }} />);
   assert.ok(screen.getByText(PLAN_ARM_OFFLINE));
-  assert.equal(screen.queryByText(PLAN_ARM_BLOCKED_UNVOUCHED), null);
+  assert.equal(screen.queryByText(PLAN_ARM_BLOCKED_UNVOUCHED) === null, true);
 });
 
 test("arm failure exact copy + Try again", () => {

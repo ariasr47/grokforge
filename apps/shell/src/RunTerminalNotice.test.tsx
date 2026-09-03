@@ -59,7 +59,7 @@ test("declined write shows Denied and Retry, not Answered", () => {
       },
     }),
   );
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByText("Answered") === null, true);
   assert.ok(screen.getByText("Denied"));
   fireEvent.click(screen.getByRole("button", { name: /^Retry$/ }));
   assert.equal(retried, prompt);
@@ -72,7 +72,7 @@ test("declined diff shows Denied and Retry", () => {
       onRetryPrompt: () => {},
     }),
   );
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByText("Answered") === null, true);
   assert.ok(screen.getByText("Denied"));
   assert.ok(screen.getByRole("button", { name: /^Retry$/ }));
 });
@@ -84,8 +84,8 @@ test("declined write without onRetryPrompt still shows Denied", () => {
     }),
   );
   assert.ok(screen.getByText("Denied"));
-  assert.equal(screen.queryByRole("button", { name: /^Retry$/ }), null);
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByRole("button", { name: /^Retry$/ }) === null, true);
+  assert.equal(screen.queryByText("Answered") === null, true);
 });
 
 test("clean answered run renders nothing — the response turn's node carries that fact", () => {
@@ -96,7 +96,7 @@ test("clean answered run renders nothing — the response turn's node carries th
     }),
   );
   assert.equal(container.firstChild, null);
-  assert.equal(screen.queryByText("Answered"), null);
-  assert.equal(screen.queryByText("Denied"), null);
-  assert.equal(screen.queryByRole("button", { name: /^Retry$/ }), null);
+  assert.equal(screen.queryByText("Answered") === null, true);
+  assert.equal(screen.queryByText("Denied") === null, true);
+  assert.equal(screen.queryByRole("button", { name: /^Retry$/ }) === null, true);
 });

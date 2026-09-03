@@ -51,7 +51,7 @@ describe("ComposerPane dock lock", () => {
     assert.equal(composer.disabled, true);
     assert.equal(composer.placeholder, SETTLE_CARD_BELOW);
     assert.ok(screen.getByRole("button", { name: "Stop" }));
-    assert.equal(screen.queryByRole("button", { name: "Send" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Send" }) === null, true);
   });
 });
 
@@ -205,8 +205,8 @@ describe("composerBlockReasonVisible", () => {
 describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () => {
   it("busy with an empty draft shows a disabled Queue and an active Stop", () => {
     render(<ComposerPane {...base} busy />);
-    assert.equal(screen.queryByRole("button", { name: "Send" }), null);
-    assert.equal(screen.queryByRole("button", { name: /steer/i }), null);
+    assert.equal(screen.queryByRole("button", { name: "Send" }) === null, true);
+    assert.equal(screen.queryByRole("button", { name: /steer/i }) === null, true);
     const queue = screen.getByRole("button", { name: "Queue" });
     assert.equal(queue.hasAttribute("disabled"), true);
     assert.equal(screen.getByRole("button", { name: "Stop" }).hasAttribute("disabled"), false);
@@ -257,7 +257,7 @@ describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () 
         }}
       />,
     );
-    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Queue" }) === null, true);
     const queuedChip = screen.getByRole("button", { name: "Queued · 1" });
     fireEvent.click(queuedChip);
     assert.equal(cancelled, true);
@@ -266,9 +266,9 @@ describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () 
 
   it("idle (not busy) never shows Queue, Queued, or Stop", () => {
     render(<ComposerPane {...base} />);
-    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
-    assert.equal(screen.queryByRole("button", { name: "Stop" }), null);
-    assert.equal(screen.queryByText(/Queued ·/), null);
+    assert.equal(screen.queryByRole("button", { name: "Queue" }) === null, true);
+    assert.equal(screen.queryByRole("button", { name: "Stop" }) === null, true);
+    assert.equal(screen.queryByText(/Queued ·/) === null, true);
   });
 
   it("a still-held draft stays surfaced as Queued even once its own run has ended", () => {
@@ -290,8 +290,8 @@ describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () 
       />,
     );
     const queuedChip = screen.getByRole("button", { name: "Queued · 1" });
-    assert.equal(screen.queryByRole("button", { name: "Queue" }), null);
-    assert.equal(screen.queryByRole("button", { name: "Stop" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Queue" }) === null, true);
+    assert.equal(screen.queryByRole("button", { name: "Stop" }) === null, true);
     assert.ok(screen.getByRole("button", { name: "Send" }));
     fireEvent.click(queuedChip);
     assert.equal(cancelled, true);
@@ -301,12 +301,12 @@ describe("ComposerPane while busy: Queue and Stop, never Steer, never Send", () 
 describe("ComposerPane has no Export control", () => {
   it("idle composer never renders an Export button — it lives in the thread header", () => {
     render(<ComposerPane {...base} />);
-    assert.equal(screen.queryByRole("button", { name: /export/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /export/i }) === null, true);
   });
 
   it("busy composer never renders an Export button either", () => {
     render(<ComposerPane {...base} busy queuedCount={1} />);
-    assert.equal(screen.queryByRole("button", { name: /export/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /export/i }) === null, true);
   });
 });
 

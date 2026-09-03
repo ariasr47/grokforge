@@ -68,7 +68,7 @@ test("reasoning present → Thought disclosure; not inside Answer article", () =
   render(<RunSurface run={run({ reasoning: { r: "private thought" }, state: "running" })} />);
   assert.ok(screen.getByText("Thought…"));
   assert.ok(screen.getByText("private thought"));
-  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
   const thought = screen.getByText("Thought…").closest("details");
   const answer = screen.queryByRole("article", { name: "Assistant answer" });
   assert.ok(thought);
@@ -85,7 +85,7 @@ test("settled thought uses Thought summary and stays foldable", () => {
     reasoning: { r: "why" },
   })} />);
   assert.ok(screen.getByText("Thought"));
-  assert.equal(screen.queryByText("Thought…"), null);
+  assert.equal(screen.queryByText("Thought…") === null, true);
   assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
   assert.equal(screen.getByRole("article", { name: "Assistant answer" }).textContent?.includes("why"), false);
   const thought = screen.getByText("Thought").closest("details");
@@ -98,7 +98,7 @@ test("message present + not yet vouched → mid-turn region with non-Answer chro
   assert.ok(mid);
   assert.ok(mid.textContent?.includes("streaming words"));
   assert.equal(mid.getAttribute("aria-label"), "Mid-turn narration");
-  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
   assert.equal(mid.classList.contains("assistant-answer"), false);
 });
 
@@ -112,7 +112,7 @@ test("vouched identical mid-turn omits Earlier — Answer is enough", () => {
   })} />);
   const answer = screen.getByRole("article", { name: "Assistant answer" });
   assert.ok(answer.textContent?.includes("streaming words"));
-  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+  assert.equal(screen.queryByLabelText("Mid-turn narration") === null, true);
 });
 
 test("Earlier is omitted when the vouched answer already contains the mid-turn and more", () => {
@@ -124,7 +124,7 @@ test("Earlier is omitted when the vouched answer already contains the mid-turn a
     message: { m: "I'll write docs/dogfood/GAP.md." },
   })} />);
   assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
-  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+  assert.equal(screen.queryByLabelText("Mid-turn narration") === null, true);
 });
 
 test("whitespace-normalized duplicate mid-turn omits Earlier", () => {
@@ -135,7 +135,7 @@ test("whitespace-normalized duplicate mid-turn omits Earlier", () => {
     finalAnswer: "Creating EARLIER.md.\n\nCreated EARLIER.md.",
     message: { m: "Creating EARLIER.md. \n Created EARLIER.md." },
   })} />);
-  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+  assert.equal(screen.queryByLabelText("Mid-turn narration") === null, true);
 });
 
 test("unique extra mid-turn paragraph keeps Earlier", () => {
@@ -177,7 +177,7 @@ test("Earlier is omitted when answer wraps the mid-turn in markdown ticks", () =
     finalAnswer: "I'll create `docs/dogfood/EARLIER.md` with only `EARLIER-OK`, then stop.\n\nCreated it.",
     message: { m: "I'll create docs/dogfood/EARLIER.md with only EARLIER-OK, then stop." },
   })} />);
-  assert.equal(screen.queryByLabelText("Mid-turn narration"), null);
+  assert.equal(screen.queryByLabelText("Mid-turn narration") === null, true);
 });
 
 test("no reasoning → no Thought chrome", () => {
@@ -187,8 +187,8 @@ test("no reasoning → no Thought chrome", () => {
     answerVouched: true,
     finalAnswer: "just the answer",
   })} />);
-  assert.equal(screen.queryByText("Thought"), null);
-  assert.equal(screen.queryByText("Thought…"), null);
+  assert.equal(screen.queryByText("Thought") === null, true);
+  assert.equal(screen.queryByText("Thought…") === null, true);
   assert.ok(screen.getByRole("article", { name: "Assistant answer" }));
 });
 
@@ -201,7 +201,7 @@ test("cancel/fail with message store + answerVouched false → mid-turn non-fina
     message: { m: "partial words" },
   })} />);
   assert.ok(screen.getByLabelText("Mid-turn narration").textContent?.includes("partial words"));
-  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
 });
 
 test("missing-final with thought and no usable mid-turn has no Answer body", () => {
@@ -214,7 +214,7 @@ test("missing-final with thought and no usable mid-turn has no Answer body", () 
     failure: { code: "missing_final_answer", message: "Missing final answer", retryable: true, recoveryAction: "retry_prompt" },
   })} />);
   assert.ok(screen.getByText("Thought"));
-  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
   assert.ok(screen.getByRole("alert").textContent?.includes("No final answer"));
 });
 
@@ -224,7 +224,7 @@ test("present title/summary surfaces on the single tool row", () => {
   })} />);
   const rail = screen.getByLabelText("Activity");
   assert.ok(rail.textContent?.includes("Reading notes.md"));
-  assert.equal(screen.queryByText("Using tools…"), null);
+  assert.equal(screen.queryByText("Using tools…") === null, true);
 });
 
 test("failed / not_executed stay on the one Activity rail", () => {
@@ -257,8 +257,8 @@ test("ThreadHeader's live status uses phaseLabel from DerivedLivePhase — no re
     />,
   );
   assert.ok(screen.getByText("Thinking…"));
-  assert.equal(screen.queryByText("Awaiting presence…"), null);
-  assert.equal(screen.queryByText("Thinking field…"), null);
+  assert.equal(screen.queryByText("Awaiting presence…") === null, true);
+  assert.equal(screen.queryByText("Thinking field…") === null, true);
 });
 
 test("owner-loss failed: Mid-turn stays unvouched, Writing gone, no Assistant answer", () => {
@@ -272,8 +272,8 @@ test("owner-loss failed: Mid-turn stays unvouched, Writing gone, no Assistant an
   })} ownershipLost />);
   const mid = screen.getByLabelText("Mid-turn narration");
   assert.ok(mid.textContent?.includes("partial words"));
-  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }), null);
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByRole("article", { name: "Assistant answer" }) === null, true);
+  assert.equal(screen.queryByText("Answered") === null, true);
   assert.ok(screen.getByText("Run failed"));
 });
 

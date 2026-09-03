@@ -107,7 +107,7 @@ describe("Sidebar — Needs you group", () => {
 
     renderSidebar(workspaces);
 
-    assert.equal(screen.queryByText("Needs you"), null);
+    assert.equal(screen.queryByText("Needs you") === null, true);
   });
 
   it("shows the question word for recovery_confirmation/plan-kind decisions", () => {

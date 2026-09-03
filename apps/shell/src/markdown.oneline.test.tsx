@@ -19,7 +19,7 @@ describe("one-line unlabeled fence", () => {
     __setHighlighterLoaderForTests(async () => null);
     const { container } = render(createElement(CodeBlock, { code: "NEXT-OK" }));
     assert.match(container.textContent ?? "", /NEXT-OK/);
-    assert.equal(container.querySelector(".md-code-bar"), null);
+    assert.equal(container.querySelector(".md-code-bar") === null, true);
     assert.ok(container.querySelector(".md-code-wrap.is-oneline"));
   });
 
@@ -38,7 +38,7 @@ describe("unlabeled multi-line fence is not a CODE card", () => {
     __setHighlighterLoaderForTests(async () => null);
     const code = "✔ collapsed write header shows the path, not write\n✔ collapsed run-tools header shows the shell command";
     const { container } = render(createElement(CodeBlock, { code }));
-    assert.equal(container.querySelector(".md-code-bar"), null);
+    assert.equal(container.querySelector(".md-code-bar") === null, true);
     assert.ok(container.querySelector(".md-code-wrap.is-plain"));
     assert.equal(/\bCODE\b/i.test(container.textContent ?? ""), false);
     assert.equal(/lines/i.test(container.textContent ?? ""), false);

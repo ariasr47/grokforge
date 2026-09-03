@@ -176,15 +176,15 @@ describe("ReviewSurface — file list and diff column", () => {
       />,
     );
     assert.ok(screen.getByText("a-new", { exact: false }));
-    assert.equal(screen.queryByText("b-new", { exact: false }), null);
+    assert.equal(screen.queryByText("b-new", { exact: false }) === null, true);
     fireEvent.click(screen.getByText("b.ts", { exact: false }));
     assert.ok(screen.getByText("b-new", { exact: false }));
-    assert.equal(screen.queryByText("a-new", { exact: false }), null);
+    assert.equal(screen.queryByText("a-new", { exact: false }) === null, true);
   });
 
   it("never renders a per-hunk Accept hunk / Reject button — the API only settles whole files", () => {
     render(<ReviewSurface {...baseProps()} />);
-    assert.equal(screen.queryByRole("button", { name: /Accept hunk/ }), null);
+    assert.equal(screen.queryByRole("button", { name: /Accept hunk/ }) === null, true);
   });
 
   it("pending file backed by the diff queue shows Accept file ⇧A / Reject file ⇧R wired to onAccept/onReject with the request id", () => {
@@ -219,8 +219,8 @@ describe("ReviewSurface — file list and diff column", () => {
         })}
       />,
     );
-    assert.equal(screen.queryByRole("button", { name: /Accept file/ }), null);
-    assert.equal(screen.queryByRole("button", { name: /Reject file/ }), null);
+    assert.equal(screen.queryByRole("button", { name: /Accept file/ }) === null, true);
+    assert.equal(screen.queryByRole("button", { name: /Reject file/ }) === null, true);
   });
 
   it("accepted file with recovery available shows Undo, not Accept/Reject file", () => {
@@ -233,7 +233,7 @@ describe("ReviewSurface — file list and diff column", () => {
         })}
       />,
     );
-    assert.equal(screen.queryByRole("button", { name: /Accept file/ }), null);
+    assert.equal(screen.queryByRole("button", { name: /Accept file/ }) === null, true);
     const undo = screen.getByRole("button", { name: "Undo" });
     fireEvent.click(undo);
     assert.equal(reverted.length, 1);
@@ -254,7 +254,7 @@ describe("ReviewSurface — line comments", () => {
     assert.match(sent[0]!, /^In src\/OverviewStrip\.test\.ts line 34: Also cover turnCount: undefined\./);
     assert.match(sent[0]!, /turnCount: 3/);
     // Card closes after sending.
-    assert.equal(screen.queryByText("Comment on line 34"), null);
+    assert.equal(screen.queryByText("Comment on line 34") === null, true);
   });
 
   it("Ctrl+Enter in the comment textarea also sends", () => {
@@ -274,7 +274,7 @@ describe("ReviewSurface — line comments", () => {
     fireEvent.click(screen.getByText(/turnCount: 3/));
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     assert.equal(sent.length, 0);
-    assert.equal(screen.queryByText("Comment on line 34"), null);
+    assert.equal(screen.queryByText("Comment on line 34") === null, true);
   });
 });
 
@@ -308,7 +308,7 @@ describe("ReviewSurface — Verify and Git columns", () => {
     assert.ok(screen.getByText("npm test · raw output"));
     assert.ok(screen.getByText(/labels a single turn/));
     // v-2 has no captured output — Forge never fakes a body for it.
-    assert.equal(screen.queryByText("npm run typecheck · raw output"), null);
+    assert.equal(screen.queryByText("npm run typecheck · raw output") === null, true);
   });
 
   it("empty-message placeholder: with no commitMessageDraft, the field is empty with a placeholder, not an invented message", () => {

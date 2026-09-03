@@ -16,7 +16,7 @@ test("absent renders nothing", () => {
     <CodeRunProvenanceChip projection={{ state: "absent" }} />,
   );
   assert.equal(container.textContent, "");
-  assert.equal(screen.queryByText(CODE_RUN_VENDOR), null);
+  assert.equal(screen.queryByText(CODE_RUN_VENDOR) === null, true);
 });
 
 test("hydrating / vendor / fallback / confirm-error exact copy", () => {
@@ -37,7 +37,7 @@ test("hydrating / vendor / fallback / confirm-error exact copy", () => {
   assert.match(screen.getByRole("status").textContent ?? "", /Mini-Grok · fallback/);
   assert.match(screen.getByRole("status").textContent ?? "", /Grok CLI not found/);
   assert.ok(container.querySelector(".is-fallback-warn"));
-  assert.equal(screen.queryByText(CODE_RUN_VENDOR), null);
+  assert.equal(screen.queryByText(CODE_RUN_VENDOR) === null, true);
   rerender(<CodeRunProvenanceChip projection={{ state: "confirm_error" }} />);
   assert.ok(screen.getByText(CODE_RUN_CONFIRM_ERROR));
 });
@@ -47,6 +47,6 @@ test("generic fallback does not invent a cause", () => {
     <CodeRunProvenanceChip projection={{ state: "fallback", reason: null }} />,
   );
   assert.equal(screen.getByRole("status").textContent, CODE_RUN_FALLBACK);
-  assert.equal(screen.queryByText(/Grok CLI not found/), null);
-  assert.equal(screen.queryByText(/Couldn't start Grok agent/), null);
+  assert.equal(screen.queryByText(/Grok CLI not found/) === null, true);
+  assert.equal(screen.queryByText(/Couldn't start Grok agent/) === null, true);
 });

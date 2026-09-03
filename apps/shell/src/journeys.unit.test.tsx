@@ -96,7 +96,7 @@ describe("J2 Test — first-subdir Set-Location + Failed is Failed", () => {
     ];
     render(<Receipts tools={tools} groupKey="activity-run:j2" />);
     assert.ok(screen.getByText("Non-zero exit"));
-    assert.equal(screen.queryByText("completed"), null);
+    assert.equal(screen.queryByText("completed") === null, true);
   });
 });
 

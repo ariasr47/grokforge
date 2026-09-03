@@ -274,7 +274,7 @@ describe("structured-test-panel App wiring", () => {
     const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      assert.equal(within(dock).queryByText("Loading file changes…"), null);
+      assert.equal(within(dock).queryByText("Loading file changes…") === null, true);
     });
 
     const user = userEvent.setup();
@@ -287,7 +287,7 @@ describe("structured-test-panel App wiring", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(within(dock).queryByText("Loading verify results…"), null);
+    assert.equal(within(dock).queryByText("Loading verify results…") === null, true);
     assert.ok(within(dock).getByText("npm test"));
   });
 });

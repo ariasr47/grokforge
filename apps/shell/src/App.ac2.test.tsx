@@ -55,7 +55,7 @@ describe("AC2 — first launch with no Code history defaults to Chat", () => {
     // "Code". A flipped default would show a Code sidebar here even though
     // the radio button text could still lie.
     assert.ok(screen.getByRole("complementary", { name: "Chat sessions" }));
-    assert.equal(screen.queryByRole("complementary", { name: /workspace/i }), null);
+    assert.equal(screen.queryByRole("complementary", { name: /workspace/i }) === null, true);
     const chatOnboardingBtn = screen.getByRole("button", { name: "Chat — everyday agent" });
     const codeOnboardingBtn = screen.getByRole("button", { name: "Code — repo agent" });
     assert.ok(chatOnboardingBtn.className.includes("primary"));

@@ -63,8 +63,8 @@ test("greeting: uses a real name when the caller has one", () => {
 
 test("needs-you count: real phrase when > 0, singular grammar at 1, absent at 0", () => {
   const { rerender } = render(<HomeScreen {...baseProps({ needsYou: [] })} />);
-  assert.equal(screen.queryByText(/need you/), null);
-  assert.equal(screen.queryByText("Needs you"), null);
+  assert.equal(screen.queryByText(/need you/) === null, true);
+  assert.equal(screen.queryByText("Needs you") === null, true);
 
   rerender(
     <HomeScreen
@@ -89,7 +89,7 @@ test("needs-you count: real phrase when > 0, singular grammar at 1, absent at 0"
   // The "N others finished while you were away" clause never renders — the
   // app has no way to know what finished since the last visit, and there is
   // no prop that could fabricate it (see HomeScreenProps).
-  assert.equal(screen.queryByText(/finished while you were away/), null);
+  assert.equal(screen.queryByText(/finished while you were away/) === null, true);
 });
 
 test("first Needs-you item is focused on mount; Enter opens it", () => {
@@ -195,7 +195,7 @@ test("Recent workspace row omits branch when the workspace has none on record", 
 test("no workspaces yet: Recent shows an honest empty line, not fabricated content", () => {
   render(<HomeScreen {...baseProps()} />);
   assert.ok(screen.getByText("Open a folder to start your first workspace."));
-  assert.equal(screen.queryByRole("button", { name: /grokforge/ }), null);
+  assert.equal(screen.queryByRole("button", { name: /grokforge/ }) === null, true);
 });
 
 test("Chat homes row: title, preview, time-ago; click opens it", () => {
@@ -278,7 +278,7 @@ test("footer: version + Windows, auth label, and channel badge only when non-pro
   );
   assert.ok(screen.getByText("Forge 0.7.0 · Windows"));
   assert.ok(screen.getByText("Grok · subscription"));
-  assert.equal(screen.queryByText("DEV"), null);
+  assert.equal(screen.queryByText("DEV") === null, true);
 
   rerender(
     <HomeScreen
@@ -299,7 +299,7 @@ test("footer: installer honesty warning renders only when the caller says the bu
       })}
     />,
   );
-  assert.equal(screen.queryByText(/not Authenticode-signed/), null);
+  assert.equal(screen.queryByText(/not Authenticode-signed/) === null, true);
 
   rerender(
     <HomeScreen

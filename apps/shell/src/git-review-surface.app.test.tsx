@@ -302,7 +302,7 @@ describe("git-review-surface App wiring", () => {
     const dock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length >= 1);
-      assert.equal(within(dock).queryByText("Loading file changes…"), null);
+      assert.equal(within(dock).queryByText("Loading file changes…") === null, true);
     });
 
     const user = userEvent.setup();
@@ -315,7 +315,7 @@ describe("git-review-surface App wiring", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(within(dock).queryByText("Loading git review…"), null);
+    assert.equal(within(dock).queryByText("Loading git review…") === null, true);
     assert.ok(within(dock).getByText("git status -sb"));
   });
 
@@ -355,7 +355,7 @@ describe("git-review-surface App wiring", () => {
     ws.emit(envelope({ kind: "run_started", run: gitSnapshot({ lastEventSeq: 1 }) }, 1) as unknown as Record<string, unknown>);
     ws.emit(envelope({ kind: "activity_update", activity: gitActivity() }, 2) as unknown as Record<string, unknown>);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
     assert.equal((document.body?.innerHTML ?? "").includes("Git review"), false);
   });
 });

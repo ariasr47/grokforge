@@ -90,7 +90,7 @@ test("not_executed never receives the list-auto chip even if eligibility is pres
     />,
   );
   assert.ok(screen.getByText("ls"));
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
 });
 
 test("bypass executed shell keeps existing auto labeling, not Trusted command class", () => {
@@ -108,7 +108,7 @@ test("bypass executed shell keeps existing auto labeling, not Trusted command cl
       })}
     />,
   );
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
   assert.ok(screen.getByText(/Applied automatically · Trusted workspace/));
 });
 
@@ -126,7 +126,7 @@ test("fixed inspection is not relabeled as a Trusted command class", () => {
       })}
     />,
   );
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
 });
 
 test("draft editor state cannot invent the list-auto chip", () => {
@@ -159,7 +159,7 @@ test("draft editor state cannot invent the list-auto chip", () => {
     </>,
   );
   assert.ok(screen.getByRole("group", { name: "Trusted command classes" }));
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
 });
 
 test("Receipts paints list-auto provenance only from host-vouched fields", () => {

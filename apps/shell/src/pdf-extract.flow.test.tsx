@@ -94,7 +94,7 @@ describe("Chat PDF attach journeys", () => {
       0,
       "composer PDF extract must not pin a pack member",
     );
-    assert.equal(screen.queryByText(/OCR/i), null);
+    assert.equal(screen.queryByText(/OCR/i) === null, true);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -128,7 +128,7 @@ describe("Chat PDF attach journeys", () => {
       );
     });
     assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: secret\.pdf ---/);
-    assert.equal(screen.queryByText(/^secret\.pdf:/), null);
+    assert.equal(screen.queryByText(/^secret\.pdf:/) === null, true);
 
     attachViaPicker([pdfFile("scan.pdf", await fixtureEmptyExtractPdf())]);
     await waitFor(() => {
@@ -149,7 +149,7 @@ describe("Chat PDF attach journeys", () => {
       );
     });
     assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: bad\.pdf ---/);
-    assert.equal(screen.queryByText(/OCR/i), null);
+    assert.equal(screen.queryByText(/OCR/i) === null, true);
   });
 
   it("keeps a successful sibling when a PDF extract-fails in the same attach", async () => {
@@ -181,7 +181,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.equal(screen.queryByText(/^bad\.pdf:/), null);
+    assert.equal(screen.queryByText(/^bad\.pdf:/) === null, true);
   });
 
   it("paints agent read_file extract-failed as settled failed with vouched class", async () => {
@@ -252,6 +252,6 @@ describe("Chat PDF attach journeys", () => {
       assert.ok(document.querySelector(".ri-dot.tone-fail"), "row must be marked failed, not settled clean");
       assert.ok(screen.getByText("Couldn't extract text from enc.pdf. (encrypted)"));
     });
-    assert.equal(screen.queryByText(/OCR/i), null);
+    assert.equal(screen.queryByText(/OCR/i) === null, true);
   });
 });

@@ -147,12 +147,12 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await screen.findByLabelText("Message to agent");
     await waitFor(() => {
       assert.ok(screen.getByText(CODE_AGENT_VENDOR));
-      assert.equal(screen.queryByText(CODE_AGENT_OFFLINE), null);
+      assert.equal(screen.queryByText(CODE_AGENT_OFFLINE) === null, true);
     });
     assert.ok(document.querySelector("[data-code-agent='vendor']")?.classList.contains("is-quiet"));
     assert.ok(document.querySelector(".composer-identity"));
-    assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI), null);
-    assert.equal(screen.queryByText(CODE_AGENT_CHECKING), null);
+    assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI) === null, true);
+    assert.equal(screen.queryByText(CODE_AGENT_CHECKING) === null, true);
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "ship it");
     const send = screen.getByRole("button", { name: "Send" });
@@ -160,7 +160,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     assert.equal(send.hasAttribute("disabled"), false);
     assert.doesNotMatch(reason, /sign in/i);
     assert.doesNotMatch(reason, /engine offline/i);
-    assert.equal(screen.queryByText(/Engine offline/i), null);
+    assert.equal(screen.queryByText(/Engine offline/i) === null, true);
   });
 
   it("Code fallback without host key still Sign-in gated; chip is Mini-Grok not vendor", async () => {
@@ -186,7 +186,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
       document.querySelector("[data-code-agent='fallback']")?.classList.contains("is-quiet") ?? false,
       false,
     );
-    assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
+    assert.equal(screen.queryByText(CODE_AGENT_VENDOR) === null, true);
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "hello");
     const send = screen.getByRole("button", { name: "Send" });
@@ -211,7 +211,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(CODE_AGENT_HARD_FAIL));
     });
-    assert.equal(screen.queryByText(/Mini-Grok/), null);
+    assert.equal(screen.queryByText(/Mini-Grok/) === null, true);
     const user = userEvent.setup({ delay: null });
     await user.type(screen.getByLabelText("Message to agent"), "hello");
     const send = screen.getByRole("button", { name: "Send" });
@@ -236,8 +236,8 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await waitFor(() => {
       assert.ok(document.querySelector(".composer-wrap"));
     });
-    assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
-    assert.equal(screen.queryByText(CODE_AGENT_CHECKING), null);
+    assert.equal(screen.queryByText(CODE_AGENT_VENDOR) === null, true);
+    assert.equal(screen.queryByText(CODE_AGENT_CHECKING) === null, true);
     assert.equal(document.querySelector("[data-code-agent]"), null);
     assert.equal(footerText().includes("Grok Code"), false);
   });
@@ -259,7 +259,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(CODE_AGENT_CHECKING));
     });
-    assert.equal(screen.queryByText(CODE_AGENT_VENDOR), null);
+    assert.equal(screen.queryByText(CODE_AGENT_VENDOR) === null, true);
   });
 
   it("eager cli_missing then acquire vendor overwrites the chip to Grok Code", async () => {
@@ -286,7 +286,7 @@ describe("spawn-grok-agent — composer voucher + Send gates", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(CODE_AGENT_VENDOR));
     });
-    assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI), null);
+    assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI) === null, true);
   });
 });
 
@@ -439,9 +439,9 @@ describe("spawn-grok-agent — run provenance + agent_exited", () => {
     await waitFor(() => {
       assert.ok(screen.getByText("Run failed"));
     });
-    assert.equal(screen.queryByText("Run in progress…"), null);
+    assert.equal(screen.queryByText("Run in progress…") === null, true);
     assert.ok(screen.getAllByText(CODE_AGENT_VENDOR).length >= 1);
-    assert.equal(screen.queryByText(/Mini-Grok/), null);
+    assert.equal(screen.queryByText(/Mini-Grok/) === null, true);
   });
 
   it("live vendor ends (answered, cancelled, failed, agent-exit) keep Grok Code and do not paint Mini-Grok", async () => {
@@ -533,8 +533,8 @@ describe("spawn-grok-agent — run provenance + agent_exited", () => {
       await waitFor(() => {
         assert.ok(screen.getAllByText(CODE_AGENT_VENDOR).length >= 1);
       });
-      assert.equal(screen.queryByText(/Mini-Grok/), null);
-      assert.equal(screen.queryByText(CODE_AGENT_HARD_FAIL), null);
+      assert.equal(screen.queryByText(/Mini-Grok/) === null, true);
+      assert.equal(screen.queryByText(CODE_AGENT_HARD_FAIL) === null, true);
     }
   });
 });

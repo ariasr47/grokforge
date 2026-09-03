@@ -36,9 +36,9 @@ test("empty shows No project instructions — not danger", () => {
   const el = screen.getByText(PI_COMPOSER_EMPTY);
   assert.ok(el);
   assert.equal(el.closest("[data-project-instructions]")?.getAttribute("data-project-instructions"), "empty");
-  assert.equal(container.querySelector("[data-project-instructions='error']"), null);
-  assert.equal(screen.queryByRole("alert"), null);
-  assert.equal(screen.queryByText(PI_COMPOSER_ERROR), null);
+  assert.equal(container.querySelector("[data-project-instructions='error']") === null, true);
+  assert.equal(screen.queryByRole("alert") === null, true);
+  assert.equal(screen.queryByText(PI_COMPOSER_ERROR) === null, true);
 });
 
 test("error shows Couldn’t resolve project instructions. and does not print path", () => {
@@ -46,11 +46,11 @@ test("error shows Couldn’t resolve project instructions. and does not print pa
     <ProjectInstructionsStatus projection={{ state: "error" }} />,
   );
   assert.ok(screen.getByText(PI_COMPOSER_ERROR));
-  assert.equal(screen.queryByText("AGENTS.md"), null);
-  assert.equal(screen.queryByText("CLAUDE.md"), null);
+  assert.equal(screen.queryByText("AGENTS.md") === null, true);
+  assert.equal(screen.queryByText("CLAUDE.md") === null, true);
   assert.equal(container.textContent?.includes("AGENTS.md"), false);
   assert.ok(screen.getByRole("alert"));
-  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
+  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
 });
 
 test("loading / offline exact copy", () => {
@@ -60,7 +60,7 @@ test("loading / offline exact copy", () => {
   assert.ok(screen.getByText(PI_COMPOSER_LOADING));
   rerender(<ProjectInstructionsStatus projection={{ state: "offline" }} />);
   assert.ok(screen.getByText(PI_COMPOSER_OFFLINE));
-  assert.equal(screen.queryByText(PI_COMPOSER_LOADING), null);
+  assert.equal(screen.queryByText(PI_COMPOSER_LOADING) === null, true);
 });
 
 test("absent_chat and disabled_no_workspace render null / no empty copy", () => {
@@ -68,14 +68,14 @@ test("absent_chat and disabled_no_workspace render null / no empty copy", () => 
     <ProjectInstructionsStatus projection={{ state: "absent_chat" }} />,
   );
   assert.equal(chat.container.textContent, "");
-  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
+  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
   chat.unmount();
 
   const none = render(
     <ProjectInstructionsStatus projection={{ state: "disabled_no_workspace" }} />,
   );
   assert.equal(none.container.textContent, "");
-  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
+  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
 });
 
 test("path uses mono; long path truncates with title full path", () => {

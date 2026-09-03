@@ -154,7 +154,7 @@ test("live Planning chrome only when planOwned", () => {
       changesAvailable={false}
     />,
   );
-  assert.equal(screen.queryByText(PLAN_LIVE_STATUS), null);
+  assert.equal(screen.queryByText(PLAN_LIVE_STATUS) === null, true);
 });
 
 test("non-empty plan_pending: Review plan + Accept plan + Keep planning; no Reject", () => {
@@ -172,8 +172,8 @@ test("non-empty plan_pending: Review plan + Accept plan + Keep planning; no Reje
   assert.ok(within(dock).getByText(planReadyTitle(0)));
   assert.ok(within(dock).getByRole("button", { name: PLAN_ACCEPT }));
   assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
-  assert.equal(within(dock).queryByRole("button", { name: "Reject" }), null);
-  assert.equal(within(dock).queryByRole("button", { name: /reject/i }), null);
+  assert.equal(within(dock).queryByRole("button", { name: "Reject" }) === null, true);
+  assert.equal(within(dock).queryByRole("button", { name: /reject/i }) === null, true);
 });
 
 test("empty plan_pending: Plan complete · no changes + End Plan · no changes proposed + Keep planning", () => {
@@ -188,9 +188,9 @@ test("empty plan_pending: Plan complete · no changes + End Plan · no changes p
   assert.ok(screen.getByText(PLAN_DOCK_EMPTY));
   assert.ok(screen.getByRole("button", { name: PLAN_END_EMPTY }));
   assert.ok(screen.getByRole("button", { name: PLAN_KEEP }));
-  assert.equal(screen.queryByText(/Plan ready/), null);
-  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
-  assert.equal(screen.queryByRole("button", { name: /reject/i }), null);
+  assert.equal(screen.queryByText(/Plan ready/) === null, true);
+  assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }) === null, true);
+  assert.equal(screen.queryByRole("button", { name: /reject/i }) === null, true);
 });
 
 test("settling shows Updating plan decision…", () => {
@@ -252,7 +252,7 @@ test("plan gate keeps its own Accept plan / Keep planning labels alongside the C
   assert.ok(within(dock).getByRole("button", { name: "Reject" }));
   assert.ok(screen.getByRole("button", { name: PLAN_ACCEPT }));
   assert.ok(screen.getByRole("button", { name: PLAN_KEEP }));
-  assert.equal(screen.queryByRole("button", { name: "Reject plan" }), null);
+  assert.equal(screen.queryByRole("button", { name: "Reject plan" }) === null, true);
 });
 
 test("planning-only run has Plan section (File changes / Verify are not RunSurface's concern)", () => {
@@ -297,5 +297,5 @@ test("planning-only run has Plan section (File changes / Verify are not RunSurfa
     />,
   );
   assert.ok(screen.getByRole("region", { name: PLAN_HEADER }));
-  assert.equal(screen.queryByRole("button", { name: "Reject" }), null);
+  assert.equal(screen.queryByRole("button", { name: "Reject" }) === null, true);
 });

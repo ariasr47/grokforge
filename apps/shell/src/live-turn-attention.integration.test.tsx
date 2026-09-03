@@ -164,7 +164,7 @@ async function observeSpine(mode: "chat" | "code") {
 
   const dock = await screen.findByRole("region", { name: "Pending agent actions" }, { timeout: 15_000 });
   assert.ok(within(dock).getByRole("button", { name: "Allow" }), "AC6: dock must show permission settle");
-  assert.equal(screen.queryByText(TURN_COPY), null, "AC10: Your turn withheld while waiting on permission");
+  assert.equal(screen.queryByText(TURN_COPY) === null, true, "AC10: Your turn withheld while waiting on permission");
   assert.ok(screen.getByRole("button", { name: "Stop" }), "AC10: live wait uses Stop chrome");
   assert.ok(screen.getByText("Permission requested: shell"), "AC5 rail: permission chip present");
 

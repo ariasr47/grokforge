@@ -318,7 +318,7 @@ describe("artifacts-panel App journeys", () => {
       ) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(document.querySelector(".assistant-answer")));
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
     assert.equal(Boolean(document.querySelector(".artifact-panel")), false);
 
     ws.emit(
@@ -353,13 +353,13 @@ describe("artifacts-panel App journeys", () => {
       envelope({ kind: "reasoning_delta", segmentId: "r", delta: "secret thought" }, 2) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(screen.queryByText("secret thought")));
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
 
     ws.emit(
       envelope({ kind: "message_delta", segmentId: "m", delta: "unfinished words still streaming" }, 3) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(screen.queryByText(/unfinished words/)));
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
 
     cleanup();
     resetChatState();
@@ -380,7 +380,7 @@ describe("artifacts-panel App journeys", () => {
       ) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(document.querySelector(".assistant-answer")));
-    assert.equal(screen.queryByRole("button", { name: /^Open$/i }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
 
     cleanup();
     resetChatState();
@@ -445,7 +445,7 @@ describe("artifacts-panel App journeys", () => {
     try {
     await mountApp();
     assert.equal(Boolean(document.querySelector(".artifact-panel")), false);
-    assert.equal(screen.queryByText("Couldn't open this artifact."), null);
+    assert.equal(screen.queryByText("Couldn't open this artifact.") === null, true);
 
     cleanup();
     resetChatState();
@@ -456,7 +456,7 @@ describe("artifacts-panel App journeys", () => {
     await waitFor(() => assert.ok(screen.queryByText("Couldn't open this artifact.")));
     assert.ok(document.querySelector(".artifact-panel"));
     assert.ok((document.querySelector(".transcript")?.textContent ?? "").includes("sibling question"));
-    assert.equal(screen.queryByText("0 artifacts"), null);
+    assert.equal(screen.queryByText("0 artifacts") === null, true);
     } finally {
       console.error = prevError;
     }
@@ -475,7 +475,7 @@ describe("artifacts-panel App journeys", () => {
       window.confirm = confirm;
     }
     await waitFor(() => assert.equal(Boolean(document.querySelector(".artifact-panel")), false));
-    assert.equal(screen.queryByText("Couldn't open this artifact."), null);
+    assert.equal(screen.queryByText("Couldn't open this artifact.") === null, true);
   });
 
   it("permission settle stays in the Action dock while Artifact is open; Esc does not steal from dock", async () => {
@@ -508,8 +508,8 @@ describe("artifacts-panel App journeys", () => {
     assert.ok(within(dockCard).getByRole("button", { name: "Allow" }));
     const panel = document.querySelector(".artifact-panel") as HTMLElement;
     assert.ok(panel);
-    assert.equal(within(panel).queryByRole("button", { name: "Allow" }), null);
-    assert.equal(within(panel).queryByRole("button", { name: "Deny" }), null);
+    assert.equal(within(panel).queryByRole("button", { name: "Allow" }) === null, true);
+    assert.equal(within(panel).queryByRole("button", { name: "Deny" }) === null, true);
 
     fireEvent.keyDown(window, { key: "Escape" });
     assert.ok(document.querySelector(".artifact-panel"));

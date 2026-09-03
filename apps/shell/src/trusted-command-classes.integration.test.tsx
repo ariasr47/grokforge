@@ -101,8 +101,8 @@ test("Settings shows Trusted command classes for a workspace and keeps Review ho
   const editor = screen.getByRole("group", { name: "Trusted command classes" });
   assert.ok(within(editor).getByText(/No Trusted command classes yet/i));
   assert.ok(within(editor).getByText(/does not skip approvals while Policy is Review/i));
-  assert.equal(within(editor).queryByRole("textbox"), null);
-  assert.equal(within(editor).queryByText(/allowlist/i), null);
+  assert.equal(within(editor).queryByRole("textbox") === null, true);
+  assert.equal(within(editor).queryByText(/allowlist/i) === null, true);
 });
 
 test("Trusted policy helper is distinct from Review and empty never means allow-all", async () => {
@@ -110,7 +110,7 @@ test("Trusted policy helper is distinct from Review and empty never means allow-
   const editor = screen.getByRole("group", { name: "Trusted command classes" });
   assert.ok(within(editor).getByText("List is active for this workspace under Trusted workspace."));
   assert.ok(within(editor).getByText(/No Trusted command classes yet/i));
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
 });
 
 test("no workspace uses the exact editor guidance", async () => {
@@ -126,7 +126,7 @@ test("unreadable store uses load-failure copy instead of the empty happy path", 
       "Trusted command classes couldn’t be loaded. Matching shell will still ask until a valid list is saved.",
     ),
   );
-  assert.equal(within(editor).queryByText(/No Trusted command classes yet/i), null);
+  assert.equal(within(editor).queryByText(/No Trusted command classes yet/i) === null, true);
 });
 
 test("saving a closed class POSTs the draft and shows success without inventing allow", async () => {
@@ -140,7 +140,7 @@ test("saving a closed class POSTs the draft and shows success without inventing 
   assert.deepEqual(posts[0]?.body?.classes, ["npm"]);
   assert.equal(posts[0]?.body?.expectedRevision, "fallback");
   assert.ok(screen.getByText("Saved for this workspace"));
-  assert.equal(screen.queryByText("Ran without asking · Trusted command class"), null);
+  assert.equal(screen.queryByText("Ran without asking · Trusted command class") === null, true);
 });
 
 test("mid-run save is refused and does not claim success", async () => {
@@ -154,7 +154,7 @@ test("mid-run save is refused and does not claim success", async () => {
   await screen.findByText(
     "Couldn’t save Trusted command classes while a run is in progress. The last confirmed list remains active.",
   );
-  assert.equal(screen.queryByText("Trusted command classes saved."), null);
+  assert.equal(screen.queryByText("Trusted command classes saved.") === null, true);
   assert.equal(host.trustedClasses.get("C:\\repo")?.source, "fallback");
 });
 
@@ -206,5 +206,5 @@ test("Review still asks: permission dock is unchanged by a saved list", async ()
   // ("npm") is never consulted, because Policy stays Review and still asks.
   assert.ok(within(dock).getByRole("button", { name: "Allow npm for this session" }));
   assert.ok(within(dock).getByRole("button", { name: "Deny" }));
-  assert.equal(within(dock).queryByText(/Trusted command class/i), null);
+  assert.equal(within(dock).queryByText(/Trusted command class/i) === null, true);
 });

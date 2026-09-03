@@ -122,7 +122,7 @@ describe("AC3 — Chat send + stream reply without a folder gate", () => {
       assert.ok(host.callsTo("/api/prompt").length >= 1);
     });
     // No "open a project folder first" banner in Chat.
-    assert.equal(screen.queryByText(/open a project folder first/i), null);
+    assert.equal(screen.queryByText(/open a project folder first/i) === null, true);
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
@@ -219,9 +219,22 @@ render(<App />);
       assert.equal(screen.getByRole("radio", { name: "Code" }).getAttribute("aria-checked"), "true");
     });
 
-    // Code chrome starts idle — the Chat transcript must not leak in.
-    assert.equal(screen.queryByText(/Chat-only message/), null);
-    assert.equal(screen.queryByText(/Chat reply/), null);
+    // Code chrome starts idle: Home's Chat-homes column (Task 13, un-parked)
+    // may legitimately preview this same chat's own last message — that is
+    // not a leak, it's Home working as designed (mode-agnostic). What these
+    // checks actually guard is narrower: the live Chat transcript/message
+    // list itself must not still be what's rendering the text. So: collect
+    // matches, drop any inside Home's own surface, require zero survivors.
+    for (const phrase of [/Chat-only message/, /Chat reply/]) {
+      const leakedOutsideHome = screen
+        .queryAllByText(phrase)
+        .filter((el) => !el.closest(".home"));
+      assert.equal(
+        leakedOutsideHome.length,
+        0,
+        `${phrase} must not render outside Home's own preview`,
+      );
+    }
 
     // Code: start its own session (Ctrl+N — global shortcut, works without
     // expanding the workspace tree) and send its own turn.
@@ -253,7 +266,7 @@ render(<App />);
       assert.equal(screen.getByRole("radio", { name: "Chat" }).getAttribute("aria-checked"), "true");
     });
     await waitFor(() => assert.ok(screen.getAllByText(/Chat-only message/).length > 0));
-    assert.equal(screen.queryByText(/Code-only message/), null);
+    assert.equal(screen.queryByText(/Code-only message/) === null, true);
 
     // Nothing merged or wiped: each partition still holds only its own turn.
     const chatSessionsAfter = listSessions(chatPartitionKey);
@@ -350,7 +363,7 @@ describe("Queue ⇧⏎ is bound to its own session (review fix, Finding 1)", () 
     await waitFor(() => assert.ok(screen.getByText("prior message in B")));
 
     // B must show no chip, and A's draft must not have leaked into B.
-    assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null);
+    assert.equal(screen.queryByRole("button", { name: /^Queued/ }) === null, true);
     assert.equal(host.callsTo("/api/prompt").length, 1);
     assert.ok(
       host.callsTo("/api/prompt").every((c) => c.body?.text !== "queued for A"),
@@ -383,7 +396,7 @@ describe("Queue ⇧⏎ is bound to its own session (review fix, Finding 1)", () 
     const secondCall = host.callsTo("/api/prompt")[1]!;
     assert.equal(secondCall.body?.text, "queued for A");
     assert.equal(secondCall.body?.sessionId, SESSION_A);
-    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }) === null, true));
   });
 });
 
@@ -484,7 +497,7 @@ describe("a queued draft survives a guard bail-out instead of being dropped (rev
         terminalAt: "",
       }) as unknown as Record<string, unknown>,
     );
-    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }) === null, true));
     assert.equal(host.callsTo("/api/prompt").length, 1);
 
     // The engine goes unreachable — two consecutive failed health polls
@@ -525,6 +538,6 @@ describe("a queued draft survives a guard bail-out instead of being dropped (rev
     const secondCall = host.callsTo("/api/prompt")[1]!;
     assert.equal(secondCall.body?.text, "queued while offline");
     assert.equal(secondCall.body?.sessionId, SESSION_A);
-    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }), null));
+    await waitFor(() => assert.equal(screen.queryByRole("button", { name: /^Queued/ }) === null, true));
   });
 });

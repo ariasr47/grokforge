@@ -29,7 +29,7 @@ test("empty is muted No pinned pack — not error", () => {
   );
   assert.ok(screen.getByText(PACK_COMPOSER_EMPTY));
   assert.equal(container.querySelector("[data-chat-pack='empty']")?.className.includes("is-empty"), true);
-  assert.equal(screen.queryByRole("alert"), null);
+  assert.equal(screen.queryByRole("alert") === null, true);
 });
 
 test("armed shows Pack · n files and Armed tooltip — never Included", () => {

@@ -110,7 +110,7 @@ async function waitForGitReview(): Promise<HTMLElement> {
   const user = userEvent.setup();
   await user.click(within(dock).getByRole("tab", { name: /Git/i }));
   await waitFor(() => {
-    assert.equal(within(dock).queryByText(GIT_REVIEW_LOADING), null);
+    assert.equal(within(dock).queryByText(GIT_REVIEW_LOADING) === null, true);
   }, { timeout: 15_000 });
   return dock;
 }
@@ -185,7 +185,7 @@ test("force-push still cards a permission decision (AC-20)", { skip: !present, t
     dockText.includes("push") || dockText.includes("shell") || dockText.includes("allow"),
     "force-push must still surface a permission card",
   );
-  assert.equal(screen.queryByRole("button", { name: /force push/i }), null);
+  assert.equal(screen.queryByRole("button", { name: /force push/i }) === null, true);
 });
 
 test("reconnect restores the same Git review membership (AC-11/12)", { skip: !present, timeout: 60_000 }, async () => {

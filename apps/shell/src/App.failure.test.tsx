@@ -561,7 +561,7 @@ describe("N-3 — a packaged build never attaches to a foreign engine on the fal
     // The ready-state chrome (topbar, engine chip) never mounts at all while
     // `boot !== "ready"` — a structural check, not just absence-of-text.
     assert.equal(document.querySelector(".topbar"), null);
-    assert.equal(screen.queryByText("Grok · live"), null);
+    assert.equal(screen.queryByText("Grok · live") === null, true);
     // The decisive proof: the "foreign" engine was never asked for
     // /api/state at all — the shell never got far enough to read (let alone
     // paint) its workspace.

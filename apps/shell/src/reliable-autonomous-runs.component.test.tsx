@@ -28,7 +28,7 @@ const run = (overrides: Partial<RunProjectionRun> = {}): RunProjectionRun => ({
 test("renders reasoning as one disclosure and does not promote it to an answer", () => {
   render(<RunSurface run={run({ reasoning: { seg: "private reasoning" } })} />);
   assert.ok(screen.getByText("Thought…"));
-  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
 });
 test("renders only a vouched terminal answer once", () => {
   render(<RunSurface run={run({ state: "terminal", terminalKind: "answered", finalAnswer: "Complete", answerVouched: true })} />);
@@ -36,20 +36,20 @@ test("renders only a vouched terminal answer once", () => {
   // The response turn's node (muted node--done) carries the answered fact now
   // — no separate "Answered" strip.
   assert.ok(document.querySelector(".node--done"));
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByText("Answered") === null, true);
 });
 test("renders durable received answer segments before and after a non-answer terminal", () => {
   const { rerender } = render(<RunSurface run={run({ answer: { seg: "answer before cancel" } })} />);
   assert.equal(screen.getAllByText("answer before cancel").length, 1);
   rerender(<RunSurface run={run({ state: "terminal", terminalKind: "cancelled", answer: { seg: "answer before cancel" } })} />);
   assert.equal(screen.getAllByText("answer before cancel").length, 1);
-  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
   assert.ok(screen.getByText("Cancelled"));
 });
 test("live received answer is plain text, not markdown or a rich-layout placeholder", () => {
   const live = "# Hello\n\n```grok-ui\nnot json yet";
   render(<RunSurface run={run({ answer: { seg: live } })} />);
-  assert.equal(screen.queryByText("Building rich layout…"), null);
+  assert.equal(screen.queryByText("Building rich layout…") === null, true);
   const partial = document.querySelector(".assistant-partial");
   assert.ok(partial);
   const pre = partial!.querySelector("pre");
@@ -58,7 +58,7 @@ test("live received answer is plain text, not markdown or a rich-layout placehol
   assert.ok(pre!.textContent?.includes("```grok-ui"));
   assert.equal(partial!.querySelector(".md-p"), null);
   assert.equal(partial!.querySelector(".md-h"), null);
-  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+  assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
 });
 test("vouched terminal answer leaves the live pre and parses markdown", () => {
   const body = "# Hello\n\nDone.";
@@ -164,7 +164,7 @@ test("run actions are keyboard reachable and transition status is announced with
   const recover = screen.getByRole("button", { name: "Revert edit" }); recover.focus(); assertFocused(recover, "Revert edit");
   assert.ok(screen.getByRole("status", { name: "" }));
   assert.ok(screen.getByText("Ending run…"));
-  assert.equal(screen.queryByText(/reasoning_delta|answer_delta/), null);
+  assert.equal(screen.queryByText(/reasoning_delta|answer_delta/) === null, true);
 });
 
 test("§4 copy/action matrix exposes every supported policy, run, recovery, and Bypass state", async () => {
@@ -179,7 +179,7 @@ test("§4 copy/action matrix exposes every supported policy, run, recovery, and 
   cleanup();
   render(<PermissionPolicyControl status="confirmed" confirmedMode="review" fallbackReason="missing" />);
   assert.equal(savedPolicyUnusable("missing"), false);
-  assert.equal(screen.queryByText("Forge couldn’t use the saved permission policy. Review is active."), null);
+  assert.equal(screen.queryByText("Forge couldn’t use the saved permission policy. Review is active.") === null, true);
   cleanup();
   render(<PermissionPolicyControl status="confirmed" confirmedMode="review" fallbackReason="invalid" />);
   assert.ok(screen.getByText("Forge couldn’t use the saved permission policy. Review is active.", { exact: true }));
@@ -198,7 +198,7 @@ test("§4 copy/action matrix exposes every supported policy, run, recovery, and 
   // (muted node--done) carries that fact.
   render(<RunSurface run={run({ state: "terminal", terminalKind: "answered", finalAnswer: "answer", answerVouched: true })} onRetryPrompt={() => undefined} />);
   assert.ok(document.querySelector(".node--done"));
-  assert.equal(screen.queryByText("Answered"), null);
+  assert.equal(screen.queryByText("Answered") === null, true);
   cleanup();
   render(<RunSurface run={run({ state: "terminal", terminalKind: "failed", failure: { code: "provider_error", message: "lost", retryable: true, recoveryAction: "reconnect" } })} onReconnect={() => undefined} />);
   assert.ok(screen.getByRole("button", { name: "Reconnect" }));
@@ -217,8 +217,8 @@ test("all action controls retain visible focus and announcements transition with
   const activity = { activityId: "focus", invocationId: "focus-inv", name: "write", lifecycle: "terminal", execution: "executed", status: "succeeded", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "text_edit", autoApplied: true, editId: "focus-edit", recovery: { kind: "guarded_revert", available: true, status: "available" } } as any;
   const decision = { requestId: "perm", invocationId: "focus-inv", kind: "permission", status: "pending", title: "Approval needed · Review", detail: "Allow?", expiresAt: null, policy: {} } as any;
   const { rerender } = render(<RunSurface run={run({ activities: { focus: activity }, decisions: { perm: decision }, state: "running" })} />);
-  assert.equal(screen.queryByRole("button", { name: "Allow" }), null, "permission settle stays in the action dock");
-  assert.equal(screen.queryByRole("button", { name: "Decline" }), null, "permission settle stays in the action dock");
+  assert.equal(screen.queryByRole("button", { name: "Allow" }) === null, true, "permission settle stays in the action dock");
+  assert.equal(screen.queryByRole("button", { name: "Decline" }) === null, true, "permission settle stays in the action dock");
   for (const name of ["Revert edit", "View diff"]) {
     const control = screen.getByRole("button", { name });
     control.focus();
@@ -240,8 +240,8 @@ test("routes diff decisions with edit identity and prevents duplicate submits", 
   try {
     const activity = { activityId: "a", invocationId: "i", name: "write", lifecycle: "pending", execution: "executed", status: "running", input: {}, output: null, error: null, diff: "-old\n+new", policy: {}, automaticEligibility: "none", autoApplied: false, editId: "edit-1", recovery: null } as any;
     render(<RunSurface run={run({ decisions: { d: { requestId: "d", invocationId: "i", kind: "diff", status: "pending", title: "Review edit", detail: "", expiresAt: null, policy: {} } }, activities: { a: activity } })} />);
-    assert.equal(screen.queryByRole("button", { name: "Accept" }), null, "diff settle stays in the action dock");
-    assert.equal(screen.queryByRole("button", { name: "Reject" }), null, "diff settle stays in the action dock");
+    assert.equal(screen.queryByRole("button", { name: "Accept" }) === null, true, "diff settle stays in the action dock");
+    assert.equal(screen.queryByRole("button", { name: "Reject" }) === null, true, "diff settle stays in the action dock");
     assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.runDiff = original; }
 });
@@ -271,7 +271,7 @@ test("recovery_confirmation decisions settle in the dock now — no inline Recov
     // the dock now owns the actual action — this is a record, not a control.
     assert.ok(screen.getByText("Recovery needed"));
     assert.ok(screen.getByText("Restore edit-1 to its state before the last write?"));
-    assert.equal(screen.queryByRole("button", { name: "Recover" }), null, "recovery settle stays in the action dock");
+    assert.equal(screen.queryByRole("button", { name: "Recover" }) === null, true, "recovery settle stays in the action dock");
     assert.ok(screen.getByText(SETTLE_IN_DOCK), "keeps the same dock hint permission/diff cards show while pending");
     assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.editRecovery = original; }
@@ -286,7 +286,7 @@ test("guarded recovery explains the hash guard and confirms success without stal
     assert.ok(screen.getByText("Restore this file to its state immediately before the edit. Forge will stop if the file has changed since."));
     fireEvent.click(screen.getByRole("button", { name: "Revert edit" }));
     await waitFor(() => assert.ok(screen.getByText("Edit reverted")));
-    assert.equal(screen.queryByRole("button", { name: "Revert edit" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Revert edit" }) === null, true);
   } finally { api.editRecovery = original; }
 });
 
@@ -332,7 +332,7 @@ test("bypass native capability is single-use in UI and exits back to workspace",
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Enable Bypass permissions" }));
     await waitFor(() => assert.ok(calls.includes("mode:bypass_permissions")));
-    assert.equal(screen.queryByText("ephemeral-secret-token"), null);
+    assert.equal(screen.queryByText("ephemeral-secret-token") === null, true);
     rerender(<BypassPermissionsControl sessionId="session-a" unlocked available active />);
     fireEvent.click(screen.getByRole("button", { name: "Exit Bypass permissions" }));
     await waitFor(() => assert.ok(calls.includes("mode:workspace")));
@@ -376,6 +376,6 @@ test("native unlock IPC failure fails closed and offers no activation", async ()
   try {
     render(<BypassPermissionsControl sessionId="session-a" unlocked available />);
     await waitFor(() => assert.ok(screen.getByText("Bypass permissions requires an approved isolated container or VM for elevated or remote use.")));
-    assert.equal(screen.queryByRole("button", { name: "Enable Bypass permissions" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Enable Bypass permissions" }) === null, true);
   } finally { setDesktopBridge(null); }
 });

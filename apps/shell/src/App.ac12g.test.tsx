@@ -98,7 +98,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
 
     // Launch: the not-found state, exactly as AC12b already covers.
     assert.ok(await screen.findByText(NOT_FOUND_COPY));
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // Action 1 — switch product mode (the exact N-8 repro step).
     await user.click(screen.getByRole("radio", { name: "Chat" }));
@@ -107,13 +107,13 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
       await screen.findByText(NOT_FOUND_COPY),
       "alarm must survive a mode switch whose POST response omits the field",
     );
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // Switch back, so the folder-open action below is offered (Code-only).
     await user.click(screen.getByRole("radio", { name: "Code" }));
     await waitFor(() => assert.ok(host.callsTo("/api/mode").length >= 2));
     assert.ok(await screen.findByText(NOT_FOUND_COPY));
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // Action 2 — open a folder (POST /api/workspace, also unstamped).
     await user.click(screen.getByRole("button", { name: "Open folder…" }));
@@ -122,7 +122,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
       await screen.findByText(NOT_FOUND_COPY),
       "alarm must survive opening a folder whose POST response omits the field",
     );
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // Action 3 — change the effort level (POST /api/effort, also unstamped).
     await chooseEffort(user, "Expert");
@@ -131,7 +131,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
       await screen.findByText(NOT_FOUND_COPY),
       "alarm must survive an effort change whose POST response omits the field",
     );
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // Action 4 — change a setting (POST /api/settings, also unstamped),
     // round-tripping through the Settings panel and back.
@@ -147,7 +147,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
       await screen.findByText(NOT_FOUND_COPY),
       "alarm must survive a settings change whose POST response omits the field",
     );
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
 
     // SPEC §4 flow 5 / AC12g: it does not self-heal or decay with time
     // either — nothing in the app holds a timer that re-derives this from
@@ -155,7 +155,7 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     // is not a transient render; a further tick changes nothing.
     await new Promise((r) => setTimeout(r, 30));
     assert.ok(screen.getByText(NOT_FOUND_COPY));
-    assert.equal(screen.queryByText(WELCOME_COPY), null);
+    assert.equal(screen.queryByText(WELCOME_COPY) === null, true);
   });
 
   it("mirror direction: an intact store raises no alarm through the same actions, even when responses omit the field", async () => {
@@ -184,15 +184,15 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
     assert.ok(
       await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
     );
-    assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
+    assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
 
     await user.click(screen.getByRole("radio", { name: "Chat" }));
     await waitFor(() => assert.ok(host.callsTo("/api/mode").length >= 1));
-    assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
+    assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
 
     await user.click(screen.getByRole("radio", { name: "Code" }));
     await waitFor(() => assert.ok(host.callsTo("/api/mode").length >= 2));
-    assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
+    assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
 
     // Two "Open folder…" buttons are on screen here (the sidebar's own
     // primary action AND the "no-workspace" empty state's own button, since
@@ -203,11 +203,11 @@ describe("AC12g — in-session persistence of the not-found alarm (GATE Q N-8)",
       .find((b) => b.className.includes("open-folder-btn"))!;
     await user.click(openFolderBtn);
     await waitFor(() => assert.ok(host.callsTo("/api/workspace").length >= 1));
-    assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
+    assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
 
     await chooseEffort(user, "Expert");
     await waitFor(() => assert.ok(host.callsTo("/api/effort").length >= 1));
-    assert.equal(screen.queryByText(NOT_FOUND_COPY), null);
+    assert.equal(screen.queryByText(NOT_FOUND_COPY) === null, true);
   });
 });
 

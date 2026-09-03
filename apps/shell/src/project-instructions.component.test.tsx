@@ -152,10 +152,10 @@ test("Chat renders no project-instructions chrome", async () => {
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   render(<App />);
   await screen.findByLabelText("Message to agent");
-  assert.equal(screen.queryByText(PI_COMPOSER_LOADED_LABEL), null);
-  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
-  assert.equal(screen.queryByText(PI_COMPOSER_ERROR), null);
-  assert.equal(screen.queryByText(PI_COMPOSER_LOADING), null);
+  assert.equal(screen.queryByText(PI_COMPOSER_LOADED_LABEL) === null, true);
+  assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
+  assert.equal(screen.queryByText(PI_COMPOSER_ERROR) === null, true);
+  assert.equal(screen.queryByText(PI_COMPOSER_LOADING) === null, true);
   assert.equal(document.querySelector("[data-project-instructions]"), null);
 });
 
@@ -190,7 +190,7 @@ test("Send not disabled solely for empty or error presence", async () => {
     assert.ok(screen.getByText(PI_COMPOSER_ERROR));
   });
   assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
-  assert.equal(screen.queryByText("AGENTS.md"), null);
+  assert.equal(screen.queryByText("AGENTS.md") === null, true);
 });
 
 test("workspace switch clears prior path (checking while unready)", async () => {
@@ -247,10 +247,10 @@ test("included turn chip is a quiet pill — not a Plan section or action dock",
     />,
   );
   assert.ok(screen.getByText(piTurnIncluded("AGENTS.md")));
-  assert.equal(screen.queryByRole("region", { name: PLAN_HEADER }), null);
+  assert.equal(screen.queryByRole("region", { name: PLAN_HEADER }) === null, true);
   // File changes/Verify moved to the Changes dock (Task 9) — RunSurface alone
   // never renders that region at all, so there is nothing left to assert here.
-  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }), null);
+  assert.equal(screen.queryByRole("region", { name: "Pending agent actions" }) === null, true);
 });
 
 test("failed turn copy is distinct from not-included and does not print path", () => {
@@ -269,5 +269,5 @@ test("failed turn copy is distinct from not-included and does not print path", (
   );
   assert.ok(screen.getByText(PI_TURN_FAILED));
   assert.equal(container.textContent?.includes("AGENTS.md"), false);
-  assert.equal(screen.queryByText(/Followed/i), null);
+  assert.equal(screen.queryByText(/Followed/i) === null, true);
 });

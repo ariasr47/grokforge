@@ -154,8 +154,8 @@ test("ready list names three Trusted paths, Applied chips, no Pending (AC-01/02)
   assert.ok(within(section).getByText("b.txt"));
   assert.ok(within(section).getByText("c.txt"));
   assert.equal(within(section).getAllByText("Applied").length, 3);
-  assert.equal(within(section).queryByText("Pending"), null);
-  assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
+  assert.equal(within(section).queryByText("Pending") === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
 });
 
 test("vendor session plan.md write does not mint Activity View diff", () => {
@@ -173,9 +173,9 @@ test("vendor session plan.md write does not mint Activity View diff", () => {
       },
     }),
   );
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
 
 test("read/grep activities with a leftover diff do not mint View diff pills", () => {
@@ -199,7 +199,7 @@ test("read/grep activities with a leftover diff do not mint View diff pills", ()
     />,
   );
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
 
 test("read file with a vendor editId still does not mint View diff", () => {
@@ -223,7 +223,7 @@ test("read file with a vendor editId still does not mint View diff", () => {
     />,
   );
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
 
 test("View diff matches activity.diff for the same editId (AC-03/17)", () => {
@@ -262,7 +262,7 @@ test("Rejected retains View diff body (AC-08)", () => {
   );
   const section = changesRegion();
   assert.ok(within(section).getByText("Rejected"));
-  assert.equal(within(section).queryByText("Pending"), null);
+  assert.equal(within(section).queryByText("Pending") === null, true);
   fireEvent.click(within(section).getByRole("button", { name: "View diff" }));
   assert.ok(within(section).getByText("+one", { exact: false }));
 });
@@ -284,8 +284,8 @@ test("complete zero members → no Changes dock (AC-09)", () => {
       },
     }),
   );
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
-  assert.equal(screen.queryByText("Loading file changes…"), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
+  assert.equal(screen.queryByText("Loading file changes…") === null, true);
 });
 
 test("singleton one-entry list is not suppressed (AC-19)", () => {
@@ -316,23 +316,23 @@ test("mixed list Diff unavailable does not become whole-list error (AC-20)", () 
   // No diff -> no View/Hide diff toggle offered for that row (never
   // fabricated) — exactly one such toggle exists, for kept.ts.
   assert.equal(within(section).getAllByRole("button", { name: /View diff|Hide diff/ }).length, 1);
-  assert.equal(screen.queryByText("Couldn’t load this run’s file changes.", { exact: false }), null);
+  assert.equal(screen.queryByText("Couldn’t load this run’s file changes.", { exact: false }) === null, true);
 });
 
 test("catch-up open shows Loading file changes… not absent (AC-21)", () => {
   renderWithChanges(run(), { catchUp: { phase: "open" } });
   assert.ok(screen.getByText("Loading file changes…"));
-  assert.equal(screen.queryByText("0"), null);
+  assert.equal(screen.queryByText("0") === null, true);
 });
 
 test("health-poll closed catch-up does not open Loading over a ready list (W3)", () => {
   renderWithChanges(trustedThree(), { catchUp: { phase: "closed" } });
   assert.ok(screen.getByRole("region", { name: CHANGES_DOCK_LABEL }));
-  assert.equal(screen.queryByText("Loading file changes…"), null);
+  assert.equal(screen.queryByText("Loading file changes…") === null, true);
   cleanup();
   renderWithChanges(trustedThree(), { catchUp: { phase: "closed" } });
   assert.ok(within(screen.getByRole("region", { name: CHANGES_DOCK_LABEL })).getByText("a.txt"));
-  assert.equal(screen.queryByText("Loading file changes…"), null);
+  assert.equal(screen.queryByText("Loading file changes…") === null, true);
 });
 
 test("catch-up failed shows load-failure copy, not empty (AC-23)", () => {
@@ -340,7 +340,7 @@ test("catch-up failed shows load-failure copy, not empty (AC-23)", () => {
   renderWithChanges(trustedThree(), { catchUp: { phase: "failed", message } });
   const section = changesRegion();
   assert.equal(within(section).getByRole("alert").textContent, message);
-  assert.equal(within(section).queryByText("a.txt"), null);
+  assert.equal(within(section).queryByText("a.txt") === null, true);
 });
 
 test("Bypass activity is excluded from File changes (AC-22)", () => {
@@ -356,7 +356,7 @@ test("Bypass activity is excluded from File changes (AC-22)", () => {
       },
     }),
   );
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
 });
 
 test("Reverted is not Applied and Revert is not offered (AC-26)", () => {
@@ -372,8 +372,8 @@ test("Reverted is not Applied and Revert is not offered (AC-26)", () => {
   );
   const section = changesRegion();
   assert.ok(within(section).getByText("Reverted"));
-  assert.equal(within(section).queryByText("Applied"), null);
-  assert.equal(within(section).queryByRole("button", { name: "Revert edit" }), null);
+  assert.equal(within(section).queryByText("Applied") === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Revert edit" }) === null, true);
 });
 
 test("conflict chrome is Edit not reverted with View diff (AC-05)", () => {
@@ -389,7 +389,7 @@ test("conflict chrome is Edit not reverted with View diff (AC-05)", () => {
   const section = changesRegion();
   assert.ok(within(section).getByText("Edit not reverted"));
   assert.ok(within(section).getByRole("button", { name: "View diff" }));
-  assert.equal(within(section).queryByRole("button", { name: "Revert edit" }), null);
+  assert.equal(within(section).queryByRole("button", { name: "Revert edit" }) === null, true);
 });
 
 test("pending diff-backed members show Accept/Reject, no fabricated helper text (AC-07)", () => {
@@ -418,7 +418,7 @@ test("pending diff-backed members show Accept/Reject, no fabricated helper text 
   const section = changesRegion();
   assert.equal(within(section).getAllByRole("button", { name: "Accept" }).length, 2);
   assert.equal(within(section).getAllByRole("button", { name: "Reject" }).length, 2);
-  assert.equal(within(section).queryByText("Pending"), null);
+  assert.equal(within(section).queryByText("Pending") === null, true);
 });
 
 test("RunSurface turn order: reasoning before the activity stack", () => {
@@ -505,7 +505,7 @@ test("Trusted list adds the second path on the next render without a second acti
   renderWithChanges(first);
   const firstSection = changesRegion();
   assert.ok(within(firstSection).getByText("a.txt"));
-  assert.equal(within(firstSection).queryByText("b.txt"), null);
+  assert.equal(within(firstSection).queryByText("b.txt") === null, true);
   cleanup();
   renderWithChanges(
     run({
@@ -550,7 +550,7 @@ test("settled Write file decision is not a duplicate transcript card", () => {
       },
     }),
   );
-  assert.equal(screen.queryByRole("group", { name: "Write file" }), null);
+  assert.equal(screen.queryByRole("group", { name: "Write file" }) === null, true);
   assert.ok(screen.getByRole("region", { name: CHANGES_DOCK_LABEL }));
   assert.ok(screen.getAllByText("DIFF.md").length >= 1);
 });
@@ -593,7 +593,7 @@ test("Review File changes path covers a second search-replace activity — no ex
   const section = changesRegion();
   assert.ok(within(section).getByRole("button", { name: "View diff" }));
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
 
 test("Review File changes member does not duplicate View diff in Activity", () => {
@@ -624,7 +624,7 @@ test("Review File changes member does not duplicate View diff in Activity", () =
   const section = changesRegion();
   assert.ok(within(section).getByRole("button", { name: "View diff" }));
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "View diff" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
 
 test("Review File changes member does not duplicate Revert edit in Activity", () => {
@@ -655,7 +655,7 @@ test("Review File changes member does not duplicate Revert edit in Activity", ()
   const section = changesRegion();
   assert.ok(within(section).getByRole("button", { name: "Revert edit" }));
   const activity = screen.getByLabelText("Activity");
-  assert.equal(within(activity).queryByRole("button", { name: "Revert edit" }), null);
+  assert.equal(within(activity).queryByRole("button", { name: "Revert edit" }) === null, true);
 });
 
 test("Review File changes revert success is not repeated in Activity", async () => {
@@ -714,7 +714,7 @@ test("Review File changes revert success is not repeated in Activity", async () 
     renderWithChanges(fixture, { recoveryFlash: { [reverted!.editId]: "reverted" } });
     assert.ok(within(changesRegion()).getByText("Edit reverted"));
     const activity = screen.getByLabelText("Activity");
-    assert.equal(within(activity).queryByText("Edit reverted"), null);
+    assert.equal(within(activity).queryByText("Edit reverted") === null, true);
   } finally {
     api.editRecovery = original;
   }

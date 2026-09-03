@@ -260,9 +260,9 @@ describe("vendor-run-terminal observe chrome isolation", () => {
     );
     await waitFor(() => assert.ok(document.querySelector(`[data-run-id="${RUN_B}"]`)));
     assert.equal(observeLeaked(), false);
-    assert.equal(screen.queryByLabelText(CHILD_AGENTS_HEADER), null);
-    assert.equal(screen.queryByLabelText(BROWSER_HEADER), null);
-    assert.equal(screen.queryByLabelText(MCP_HEADER), null);
-    assert.equal(screen.queryByLabelText(HOOKS_HEADER), null);
+    assert.equal(screen.queryByLabelText(CHILD_AGENTS_HEADER) === null, true);
+    assert.equal(screen.queryByLabelText(BROWSER_HEADER) === null, true);
+    assert.equal(screen.queryByLabelText(MCP_HEADER) === null, true);
+    assert.equal(screen.queryByLabelText(HOOKS_HEADER) === null, true);
   });
 });

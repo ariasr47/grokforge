@@ -30,8 +30,8 @@ test("exploring exact copy", () => {
 test("restoring catch-up copy is not exploring", () => {
   render(<PlanSection projection={{ state: "loading" }} />);
   assert.ok(screen.getByText(PLAN_RESTORING));
-  assert.equal(screen.queryByText(PLAN_EXPLORING), null);
-  assert.equal(screen.queryByText(PLAN_EMPTY), null);
+  assert.equal(screen.queryByText(PLAN_EXPLORING) === null, true);
+  assert.equal(screen.queryByText(PLAN_EMPTY) === null, true);
 });
 
 test("empty ready shows No changes proposed. and zero members", () => {
@@ -47,8 +47,8 @@ test("empty ready shows No changes proposed. and zero members", () => {
     />,
   );
   assert.ok(screen.getByText(PLAN_EMPTY));
-  assert.equal(screen.queryByText(PLAN_CHIP_PROPOSED), null);
-  assert.equal(screen.queryByRole("button", { name: /accept/i }), null);
+  assert.equal(screen.queryByText(PLAN_CHIP_PROPOSED) === null, true);
+  assert.equal(screen.queryByRole("button", { name: /accept/i }) === null, true);
 });
 
 test("accepted helper with Policy label", () => {
@@ -88,7 +88,7 @@ test("cancelled / failed / superseded / load failure exact copy", () => {
   assert.ok(screen.getByText(PLAN_CANCELLED));
   rerender(<PlanSection projection={{ state: "failed" }} />);
   assert.ok(screen.getByText(PLAN_FAILED));
-  assert.equal(screen.queryByText(PLAN_CANCELLED), null);
+  assert.equal(screen.queryByText(PLAN_CANCELLED) === null, true);
   rerender(<PlanSection projection={{ state: "superseded" }} />);
   assert.ok(screen.getByText(PLAN_SUPERSEDED));
   rerender(<PlanSection projection={{ state: "error", message: PLAN_LOAD_FAILURE }} />);
@@ -131,8 +131,8 @@ test("multi-path lists Proposed members and dock helper; no Accept in section", 
   assert.ok(screen.getByText("apps/shell/src/b.tsx"));
   assert.equal(screen.getAllByText(PLAN_CHIP_PROPOSED).length, 2);
   assert.ok(screen.getByText(PLAN_READY_HELPER));
-  assert.equal(screen.queryByRole("button", { name: /accept plan/i }), null);
-  assert.equal(screen.queryByRole("button", { name: /reject/i }), null);
+  assert.equal(screen.queryByRole("button", { name: /accept plan/i }) === null, true);
+  assert.equal(screen.queryByRole("button", { name: /reject/i }) === null, true);
 });
 
 test("ready non-empty collapse toggle hides members", () => {
@@ -151,7 +151,7 @@ test("ready non-empty collapse toggle hides members", () => {
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
   fireEvent.click(toggle);
   assert.equal(toggle.getAttribute("aria-expanded"), "false");
-  assert.equal(screen.queryByText("src/a.ts"), null);
+  assert.equal(screen.queryByText("src/a.ts") === null, true);
 });
 
 test("kept_planning exact helper", () => {

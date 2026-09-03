@@ -1,6 +1,6 @@
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import {
@@ -179,7 +179,7 @@ describe("named-projects App journeys", () => {
       });
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() => assert.ok(screen.getByText(HOME_NAME_SAVE_FAILED)));
-      assert.equal(screen.queryByRole("button", { name: /^Will fail$/ }), null);
+      assert.equal(screen.queryByRole("button", { name: /^Will fail$/ }) === null, true);
     } finally {
       Storage.prototype.setItem = orig;
     }
@@ -208,7 +208,7 @@ describe("named-projects App journeys", () => {
     await waitFor(() => assert.ok(screen.getByText("Pack · 1 files")));
     const chip = screen.getByRole("button", { name: "Pack · 1 files" });
     assert.equal(chip.getAttribute("title"), PACK_COMPOSER_ARMED_TOOLTIP);
-    assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+    assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
     fireEvent.change(screen.getByLabelText("Pack note"), { target: { value: "ship notes" } });
     fireEvent.click(screen.getByRole("button", { name: "Save note" }));
     await waitFor(() => assert.ok(screen.getByText("Pack · 1 files · note")));
@@ -247,12 +247,18 @@ describe("named-projects App journeys", () => {
     FakeWebSocket.latest()?.emit({ type: "state", state: { ...host.state } });
     await waitFor(() => assert.ok(screen.getByText("Pack · 1 files · note")));
     const user = userEvent.setup();
-    await user.click(screen.getByText("Other"));
+    // Switch homes via the sidebar's own session list. Home's "Chat homes"
+    // column (Task 13, un-parked) now legitimately lists this same session
+    // too — real data, not a bug — so an unscoped screen.getByText("Other")
+    // is ambiguous between the two. The sidebar is the actual surface this
+    // test means to exercise (switching sessions), so scope to it.
+    const sidebar = screen.getByRole("complementary", { name: "Chat sessions" });
+    await user.click(within(sidebar).getByText("Other"));
     await waitFor(() => {
       assert.ok(screen.getAllByText(PACK_COMPOSER_LOADING).length >= 1);
-      assert.equal(screen.queryByText("from-a.md"), null);
-      assert.equal(screen.queryByText("alpha"), null);
-      assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+      assert.equal(screen.queryByText("from-a.md") === null, true);
+      assert.equal(screen.queryByText("alpha") === null, true);
+      assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
     });
   });
 
@@ -278,8 +284,8 @@ describe("named-projects App journeys", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("radio", { name: "Code" }));
     await waitFor(() => {
-      assert.equal(screen.queryByText("Pack · 1 files · note"), null);
-      assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY), null);
+      assert.equal(screen.queryByText("Pack · 1 files · note") === null, true);
+      assert.equal(screen.queryByText(PACK_COMPOSER_EMPTY) === null, true);
     });
     const durable = loadSession(CHAT_PART, HOME_A);
     assert.equal(durable?.packMembers?.files[0]?.path, "keep.md");
@@ -321,7 +327,7 @@ describe("named-projects App journeys", () => {
       ) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(screen.getByText(PACK_TURN_HYDRATING)));
-    assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+    assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
     ws.emit(
       envelope(
         {

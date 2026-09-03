@@ -54,15 +54,15 @@ function ready(overrides: Partial<Extract<ChildAgentsProjection, { state: "ready
 test("absent renders no Child agents section", () => {
   const { container } = render(<ChildAgentsSection projection={{ state: "absent" }} />);
   assert.equal(container.textContent, "");
-  assert.equal(container.querySelector("[aria-label='Child agents']"), null);
-  assert.equal(screen.queryByText(CHILD_AGENTS_HEADER), null);
+  assert.equal(container.querySelector("[aria-label='Child agents']") === null, true);
+  assert.equal(screen.queryByText(CHILD_AGENTS_HEADER) === null, true);
 });
 
 test("loading shows Loading child agents…", () => {
   render(<ChildAgentsSection projection={{ state: "loading", members: null, reconnectCopy: null }} />);
   assert.ok(screen.getByText(CHILD_AGENTS_LOADING));
   assert.ok(screen.getByLabelText(CHILD_AGENTS_HEADER));
-  assert.equal(screen.queryByText("0 children"), null);
+  assert.equal(screen.queryByText("0 children") === null, true);
 });
 
 test("loading keeps prior members inspectable", () => {
@@ -84,7 +84,7 @@ test("error shows Couldn't load child agents. as alert", () => {
   render(<ChildAgentsSection projection={{ state: "error", message: CHILD_AGENTS_FAILED }} />);
   const alert = screen.getByRole("alert");
   assert.equal(alert.textContent, CHILD_AGENTS_FAILED);
-  assert.equal(screen.queryByText(CHILD_AGENTS_LOADING), null);
+  assert.equal(screen.queryByText(CHILD_AGENTS_LOADING) === null, true);
 });
 
 test("ready header, count, live Running chip, and identity", () => {
@@ -122,9 +122,9 @@ test("withheld historical running has identity but no live Running chip and is n
   );
   const section = screen.getByLabelText(CHILD_AGENTS_HEADER);
   assert.ok(within(section).getByText("Researcher"));
-  assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING), null);
+  assert.equal(within(section).queryByText(CHILD_AGENTS_STATUS_RUNNING) === null, true);
   assert.ok(within(section).getByText(CHILD_AGENTS_STATUS_DONE));
-  assert.equal(within(section).queryByText("1 running"), null);
+  assert.equal(within(section).queryByText("1 running") === null, true);
   assert.ok(within(section).getByText("1 done"));
   assert.ok(within(section).getByText(CHILD_AGENTS_OFFLINE));
 });
@@ -140,7 +140,7 @@ test("parent-terminal reconnect copy is the short string", () => {
     />,
   );
   assert.ok(screen.getByText(CHILD_AGENTS_RECONNECT_SHORT));
-  assert.equal(screen.queryByText(CHILD_AGENTS_OFFLINE), null);
+  assert.equal(screen.queryByText(CHILD_AGENTS_OFFLINE) === null, true);
 });
 
 test("Done and Failed chips carry meaning in text and tooltip", () => {
@@ -181,7 +181,7 @@ test("header toggle collapses and expands rows", async () => {
   render(<ChildAgentsSection projection={ready()} />);
   assert.ok(screen.getByText("Researcher"));
   await user.click(screen.getByRole("button", { name: /Child agents/i }));
-  assert.equal(screen.queryByText("Researcher"), null);
+  assert.equal(screen.queryByText("Researcher") === null, true);
   await user.click(screen.getByRole("button", { name: /Child agents/i }));
   assert.ok(screen.getByText("Researcher"));
 });
@@ -203,10 +203,10 @@ test("long identity is in title and accessible name", () => {
 test("Child agents never hosts settle controls", () => {
   render(<ChildAgentsSection projection={ready()} />);
   const section = screen.getByLabelText(CHILD_AGENTS_HEADER);
-  assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Decline" }), null);
+  assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Decline" }) === null, true);
 });
 
 test("banned Stuck / Status unconfirmed copy is not painted", () => {

@@ -66,7 +66,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     assert.ok(
       await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
     );
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
 
   it("priorConversations:true + empty partition -> the not-found state, never the welcome", async () => {
@@ -83,7 +83,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     render(<App />);
 
     assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
   });
 
   it("priorConversations:false + empty partition -> the first-run welcome (genuine first run)", async () => {
@@ -102,7 +102,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     render(<App />);
 
     assert.ok(await screen.findByText("Welcome to Forge"));
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
 
   it("priorConversations:true but the partition already has messages -> renders the transcript, not the not-found state", async () => {
@@ -124,7 +124,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     render(<App />);
 
     assert.ok(await screen.findByText(/already have history/));
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
 
   it("priorConversations:false and the partition already has messages -> renders the transcript", async () => {
@@ -146,8 +146,8 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
     render(<App />);
 
     assert.ok(await screen.findByText(/already have history too/));
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
   });
 
   it("priorConversations:true never hides a restored owned run with no legacy messages", async () => {
@@ -178,7 +178,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
 
     await waitFor(() => assert.ok(document.querySelector(".node--done")));
     assert.ok(screen.getByText("restored answer"));
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
 });
 
@@ -219,10 +219,9 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
       await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
     );
     assert.equal(
-      screen.queryByText("Forge didn't find your earlier conversations."),
-      null,
+      screen.queryByText("Forge didn't find your earlier conversations.") === null, true,
     );
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
   });
 
   it("Chat history exists + onboarding undismissed + Code opened for the first time -> ordinary empty state, never the welcome", async () => {
@@ -266,10 +265,9 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     assert.ok(
       await screen.findByPlaceholderText("Open a folder, jump to a session, or ask Grok…"),
     );
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
     assert.equal(
-      screen.queryByText("Forge didn't find your earlier conversations."),
-      null,
+      screen.queryByText("Forge didn't find your earlier conversations.") === null, true,
     );
   });
 
@@ -292,8 +290,8 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     render(<App />);
 
     assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
-    assert.equal(screen.queryByText("Open a project"), null);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
+    assert.equal(screen.queryByText("Open a project") === null, true);
   });
 
   it("Start a new conversation dismisses the not-found alarm so Code's ordinary empty state can show", async () => {
@@ -311,12 +309,12 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     render(<App />);
     assert.ok(await screen.findByText("Forge didn't find your earlier conversations."));
     await userEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
-    assert.equal(screen.queryByText("Forge didn't find your earlier conversations."), null);
-    assert.equal(screen.queryByText("Welcome to Forge"), null);
+    assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
+    assert.equal(screen.queryByText("Welcome to Forge") === null, true);
     // Task 13 — "Code continuum" (the old ready-kind EmptyStates heading) is
     // gone; the Home screen renders instead, regardless of product mode.
     assert.ok(screen.getByPlaceholderText("Open a folder, jump to a session, or ask Grok…"));
     assert.equal(screen.getAllByText("New session").length >= 1, true);
-    assert.equal(screen.queryByText("New chat"), null);
+    assert.equal(screen.queryByText("New chat") === null, true);
   });
 });

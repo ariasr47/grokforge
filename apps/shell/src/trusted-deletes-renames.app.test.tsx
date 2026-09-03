@@ -186,8 +186,8 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     await waitFor(() => {
       assert.ok(screen.getByRole("article", { name: /Run delete a file/ }));
     });
-    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
-    assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
+    assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED) === null, true);
   });
 
   it("Code mode shows Deleted/Renamed only from vouched kind fields", async () => {
@@ -255,8 +255,8 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(/run_shell|run shell/i));
     });
-    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
-    assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
-    assert.equal(screen.queryByText(FILE_CHANGES_KIND_RENAMED), null);
+    assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
+    assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED) === null, true);
+    assert.equal(screen.queryByText(FILE_CHANGES_KIND_RENAMED) === null, true);
   });
 });

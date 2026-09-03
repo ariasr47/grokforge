@@ -148,7 +148,7 @@ for (const mode of ["chat", "code"] as const) {
     await user.click(screen.getByRole("button", { name: "Cancel run" }));
     await screen.findByText("Cancelled", {}, { timeout: 10_000 });
     assert.equal(screen.getAllByText("answer before cancel").length, 1);
-    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
   });
 
   test(`${mode} cancelled partial survives a full App reload`, async () => {
@@ -165,7 +165,7 @@ for (const mode of ["chat", "code"] as const) {
     await screen.findByRole("radio", { name: mode === "chat" ? "Chat" : "Code" });
     await screen.findByText("Cancelled", {}, { timeout: 10_000 });
     assert.equal(screen.getAllByText("answer before cancel").length, 1);
-    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
   });
 
   test(`${mode} orphan partial survives host replacement and App reload`, async () => {
@@ -187,7 +187,7 @@ for (const mode of ["chat", "code"] as const) {
     await screen.findByText("Run failed", {}, { timeout: 10_000 });
     assert.equal(screen.getAllByText("received before restart").length, 1);
     assert.equal(screen.getAllByText("Run failed", { exact: true }).length, 1);
-    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }), null);
+    assert.equal(screen.queryByRole("article", { name: /assistant answer/i }) === null, true);
     const nextDraft = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     await user.type(nextDraft, "next after restart");
     await waitFor(() => assert.equal((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled, false));
@@ -211,7 +211,7 @@ for (const mode of ["chat", "code"] as const) {
     await screen.findByText("Run failed", {}, { timeout: 15_000 });
     assert.equal(screen.getAllByText("received before restart").length, 1);
     assert.equal(screen.getAllByText("Run failed", { exact: true }).length, 1);
-    assert.equal(screen.queryByText(/Reconnecting — Connection lost/), null);
+    assert.equal(screen.queryByText(/Reconnecting — Connection lost/) === null, true);
     const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
     await waitFor(() => assert.equal(composer.disabled, false));
     await user.type(composer, "next without reload");
@@ -315,7 +315,7 @@ for (const mode of ["chat", "code"] as const) {
     const answerMatches = within(runSurface).getAllByText("ok from grok-4.6");
     assert.equal(countVouchedAnswer("ok from grok-4.6", runSurface), 1, answerMatches.map((node) => node.parentElement?.outerHTML ?? node.outerHTML).join("\n--- duplicate answer surface ---\n"));
     assert.equal(within(runSurface).getAllByText(`${mode} fast race`).length, 1);
-    assert.equal(screen.queryByText("Run in progress…"), null);
+    assert.equal(screen.queryByText("Run in progress…") === null, true);
   });
   test(`${mode} real reload preserves run projection and active session`, async () => {
     const h = await host(); await mountApp(h, mode); const user = userEvent.setup();
@@ -347,8 +347,8 @@ for (const mode of ["chat", "code"] as const) {
       await waitFor(async () => { const response = await originalFetch(`${h.baseUrl}/api/runs/${runId}?sessionId=${encodeURIComponent(owningSessionId)}&after=0`); const replay = await response.json() as { run?: { state?: string } }; assert.equal(replay.run?.state, "terminal"); });
       await user.click(screen.getByRole("button", { name: "Cancel run" }));
       await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
-      await waitFor(() => { assert.equal(screen.queryByText("Ending run…"), null); assert.equal(screen.queryAllByText("Cancelling…").length, 0); assert.equal((screen.getByLabelText("Message to agent") as HTMLTextAreaElement).disabled, false); });
-      assert.equal(countVouchedAnswer("ok from grok-4.6"), 1); assert.equal(screen.queryByText(/Run is terminal|selective replay fault/), null);
+      await waitFor(() => { assert.equal(screen.queryByText("Ending run…") === null, true); assert.equal(screen.queryAllByText("Cancelling…").length, 0); assert.equal((screen.getByLabelText("Message to agent") as HTMLTextAreaElement).disabled, false); });
+      assert.equal(countVouchedAnswer("ok from grok-4.6"), 1); assert.equal(screen.queryByText(/Run is terminal|selective replay fault/) === null, true);
       const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement; await user.type(composer, "next draft"); assert.equal((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled, false);
     } finally { globalThis.fetch = originalFetch; globalThis.WebSocket = originalWebSocket; }
   });
@@ -366,7 +366,7 @@ for (const mode of ["chat", "code"] as const) {
     await screen.findByText(/Reconnecting — Connection lost\. Forge is reconnecting\./);
     await waitFor(() => assert.ok(document.querySelector(".node--done")), { timeout: 10_000 });
     assert.equal(countVouchedAnswer("settled answer"), 1, "replayed answer must render once");
-    assert.equal(screen.queryByText(/late reasoning|late answer|late-tool|late_error/), null, "late classes must not escape the settled owning run");
+    assert.equal(screen.queryByText(/late reasoning|late answer|late-tool|late_error/) === null, true, "late classes must not escape the settled owning run");
   });
 }
 

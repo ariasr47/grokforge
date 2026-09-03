@@ -326,7 +326,7 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     assert.ok(host.callsTo("/api/runs").length >= 1);
     const firstSection = screen.queryByRole("region", { name: CHANGES_DOCK_LABEL });
     assert.ok(firstSection);
-    assert.equal(within(firstSection!).queryByText("Loading file changes…"), null);
+    assert.equal(within(firstSection!).queryByText("Loading file changes…") === null, true);
 
     const runsBefore = host.callsTo("/api/runs").length;
     assert.ok(poll, "health-poll scheduler must be installed");
@@ -334,7 +334,7 @@ describe("inspectable-run-changeset App wiring (AC-07/11/12/16/25)", () => {
     await waitFor(() => {
       assert.ok(host.callsTo("/api/runs").length > runsBefore);
     });
-    assert.equal(screen.queryByText("Loading file changes…"), null);
+    assert.equal(screen.queryByText("Loading file changes…") === null, true);
     const section = screen.getByRole("region", { name: CHANGES_DOCK_LABEL });
     assert.ok(within(section).getByText("r1.txt"));
   });

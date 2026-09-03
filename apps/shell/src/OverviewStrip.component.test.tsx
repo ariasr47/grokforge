@@ -51,7 +51,7 @@ test("FILES stays plain text when there is nothing to jump to", () => {
       onJumpToFiles={() => undefined}
     />,
   );
-  assert.equal(screen.queryByRole("button", { name: /files/i }), null);
+  assert.equal(screen.queryByRole("button", { name: /files/i }) === null, true);
 });
 
 const winCmd = {
@@ -75,7 +75,7 @@ test("vendor Windows Code shows PowerShell, not Forge cmd.exe", () => {
     />,
   );
   assert.match(screen.getByLabelText("Run overview").textContent || "", /shell\s+PowerShell/i);
-  assert.equal(screen.queryByText(/Command Prompt/i), null);
+  assert.equal(screen.queryByText(/Command Prompt/i) === null, true);
 });
 
 test("fallback Windows Code keeps Command Prompt", () => {

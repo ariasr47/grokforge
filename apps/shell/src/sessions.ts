@@ -340,6 +340,20 @@ export function chatListTitle(sess: {
   return HOME_NAME_PLACEHOLDER;
 }
 
+/** Home screen's Chat-homes preview (Task 13): a single-line excerpt of a
+ *  session's most recent non-empty message, or null when the session has
+ *  no messages yet (walks backward past any empty-content entries rather
+ *  than trusting the very last array slot blindly). Length-capped as a
+ *  safety net against handing an unbounded string to the DOM/store — the
+ *  visual truncation itself is CSS (`.home-s`'s ellipsis). */
+export function chatSessionPreview(sess: { messages: StoredMessage[] }): string | null {
+  for (let i = sess.messages.length - 1; i >= 0; i -= 1) {
+    const flat = sess.messages[i]!.content.replace(/\s+/g, " ").trim();
+    if (flat) return flat.length > 140 ? `${flat.slice(0, 140).trimEnd()}…` : flat;
+  }
+  return null;
+}
+
 export function createSession(
   workspace: string,
   title = defaultSessionTitle(workspace),

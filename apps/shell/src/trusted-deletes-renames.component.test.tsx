@@ -187,10 +187,10 @@ test("Review pending delete/rename are diff-backed — Accept/Reject show direct
   assert.ok(within(section).getByText(FILE_CHANGES_KIND_RENAMED));
   assert.ok(within(section).getByText("gone.txt"));
   assert.ok(within(section).getByText("from.txt"));
-  assert.equal(within(section).queryByText("from.txt → to.txt"), null);
+  assert.equal(within(section).queryByText("from.txt → to.txt") === null, true);
   assert.equal(within(section).getAllByRole("button", { name: "Accept" }).length, 2);
   assert.equal(within(section).getAllByRole("button", { name: "Reject" }).length, 2);
-  assert.equal(within(section).queryByText("Pending"), null);
+  assert.equal(within(section).queryByText("Pending") === null, true);
 });
 
 test("Reject of staged pending rename keeps Rejected + Renamed on fromPath (AC-11)", () => {
@@ -214,7 +214,7 @@ test("Reject of staged pending rename keeps Rejected + Renamed on fromPath (AC-1
   assert.ok(within(section).getByText("Rejected"));
   assert.ok(within(section).getByText(FILE_CHANGES_KIND_RENAMED));
   assert.ok(within(section).getByText("from.txt"));
-  assert.equal(within(section).queryByText("from.txt → to.txt"), null);
+  assert.equal(within(section).queryByText("from.txt → to.txt") === null, true);
 });
 
 test("Accept rename shows fromPath → toPath with Accepted (AC-11)", () => {
@@ -253,15 +253,15 @@ test("recovery.status failed keeps Applied + kind and offers no Restore/Revert (
   const section = changesRegion();
   assert.ok(within(section).getByText("Applied"));
   assert.ok(within(section).getByText(FILE_CHANGES_KIND_DELETED));
-  assert.equal(within(section).queryByRole("button", { name: "Restore file" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Revert rename" }), null);
-  assert.equal(within(section).queryByText("File restored"), null);
+  assert.equal(within(section).queryByRole("button", { name: "Restore file" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Revert rename" }) === null, true);
+  assert.equal(within(section).queryByText("File restored") === null, true);
 });
 
 test("catch-up loading / failure / complete-zero stay distinct for delete-rename membership (AC-19/25)", () => {
   renderChanges(run(), { catchUp: { phase: "open" } });
   assert.ok(screen.getByText("Loading file changes…"));
-  assert.equal(screen.queryByText("0"), null);
+  assert.equal(screen.queryByText("0") === null, true);
   cleanup();
 
   const message = "Couldn’t load this run’s file changes. Activity rows and diffs that already loaded stay available.";
@@ -270,7 +270,7 @@ test("catch-up loading / failure / complete-zero stay distinct for delete-rename
   });
   const failed = changesRegion();
   assert.equal(within(failed).getByRole("alert").textContent, message);
-  assert.equal(within(failed).queryByText("gone.txt"), null);
+  assert.equal(within(failed).queryByText("gone.txt") === null, true);
   cleanup();
 
   const { container } = render(
@@ -294,8 +294,8 @@ test("catch-up loading / failure / complete-zero stay distinct for delete-rename
       catchUp={{ phase: "closed" }}
     />,
   );
-  assert.equal(container.querySelector(".changes"), null);
-  assert.equal(screen.queryByText("Loading file changes…"), null);
+  assert.equal(container.querySelector(".changes") === null, true);
+  assert.equal(screen.queryByText("Loading file changes…") === null, true);
 });
 
 test("opening View diff does not call restore/revert (AC-20)", () => {
@@ -347,8 +347,8 @@ test("Chat productMode does not mount File changes even with vouched delete (AC-
       productMode="chat"
     />,
   );
-  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }), null);
-  assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED), null);
+  assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
+  assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED) === null, true);
 });
 
 test("shell path-ish activity is not a Deleted File changes member (AC-15/22)", () => {

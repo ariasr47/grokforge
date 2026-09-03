@@ -33,7 +33,10 @@ describe("Button", () => {
     const ref = createRef<HTMLButtonElement>();
     render(createElement(Button, { ref }, "Send"));
     assert.equal(ref.current?.tagName, "BUTTON");
-    assert.equal(ref.current, screen.getByRole("button", { name: "Send" }));
+    assert.equal(
+      ref.current === screen.getByRole("button", { name: "Send" }),
+      true,
+    );
   });
 
   it("cva extra className still keeps Voidglass .btn", () => {

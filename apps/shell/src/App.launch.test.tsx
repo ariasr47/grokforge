@@ -49,7 +49,7 @@ describe("F2 — AC-U1/AC3: starting card while the launcher is still deciding",
     assert.ok(document.querySelector(".boot-spinner"));
 
     // Never a transcript, empty state, or blank surface.
-    assert.equal(screen.queryByRole("status"), null); // no EmptyStates
+    assert.equal(screen.queryByRole("status") === null, true); // no EmptyStates
     assert.equal(document.querySelector(".transcript"), null);
     assert.equal(document.querySelector(".app"), null);
     assert.ok(document.querySelector(".boot-screen"));
@@ -71,7 +71,7 @@ describe("F2 — AC-U1/AC3: starting card while the launcher is still deciding",
     render(<App />);
 
     await screen.findByText("Forge");
-    assert.equal(screen.queryByText("Almost ready…"), null);
+    assert.equal(screen.queryByText("Almost ready…") === null, true);
 
     restoreTauri();
   });

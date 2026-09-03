@@ -52,18 +52,18 @@ test("loading / offline / confirm_error hide members", () => {
     <ChatPackInventory projection={{ state: "loading" }} members={members} {...noop} />,
   );
   assert.ok(screen.getByText(PACK_COMPOSER_LOADING));
-  assert.equal(screen.queryByText("secret.md"), null);
-  assert.equal(screen.queryByText("hidden note"), null);
+  assert.equal(screen.queryByText("secret.md") === null, true);
+  assert.equal(screen.queryByText("hidden note") === null, true);
   rerender(
     <ChatPackInventory projection={{ state: "offline" }} members={members} {...noop} />,
   );
   assert.ok(screen.getByText(PACK_COMPOSER_OFFLINE));
-  assert.equal(screen.queryByText("secret.md"), null);
+  assert.equal(screen.queryByText("secret.md") === null, true);
   rerender(
     <ChatPackInventory projection={{ state: "confirm_error" }} members={members} {...noop} />,
   );
   assert.ok(screen.getByText(PACK_COMPOSER_CONFIRM_ERROR));
-  assert.equal(screen.queryByText("secret.md"), null);
+  assert.equal(screen.queryByText("secret.md") === null, true);
 });
 
 test("armed lists Geist Mono paths and note; pin_failed keeps prior members", () => {

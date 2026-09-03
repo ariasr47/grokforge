@@ -48,7 +48,7 @@ test("recovery's ask gate offers only the one real action, with no dismiss", () 
   // would hide the card while the composer stays locked on it.
   assert.equal(options.length, 1);
   assert.ok(within(gate).getByRole("button", { name: GATE_RECOVER }));
-  assert.equal(within(gate).queryByRole("button", { name: GATE_ASK_ELSE }), null);
+  assert.equal(within(gate).queryByRole("button", { name: GATE_ASK_ELSE }) === null, true);
 });
 
 test("no recovery decision means no ask gate and an empty dock stays hidden", () => {

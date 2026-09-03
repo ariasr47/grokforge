@@ -144,7 +144,7 @@ describe("project-instructions App journeys", () => {
       assert.ok(screen.getByText(PI_COMPOSER_LOADED_LABEL));
       assert.ok(screen.getByText("AGENTS.md"));
     });
-    assert.equal(screen.queryByText(/Followed/i), null);
+    assert.equal(screen.queryByText(/Followed/i) === null, true);
     assert.equal(document.body.textContent?.includes("Agents.md"), false);
   });
 
@@ -161,7 +161,7 @@ describe("project-instructions App journeys", () => {
     render(<App />);
     await screen.findByLabelText("Message to agent");
     await waitFor(() => assert.ok(screen.getByText(PI_COMPOSER_EMPTY)));
-    assert.equal(screen.queryByText(PI_COMPOSER_ERROR), null);
+    assert.equal(screen.queryByText(PI_COMPOSER_ERROR) === null, true);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Message to agent"), "keep going");
     assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
@@ -174,8 +174,8 @@ describe("project-instructions App journeys", () => {
       },
     });
     await waitFor(() => assert.ok(screen.getByText(PI_COMPOSER_ERROR)));
-    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
-    assert.equal(screen.queryByText("AGENTS.md"), null);
+    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
+    assert.equal(screen.queryByText("AGENTS.md") === null, true);
     assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
   });
 
@@ -207,7 +207,7 @@ describe("project-instructions App journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(piTurnIncluded("AGENTS.md")));
     });
-    assert.equal(screen.queryByText(/Followed/i), null);
+    assert.equal(screen.queryByText(/Followed/i) === null, true);
   });
 
   it("failed turn copy restores after catch-up and is not collapsed (AC-19)", async () => {
@@ -250,8 +250,8 @@ describe("project-instructions App journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(PI_TURN_FAILED));
     });
-    assert.equal(screen.queryByText(/No project instructions for this turn/), null);
-    assert.equal(screen.queryByText(piTurnIncluded("AGENTS.md")), null);
+    assert.equal(screen.queryByText(/No project instructions for this turn/) === null, true);
+    assert.equal(screen.queryByText(piTurnIncluded("AGENTS.md")) === null, true);
     assert.ok(host.callsTo("/api/runs").length >= 1);
   });
 
@@ -273,8 +273,8 @@ describe("project-instructions App journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(PI_COMPOSER_LOADING));
     });
-    assert.equal(screen.queryByText("AGENTS.md"), null);
-    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
+    assert.equal(screen.queryByText("AGENTS.md") === null, true);
+    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
   });
 
   it("Chat journey has no recipe chrome (AC-20)", async () => {
@@ -287,8 +287,8 @@ describe("project-instructions App journeys", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
     render(<App />);
     await screen.findByLabelText("Message to agent");
-    assert.equal(screen.queryByText(PI_COMPOSER_LOADED_LABEL), null);
-    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY), null);
+    assert.equal(screen.queryByText(PI_COMPOSER_LOADED_LABEL) === null, true);
+    assert.equal(screen.queryByText(PI_COMPOSER_EMPTY) === null, true);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Message to agent"), "hello chat");
     assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);

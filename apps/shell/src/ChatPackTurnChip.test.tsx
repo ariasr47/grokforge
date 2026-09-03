@@ -22,8 +22,8 @@ test("absent renders nothing", () => {
 test("hydrating is Confirming… — not empty", () => {
   render(<ChatPackTurnChip projection={{ state: "hydrating" }} />);
   assert.ok(screen.getByText(PACK_TURN_HYDRATING));
-  assert.equal(screen.queryByText(PACK_TURN_NOT_INCLUDED), null);
-  assert.equal(screen.queryByText(PACK_TURN_INCLUDED), null);
+  assert.equal(screen.queryByText(PACK_TURN_NOT_INCLUDED) === null, true);
+  assert.equal(screen.queryByText(PACK_TURN_INCLUDED) === null, true);
 });
 
 test("included is Included pack — never armed copy", () => {
@@ -33,7 +33,7 @@ test("included is Included pack — never armed copy", () => {
     />,
   );
   assert.ok(screen.getByText(PACK_TURN_INCLUDED));
-  assert.equal(screen.queryByText(/Armed/), null);
+  assert.equal(screen.queryByText(/Armed/) === null, true);
 });
 
 test("not_included / confirm_error / faults use exact copy", () => {

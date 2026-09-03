@@ -38,7 +38,7 @@ describe("ThreadHeader — title and meta", () => {
 
   it("renders no meta element at all when nothing real is known", () => {
     const { container } = render(<ThreadHeader {...baseProps()} />);
-    assert.equal(container.querySelector(".meta"), null);
+    assert.equal(container.querySelector(".meta") === null, true);
   });
 });
 
@@ -63,7 +63,7 @@ describe("ThreadHeader — live status", () => {
 
   it("renders no live-status element when there is nothing live and no decision pending", () => {
     const { container } = render(<ThreadHeader {...baseProps()} />);
-    assert.equal(container.querySelector(".hstat"), null);
+    assert.equal(container.querySelector(".hstat") === null, true);
   });
 
   it("shows a ghost Cancel run button only while a run is cancellable, and it calls onCancel", () => {
@@ -74,18 +74,18 @@ describe("ThreadHeader — live status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
     assert.deepEqual(calls, [1]);
     rerender(<ThreadHeader {...baseProps()} liveStatusText="Thinking…" cancellable={false} />);
-    assert.equal(screen.queryByRole("button", { name: "Cancel run" }), null);
+    assert.equal(screen.queryByRole("button", { name: "Cancel run" }) === null, true);
   });
 });
 
 describe("ThreadHeader — Overview popover", () => {
   it("Overview button opens the overview content and Escape closes it", () => {
     render(<ThreadHeader {...baseProps()} />);
-    assert.equal(screen.queryByTestId("overview-content"), null);
+    assert.equal(screen.queryByTestId("overview-content") === null, true);
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     assert.ok(screen.getByTestId("overview-content"));
     fireEvent.keyDown(document, { key: "Escape" });
-    assert.equal(screen.queryByTestId("overview-content"), null);
+    assert.equal(screen.queryByTestId("overview-content") === null, true);
   });
 
   it("clicking Overview again toggles it closed", () => {
@@ -94,7 +94,7 @@ describe("ThreadHeader — Overview popover", () => {
     fireEvent.click(btn);
     assert.ok(screen.getByTestId("overview-content"));
     fireEvent.click(btn);
-    assert.equal(screen.queryByTestId("overview-content"), null);
+    assert.equal(screen.queryByTestId("overview-content") === null, true);
   });
 });
 
@@ -112,7 +112,7 @@ describe("ThreadHeader — Export", () => {
 describe("ThreadHeader — Changes chip", () => {
   it("is absent when nothing is available for the dock", () => {
     render(<ThreadHeader {...baseProps()} changesAvailable={false} />);
-    assert.equal(screen.queryByRole("button", { name: /Changes/ }), null);
+    assert.equal(screen.queryByRole("button", { name: /Changes/ }) === null, true);
   });
 
   it("shows the count and calls onToggleChanges when available", () => {

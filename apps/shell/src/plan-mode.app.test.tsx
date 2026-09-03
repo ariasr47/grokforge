@@ -137,7 +137,7 @@ describe("plan-mode App journeys", () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
     render(<App />);
     await screen.findByLabelText("Message to agent");
-    assert.equal(screen.queryByLabelText("Plan"), null);
+    assert.equal(screen.queryByLabelText("Plan") === null, true);
     fireEvent.change(screen.getByLabelText("Message to agent"), { target: { value: "Hello" } });
     assert.equal(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"), false);
   });
@@ -272,8 +272,8 @@ describe("plan-mode App journeys", () => {
     assert.ok(within(dock).getByText(PLAN_DOCK_EMPTY));
     assert.ok(within(dock).getByRole("button", { name: PLAN_END_EMPTY }));
     assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
-    assert.equal(within(dock).queryByRole("button", { name: /reject/i }), null);
-    assert.equal(within(dock).queryByText(/Plan ready/), null);
+    assert.equal(within(dock).queryByRole("button", { name: /reject/i }) === null, true);
+    assert.equal(within(dock).queryByText(/Plan ready/) === null, true);
   });
 
   it("non-empty ready dock is Review plan + Accept plan + Keep planning; no Reject (AC-30)", async () => {
@@ -314,7 +314,7 @@ describe("plan-mode App journeys", () => {
     assert.ok(within(dock).getByText(planReadyTitle(2)));
     assert.ok(within(dock).getByRole("button", { name: PLAN_ACCEPT }));
     assert.ok(within(dock).getByRole("button", { name: PLAN_KEEP }));
-    assert.equal(within(dock).queryByRole("button", { name: /reject/i }), null);
+    assert.equal(within(dock).queryByRole("button", { name: /reject/i }) === null, true);
 
     const user = userEvent.setup();
     await user.click(within(dock).getByRole("button", { name: PLAN_ACCEPT }));
@@ -345,7 +345,7 @@ describe("plan-mode App journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByLabelText("Run propose a change"));
     });
-    assert.equal(screen.queryByText(PLAN_LIVE_STATUS), null);
+    assert.equal(screen.queryByText(PLAN_LIVE_STATUS) === null, true);
 
     ws.emit(envelope({
       kind: "run_terminal",
@@ -457,10 +457,10 @@ describe("plan-mode App journeys", () => {
     await waitFor(() => {
       assert.ok(screen.getByText(PLAN_DECISION_FAILURE));
     });
-    assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }), null);
+    assert.equal(screen.queryByRole("button", { name: PLAN_ACCEPT }) === null, true);
     await user.click(screen.getByRole("button", { name: "New session" }));
     await waitFor(() => {
-      assert.equal(screen.queryByText(PLAN_DECISION_FAILURE), null);
+      assert.equal(screen.queryByText(PLAN_DECISION_FAILURE) === null, true);
     });
   });
 });

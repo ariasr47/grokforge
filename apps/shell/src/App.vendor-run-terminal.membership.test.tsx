@@ -206,8 +206,8 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     await waitFor(() => {
       assert.equal(activityRailCount(), 0);
       assert.equal(foreignLeakVisible(), false);
-      assert.equal(screen.queryByText("Tool activity"), null);
-      assert.equal(screen.queryByText(/Tools\(0\)/), null);
+      assert.equal(screen.queryByText("Tool activity") === null, true);
+      assert.equal(screen.queryByText(/Tools\(0\)/) === null, true);
     });
 
     await user.type(screen.getByLabelText("Message to agent"), "ping");
@@ -222,7 +222,7 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     );
     await waitFor(() => assert.ok(document.querySelector(`[data-run-id="${RUN_B}"]`)));
     assert.equal(foreignLeakVisible(), false);
-    assert.equal(screen.queryByText(/Tools\(0\)/), null);
+    assert.equal(screen.queryByText(/Tools\(0\)/) === null, true);
 
     for (let i = 0; i < TOOL_COUNT; i++) {
       ws.emit(
@@ -231,7 +231,7 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     }
     await waitFor(() => assert.ok(document.querySelector(`[data-run-id="${RUN_B}"]`)));
     assert.equal(foreignLeakVisible(), false, "session A tool identities must not paint on B after first ping");
-    assert.equal(screen.queryByText("Codex fail"), null);
+    assert.equal(screen.queryByText("Codex fail") === null, true);
     assert.equal(activityRailCount(), 0);
 
     ws.emit(
@@ -244,8 +244,8 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     await waitFor(() => {
       assert.ok(screen.getByText("list dir 3"));
     });
-    assert.equal(screen.queryByText("Codex fail"), null);
-    assert.equal(screen.queryByText("list dir 29"), null);
+    assert.equal(screen.queryByText("Codex fail") === null, true);
+    assert.equal(screen.queryByText("list dir 29") === null, true);
 
     const prior = screen.getAllByRole("button").find((el) =>
       /Prior spire-tech|run the tools/.test(el.textContent ?? ""),
@@ -355,8 +355,8 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
       assert.ok(document.querySelector(`[data-run-id="${RUN_B}"]`));
       assert.ok(screen.getByText("list dir 3"));
     });
-    assert.equal(screen.queryByText("Codex fail"), null);
-    assert.equal(screen.queryByText("list dir 29"), null);
+    assert.equal(screen.queryByText("Codex fail") === null, true);
+    assert.equal(screen.queryByText("list dir 29") === null, true);
 
     ws.emit(
       envelope(
@@ -368,6 +368,6 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     await waitFor(() => {
       assert.ok(screen.getByText("list dir 3"));
     });
-    assert.equal(screen.queryByText("Codex fail"), null);
+    assert.equal(screen.queryByText("Codex fail") === null, true);
   });
 });

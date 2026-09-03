@@ -142,7 +142,7 @@ describe("unfenced grok-ui dump renders components", () => {
       text: "Intro\n\n```grok-ui\nnot json yet",
       streaming: true,
     }));
-    assert.equal(screen.queryByText("Building rich layout…"), null);
+    assert.equal(screen.queryByText("Building rich layout…") === null, true);
     assert.equal(document.querySelector(".rich-pending"), null);
     const pre = document.querySelector("pre");
     assert.ok(pre);

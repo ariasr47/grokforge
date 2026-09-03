@@ -59,8 +59,8 @@ function ready(overrides: Partial<Extract<McpServersProjection, { state: "ready"
 test("absent renders no MCP section", () => {
   const { container } = render(<McpServersSection projection={{ state: "absent" }} />);
   assert.equal(container.textContent, "");
-  assert.equal(container.querySelector("[aria-label='MCP']"), null);
-  assert.equal(screen.queryByText(MCP_HEADER), null);
+  assert.equal(container.querySelector("[aria-label='MCP']") === null, true);
+  assert.equal(screen.queryByText(MCP_HEADER) === null, true);
 });
 
 test("loading shows Loading MCP…", () => {
@@ -71,8 +71,8 @@ test("loading shows Loading MCP…", () => {
   );
   assert.ok(screen.getByText(MCP_LOADING));
   assert.ok(screen.getByLabelText(MCP_HEADER));
-  assert.equal(screen.queryByText(MCP_OFFLINE), null);
-  assert.equal(screen.queryByText(MCP_FAILED), null);
+  assert.equal(screen.queryByText(MCP_OFFLINE) === null, true);
+  assert.equal(screen.queryByText(MCP_FAILED) === null, true);
 });
 
 test("loading keeps prior members inspectable", () => {
@@ -103,15 +103,15 @@ test("hydrating loading never paints offline reconnect as section lead", () => {
     />,
   );
   assert.ok(screen.getByText(MCP_LOADING));
-  assert.equal(screen.queryByText(MCP_OFFLINE), null);
-  assert.equal(screen.queryByText(MCP_RECONNECT_SHORT), null);
+  assert.equal(screen.queryByText(MCP_OFFLINE) === null, true);
+  assert.equal(screen.queryByText(MCP_RECONNECT_SHORT) === null, true);
 });
 
 test("error without members shows Couldn't load MCP. as alert", () => {
   render(<McpServersSection projection={{ state: "error", message: MCP_FAILED, members: null }} />);
   const alert = screen.getByRole("alert");
   assert.equal(alert.textContent, MCP_FAILED);
-  assert.equal(screen.queryByText(MCP_LOADING), null);
+  assert.equal(screen.queryByText(MCP_LOADING) === null, true);
 });
 
 test("error keep-visible paints Couldn't load MCP. and retained members", () => {
@@ -166,10 +166,10 @@ test("withheld historical connected has identity but no live Connected chip, too
   );
   const section = screen.getByLabelText(MCP_HEADER);
   assert.ok(within(section).getByText("Docs"));
-  assert.equal(within(section).queryByText(MCP_STATUS_CONNECTED), null);
-  assert.equal(within(section).queryByTitle(MCP_TOOLTIP_CONNECTED), null);
+  assert.equal(within(section).queryByText(MCP_STATUS_CONNECTED) === null, true);
+  assert.equal(within(section).queryByTitle(MCP_TOOLTIP_CONNECTED) === null, true);
   assert.ok(within(section).getByText(MCP_STATUS_IDLE));
-  assert.equal(within(section).queryByText("1 connected"), null);
+  assert.equal(within(section).queryByText("1 connected") === null, true);
   assert.ok(within(section).getByText("1 idle"));
   assert.ok(within(section).getByText("2"));
   assert.ok(within(section).getByText(MCP_OFFLINE));
@@ -186,7 +186,7 @@ test("parent-terminal reconnect copy is the short string", () => {
     />,
   );
   assert.ok(screen.getByText(MCP_RECONNECT_SHORT));
-  assert.equal(screen.queryByText(MCP_OFFLINE), null);
+  assert.equal(screen.queryByText(MCP_OFFLINE) === null, true);
 });
 
 test("Idle and Error chips carry meaning in text and tooltip", () => {
@@ -254,11 +254,11 @@ test("unrestorable paints Unavailable beside restored peer, not Error, no invent
   assert.ok(within(section).getByText("Search"));
   assert.ok(within(section).getByText(MCP_UNAVAILABLE));
   assert.ok(within(section).getByText(MCP_GENERIC_IDENTITY));
-  assert.equal(within(section).queryByText("Should not paint"), null);
+  assert.equal(within(section).queryByText("Should not paint") === null, true);
   const errorChips = within(section).queryAllByText(MCP_STATUS_ERROR);
   assert.equal(errorChips.length, 0);
   assert.ok(within(section).getByText("2"));
-  assert.equal(within(section).queryByText("1 error"), null);
+  assert.equal(within(section).queryByText("1 error") === null, true);
 });
 
 test("name-null identity paints generic MCP server with status chip", () => {
@@ -307,8 +307,8 @@ test("header {N} is membership size including Unavailable, not live connected co
   );
   const section = screen.getByLabelText(MCP_HEADER);
   assert.ok(within(section).getByText("3"));
-  assert.equal(within(section).queryByText("0"), null);
-  assert.equal(within(section).queryByText("1 connected"), null);
+  assert.equal(within(section).queryByText("0") === null, true);
+  assert.equal(within(section).queryByText("1 connected") === null, true);
 });
 
 test("header toggle collapses and expands rows", async () => {
@@ -316,7 +316,7 @@ test("header toggle collapses and expands rows", async () => {
   render(<McpServersSection projection={ready()} />);
   assert.ok(screen.getByText("Docs"));
   await user.click(screen.getByRole("button", { name: /MCP/i }));
-  assert.equal(screen.queryByText("Docs"), null);
+  assert.equal(screen.queryByText("Docs") === null, true);
   await user.click(screen.getByRole("button", { name: /MCP/i }));
   assert.ok(screen.getByText("Docs"));
 });
@@ -338,10 +338,10 @@ test("long name is in title and accessible name", () => {
 test("MCP never hosts settle controls", () => {
   render(<McpServersSection projection={ready()} />);
   const section = screen.getByLabelText(MCP_HEADER);
-  assert.equal(within(section).queryByRole("button", { name: "Accept" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Reject" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Allow" }), null);
-  assert.equal(within(section).queryByRole("button", { name: "Decline" }), null);
+  assert.equal(within(section).queryByRole("button", { name: "Accept" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Reject" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Allow" }) === null, true);
+  assert.equal(within(section).queryByRole("button", { name: "Decline" }) === null, true);
 });
 
 test("banned Stuck / Status unconfirmed / Disconnected / Healthy copy is not painted", () => {
