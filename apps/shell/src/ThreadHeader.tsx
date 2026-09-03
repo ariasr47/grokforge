@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, ListTree, Square } from "lucide-react";
+import { Download, ListTree, PanelRight, Square } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Chip } from "./ui/Chip";
 import { Icon } from "./ui/Icon";
@@ -30,6 +30,13 @@ export interface ThreadHeaderProps {
   onToggleChanges: () => void;
   /** Nothing to show in the dock — the toggle chip does not render at all. */
   changesAvailable: boolean;
+  /** Beside panel is currently open for this session. The chip is a
+   *  close/indicator affordance — it only renders while true, since there is
+   *  no single "the artifact for this session" the header could discover and
+   *  offer to open on its own (opening a specific turn's document stays the
+   *  transcript's own job — each elevatable turn's own `.beside` card). */
+  artifactOpen?: boolean;
+  onToggleArtifact?: () => void;
 }
 
 function formatElapsedSeconds(totalSeconds: number): string {
@@ -57,6 +64,8 @@ export function ThreadHeader({
   changesOpen,
   onToggleChanges,
   changesAvailable,
+  artifactOpen = false,
+  onToggleArtifact,
 }: ThreadHeaderProps) {
   const [overviewOpen, setOverviewOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -124,6 +133,15 @@ export function ThreadHeader({
           trailing={<span className="changes-chip-count">{changesCount}</span>}
         >
           Changes
+        </Chip>
+      ) : null}
+      {artifactOpen ? (
+        <Chip
+          tone="on"
+          icon={<Icon icon={PanelRight} size={13} />}
+          onPress={onToggleArtifact ?? (() => {})}
+        >
+          Beside
         </Chip>
       ) : null}
       {overviewOpen ? (

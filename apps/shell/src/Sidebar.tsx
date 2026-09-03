@@ -1,6 +1,8 @@
 /**
  * Single sidebar shell — content switches with product mode:
- * - Chat: flat conversation list (no git / folders)
+ * - Chat: `New chat` CTA → search → Homes (each chat session is its own
+ *   home) → Pack (the current home's pinned files, read-only summary) →
+ *   footer. No git / folders — folder choice lives in the Pack `Add` action.
  * - Code: gradient CTA → search → Needs-you group → workspaces (one level
  *   deep: workspace header, then its sessions — no further nesting)
  */
@@ -10,6 +12,7 @@ import { Icon } from "./ui/Icon";
 import {
   ChevronDown,
   ChevronRight,
+  FileText,
   FolderOpen,
   MessageSquarePlus,
   Pencil,
@@ -33,36 +36,49 @@ export interface WorkspaceNode {
   active: boolean;
 }
 
-function statusDot(status?: string): string {
-  if (status === "live") return "live";
-  if (status === "busy") return "busy";
-  return "idle";
+/** Violet / cyan / muted only — amber is reserved for needs-you and must
+ *  never appear here. Same hash as HomeScreen's own `swatchColor` (stable
+ *  per home id, so a home's dot matches wherever it is shown) — kept as an
+ *  independent copy rather than a shared import so this file's "Files:"
+ *  scope stays limited to Sidebar.tsx. */
+const HOME_SWATCH_COLORS = ["#a78bfa", "#5ce1ff", "#8b93a7"] as const;
+export function homeSwatchColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return HOME_SWATCH_COLORS[hash % HOME_SWATCH_COLORS.length]!;
 }
 
-interface SessionRowProps {
+/** Last path segment for a pinned pack file's display name; full path stays
+ *  in the row's title tooltip. */
+function packFileName(path: string): string {
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
+}
+
+interface HomeRowProps {
   sess: ChatSession;
   active: boolean;
-  /** Code mode shows branch; Chat never does */
-  showBranch?: boolean;
-  branchLabel?: string | null;
   onSelect: () => void;
   onRename?: (title: string) => void;
   onDelete?: () => void;
 }
 
-/** Chat's own row — unchanged; Code uses `CodeSessionRow` below. */
-const SessionRow = memo(function SessionRow({
+/** Chat's "Homes" row (34px, swatch + name + right-aligned count). The
+ *  count is the home's real message count — the data model has no separate
+ *  "threads per home" concept to report, so this is the honest analog. */
+const HomeRow = memo(function HomeRow({
   sess,
   active,
-  showBranch,
-  branchLabel,
   onSelect,
   onRename,
   onDelete,
-}: SessionRowProps) {
+}: HomeRowProps) {
   const [renaming, setRenaming] = useState(false);
   const untitled = defaultSessionTitle(sess.workspace);
   const [draft, setDraft] = useState(sess.title || untitled);
+  const title = chatListTitle(sess);
 
   if (renaming) {
     return (
@@ -95,7 +111,7 @@ const SessionRow = memo(function SessionRow({
     <div className={`session-row-wrap ${active ? "active" : ""}`}>
       <button
         type="button"
-        className={`session-row ${active ? "active" : ""}`}
+        className={`home${active ? " on" : ""}`}
         onClick={onSelect}
         onDoubleClick={() => {
           if (onRename) {
@@ -104,31 +120,13 @@ const SessionRow = memo(function SessionRow({
           }
         }}
       >
+        <span className="hm" style={{ background: homeSwatchColor(sess.id) }} aria-hidden="true" />
         <span
-          className={`dot ${statusDot(sess.status)}`}
-          title={sess.status || "idle"}
-        />
-        <span className="session-body">
-          <span
-            className={`session-title${
-              !showBranch && chatListTitle(sess) === HOME_NAME_PLACEHOLDER ? " is-placeholder" : ""
-            }`}
-          >
-            {!showBranch ? chatListTitle(sess) : sess.title || untitled}
-          </span>
-          <span className="session-sub">
-            {showBranch ? (
-              <span className="branch">{branchLabel || "no-git"}</span>
-            ) : null}
-            <span className="session-time">{timeAgo(sess.updatedAt)}</span>
-            {sess.status === "busy" && (
-              <span className="badge running">streaming</span>
-            )}
-            {showBranch && sess.status === "live" && (
-              <span className="badge running">agent</span>
-            )}
-          </span>
+          className={`t session-title${title === HOME_NAME_PLACEHOLDER ? " is-placeholder" : ""}`}
+        >
+          {title}
         </span>
+        <span className="n">{sess.messages.length}</span>
       </button>
       <div className="session-ops">
         {onRename && (
@@ -152,9 +150,7 @@ const SessionRow = memo(function SessionRow({
             className="sess-op icon-only"
             title="Delete"
             onClick={() => {
-              if (
-                window.confirm(`Delete “${sess.title || untitled}”?`)
-              ) {
+              if (window.confirm(`Delete “${title}”?`)) {
                 onDelete();
               }
             }}
@@ -291,14 +287,18 @@ export interface SidebarProps {
   mode: ProductMode;
   /** Chat */
   chatSessions: ChatSession[];
-  chatRootLabel?: string | null;
-  showChatFiles?: boolean;
   onNewChat: () => void;
   onSelectChat: (id: string) => void;
   onRenameChat?: (id: string, title: string) => void;
   onDeleteChat?: (id: string) => void;
+  /** Pack section: the active home's pinned files (ChatPackView.members.files).
+   *  Only path is ever guaranteed — page/size are shown only if a future
+   *  ChatPackView actually reports them; this shell never invents either. */
+  chatPackFiles?: Array<{ path: string }>;
+  /** Pack section's `Add` action — opens the folder/file picker (this is
+   *  also how a chat root folder gets bound; there is no separate "Local
+   *  files" panel any more). Add is hidden when this is not provided. */
   onBindChatFolder?: () => void;
-  onClearChatFolder?: () => void;
   /** Code */
   workspaces: WorkspaceNode[];
   activeWorkspace: string | null;
@@ -323,9 +323,9 @@ export interface SidebarProps {
   /** Code: live word ("approve"/"question") per session id currently in the
    * Needs-you group, derived from the active run projection. */
   needsYouReasons?: Record<string, "approve" | "question">;
-  /** Code footer: "Grok · subscription" / "Grok · API key" (topbar's own auth source). */
+  /** Footer (both modes): "Grok · subscription" / "Grok · API key" (topbar's own auth source). */
   authLabel?: string;
-  /** Code footer: raw version string (e.g. "0.7.0"); rendered as "v0.7.0". */
+  /** Footer (both modes): raw version string (e.g. "0.7.0"); rendered as "v0.7.0". */
   version?: string | null;
 }
 
@@ -386,6 +386,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const hasWorkspaces = props.workspaces.length > 0;
   const ctaTarget = props.activeWorkspace ?? props.workspaces[0]?.path ?? null;
   const nothingToShow = needsYouList.length === 0 && codeFiltered.length === 0;
+  const chatPackFiles = props.chatPackFiles ?? [];
 
   return (
     <aside
@@ -394,91 +395,86 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       aria-label={mode === "chat" ? "Chat sessions" : "Code workspaces"}
     >
       {mode === "chat" ? (
-        <>
-          <div className="side-top">
-            <Button
-              variant="primary"
-              className="open-folder-btn"
-              onClick={props.onNewChat}
-            >
-              <Icon icon={MessageSquarePlus} size={15} />
-              New chat
-            </Button>
-            <div className="side-top-search-row">
-              <input
-                className="session-search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search chats…"
-                aria-label="Search chats"
-              />
-            </div>
+        <div className="rail">
+          <button type="button" className="cta" onClick={props.onNewChat}>
+            <Icon icon={MessageSquarePlus} size={14} />
+            <span>New chat</span>
+          </button>
+
+          <div className="search">
+            <Icon icon={Search} size={14} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
           </div>
 
-          <div className="section-label">
-            <span>Chats</span>
-            <span className="hint">{props.chatSessions.length}</span>
-          </div>
-          <VirtualList
-            className="tree side-body"
-            items={chatFiltered}
-            rowHeight={58}
-            getKey={(sess) => sess.id}
-            empty={
-              <p className="tree-empty">
-                {query
-                  ? "No chats match."
-                  : "No chats yet — start one. Separate from Code projects."}
-              </p>
-            }
-            renderItem={(sess) => (
-              <div className="session">
-                <SessionRow
-                  sess={sess}
-                  active={sess.id === props.activeSessionId}
-                  showBranch={false}
-                  onSelect={() => props.onSelectChat(sess.id)}
-                  onRename={
-                    props.onRenameChat
-                      ? (t) => props.onRenameChat!(sess.id, t)
-                      : undefined
-                  }
-                  onDelete={
-                    props.onDeleteChat
-                      ? () => props.onDeleteChat!(sess.id)
-                      : undefined
-                  }
+          <div className="rail-tree">
+            <div className="group">
+              <div className="label">
+                <span>Homes</span>
+              </div>
+              {chatFiltered.length === 0 ? (
+                <p className="tree-empty">
+                  {query
+                    ? "No chats match."
+                    : "No chats yet — start one. Separate from Code projects."}
+                </p>
+              ) : (
+                <VirtualList
+                  className="tree"
+                  items={chatFiltered}
+                  rowHeight={34}
+                  getKey={(sess) => sess.id}
+                  renderItem={(sess) => (
+                    <HomeRow
+                      sess={sess}
+                      active={sess.id === props.activeSessionId}
+                      onSelect={() => props.onSelectChat(sess.id)}
+                      onRename={
+                        props.onRenameChat
+                          ? (t) => props.onRenameChat!(sess.id, t)
+                          : undefined
+                      }
+                      onDelete={
+                        props.onDeleteChat
+                          ? () => props.onDeleteChat!(sess.id)
+                          : undefined
+                      }
+                    />
+                  )}
                 />
-              </div>
-            )}
-          />
-
-          {props.showChatFiles !== false && (
-            <div className="chat-files-panel">
-              <div className="section-label">
-                <span>Local files</span>
-                <span className="hint">optional</span>
-              </div>
-              <p className="chat-files-copy">
-                {props.chatRootLabel
-                  ? `Tools can use: ${props.chatRootLabel}`
-                  : "Private folder by default. Open a documents folder so Grok can read your files."}
-              </p>
-              <div className="row chat-files-actions">
-                {props.onBindChatFolder && (
-                  <Button onClick={props.onBindChatFolder}>
-                    {props.chatRootLabel ? "Change folder…" : "Open folder…"}
-                  </Button>
-                )}
-                {props.chatRootLabel && props.onClearChatFolder && (
-                  <Button variant="ghost" onClick={props.onClearChatFolder}>
-                    Use private folder
-                  </Button>
-                )}
-              </div>
+              )}
             </div>
-          )}
-        </>
+
+            <div className="group">
+              <div className="label">
+                <span>Pack</span>
+                {props.onBindChatFolder && (
+                  <button type="button" className="act" onClick={props.onBindChatFolder}>
+                    Add
+                  </button>
+                )}
+              </div>
+              {chatPackFiles.map((f) => (
+                <div className="file" key={f.path} title={f.path}>
+                  <Icon icon={FileText} size={13} />
+                  <span className="fn">{packFileName(f.path)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="railfoot">
+            <span className="avatar" aria-hidden="true" />
+            <span>{props.authLabel ?? "Grok"}</span>
+            <span className="ver mono">
+              {props.version ? `v${props.version}` : "—"}
+            </span>
+          </div>
+        </div>
       ) : (
         <div className="rail">
           <button

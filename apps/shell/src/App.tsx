@@ -3326,29 +3326,6 @@ export function App() {
     }
   }, [reportError, toast]);
 
-  const clearChatFolder = useCallback(async () => {
-    try {
-      const s = await api.setChatRoot(null);
-      applyState(s);
-      const key = partitionKey("chat", s.chatRoot);
-      const active = ensureActiveSession(key, null);
-      setSessionId(active.id);
-      setSessionList(listSessions(key));
-      setMessages(
-        active.messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          projectedRunId: m.projectedRunId,
-          toolMeta: m.toolMeta,
-        })),
-      );
-      toast.push("Using personal sandbox", "info");
-    } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
-    }
-  }, [reportError, toast]);
-
   const decidePermission = useCallback(
     async (decision: "allow_once" | "allow_session" | "deny") => {
       const p = permissions[0];
@@ -5079,8 +5056,7 @@ export function App() {
           <Sidebar
             mode={productMode}
             chatSessions={chatSessions}
-            chatRootLabel={chatRootLabel}
-            showChatFiles={prefs.showChatFiles}
+            chatPackFiles={vouchedPack?.members.files ?? []}
             showSubagents={prefs.showSubagents}
             onNewChat={() => newSession(sessionPartition)}
             onSelectChat={(id) => void switchSession(sessionPartition, id)}
@@ -5089,7 +5065,6 @@ export function App() {
             }
             onDeleteChat={(id) => removeSession(sessionPartition, id)}
             onBindChatFolder={() => void bindChatFolder()}
-            onClearChatFolder={() => void clearChatFolder()}
             workspaces={treeWorkspaces}
             activeWorkspace={state?.workspace ?? null}
             activeSessionId={sessionId}
@@ -5668,6 +5643,8 @@ export function App() {
                 changesOpen={changesOpen}
                 onToggleChanges={() => setChangesOpen((v) => !v)}
                 changesAvailable={changesAvailable}
+                artifactOpen={Boolean(artifactOpenBinding)}
+                onToggleArtifact={closeArtifact}
               />
               {productMode === "chat" ? (
                 <ChatHomeName
@@ -5780,7 +5757,7 @@ export function App() {
                         const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
                         return (
                         <div key={id} className="run-stack">
-                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} />
+                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} title={activeHome?.title ?? ""} />
                         </div>
                         );
                       })}
@@ -5815,6 +5792,7 @@ export function App() {
                           : null
                       }
                       onOpenArtifact={openMessageArtifact}
+                      title={activeHome?.title ?? ""}
                     />
                   </>
                 )}
@@ -5823,6 +5801,7 @@ export function App() {
               <ArtifactPanel
                 body={boundArtifact?.body ?? null}
                 contentKind={boundArtifact?.contentKind ?? null}
+                title={activeHome?.title ?? ""}
                 onClose={closeArtifact}
                 onChoose={fillComposerFromChoice}
               />

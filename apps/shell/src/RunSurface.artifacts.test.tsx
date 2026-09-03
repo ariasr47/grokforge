@@ -322,7 +322,7 @@ describe("RunSurface You card", () => {
 });
 
 describe("RunSurface artifact Open + compact", () => {
-  it("settled elevatable grok-ui offers Open on the live answer chrome", () => {
+  it("settled elevatable grok-ui offers a .beside card with Open on the live answer chrome", () => {
     const text = "Intro\n\n```grok-ui\n" + JSON.stringify(carousel) + "\n```";
     render(
       createElement(RunSurface, {
@@ -330,10 +330,15 @@ describe("RunSurface artifact Open + compact", () => {
         productMode: "chat",
         artifactOpen: false,
         onOpenArtifact: () => {},
+        title: "Landlord email",
       }),
     );
     assert.ok(screen.getByRole("button", { name: /^Open$/i }));
     assert.ok(document.querySelector(".assistant-answer"));
+    const card = document.querySelector(".beside");
+    assert.ok(card);
+    assert.equal(card!.querySelector(".bt")?.textContent, "Landlord email");
+    assert.equal(card!.querySelector(".bs")?.textContent, "Rich document");
   });
 
   it("Thought-only / mid-turn / unsettled do not offer Open", () => {

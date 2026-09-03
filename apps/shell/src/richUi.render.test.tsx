@@ -150,6 +150,25 @@ describe("unfenced grok-ui dump renders components", () => {
     assert.ok(screen.getByText("Intro"));
   });
 
+  it("file block renders as a cite chip: name · p.N only when the block carries a page", () => {
+    const src =
+      "```grok-ui\n" +
+      JSON.stringify({
+        blocks: [
+          { type: "file", name: "lease-2025.pdf", page: 7 },
+          { type: "file", name: "household-notes.md" },
+        ],
+      }) +
+      "\n```";
+    render(createElement(MarkdownBody, { text: src }));
+    const chips = document.querySelectorAll(".rich-cite");
+    assert.equal(chips.length, 2);
+    assert.equal(chips[0]!.textContent, "lease-2025.pdf · p.7");
+    // No page on the block -> no invented page number in the chip.
+    assert.equal(chips[1]!.textContent, "household-notes.md");
+    assert.equal(document.body.textContent?.includes("p.undefined"), false);
+  });
+
   it("renders a constructed map embed, not a caller-supplied iframe src", () => {
     const src =
       "```grok-ui\n" +

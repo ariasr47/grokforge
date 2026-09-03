@@ -1740,49 +1740,75 @@ html[data-density="compact"] .hooks-row {
   min-height: 0;
 }
 
+/* Task 15 — Beside panel (docs/design/forge-next/Chat.dc.html `.side`).
+ * Fixed 380px, matching the Changes dock's own default width (Task 9,
+ * ChangesDock's `.changes` — that one sits in a resizable react-resizable-
+ * panels Panel; this one is a plain flex sibling of `.transcript` inside
+ * `.chat-stage`, so 380px is a static width here, not a resize default. */
 .artifact-panel {
-  flex: 1 1 38%;
-  min-width: min(280px, 100%);
-  max-width: 520px;
+  width: 380px;
+  flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--card);
-  border-left: 1px solid var(--border);
+  background: var(--surface-1);
+  border-left: 1px solid var(--stroke);
   backdrop-filter: blur(16px);
 }
 
 .artifact-panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  height: 44px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--stroke);
   flex: 0 0 auto;
 }
 
 .artifact-panel-head h2 {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--text);
 }
 
-.artifact-panel-helper {
-  margin: 0;
-  padding: 8px 14px 0;
+.artifact-panel-head h2 .k {
+  font-size: 11px;
+  font-weight: 400;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .artifact-panel-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 16px 20px;
+}
+
+/* Tabs when the artifact has sections: RichBlocks' own `.rich-tabs` (a
+ * `tabs`-type block) already renders real, switchable sections — scoped
+ * here to match `.side .tabs`'s values without touching how a tabs block
+ * looks inline in the chat stream elsewhere. */
+.artifact-panel-body .rich-tabs-bar {
+  gap: 2px;
+  margin: 0 0 12px;
+}
+.artifact-panel-body .rich-tab {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+  background: transparent;
+}
+.artifact-panel-body .rich-tab.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
 }
 
 .artifact-panel-error {
@@ -1794,16 +1820,26 @@ html[data-density="compact"] .hooks-row {
   color: var(--text);
 }
 
+.artifact-panel-foot {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--stroke);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 720px) {
   .chat-stage--artifact-open {
     flex-direction: column;
   }
   .chat-stage--artifact-open .artifact-panel {
-    max-width: none;
+    width: 100%;
     max-height: 45%;
     min-height: 160px;
     border-left: none;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--stroke);
   }
 }
 
@@ -2205,6 +2241,49 @@ html[data-motion="calm"] .home .dot.needs {
 .msg:hover .msg-foot,
 .msg:focus-within .msg-foot {
   opacity: 1;
+}
+
+/* Task 15 — in-thread Beside card (docs/design/forge-next/Chat.dc.html
+ * `.beside`). Replaces the plain "Open" text link that used to live in
+ * `.msg-foot`; Copy/Retry/Regenerate stay there unchanged. */
+.beside {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.03);
+  width: 100%;
+  /* .msg already caps at 640px; .assistant-answer-wrap (RunSurface's live
+   * answer) does not, so cap here too rather than trust the ancestor. */
+  max-width: var(--measure);
+  box-sizing: border-box;
+}
+.beside .ic {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex: none;
+}
+.beside .bt {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.beside .bs {
+  font-size: 12px;
+  color: var(--muted);
+}
+.beside .open {
+  margin-left: auto;
+  flex: none;
 }
 
 /* —— Prose: settled answer typography, no bordered card —— */

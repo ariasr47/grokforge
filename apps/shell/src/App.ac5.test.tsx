@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe("AC5 — Chat: bind a folder, then open a file under it", () => {
-  it("binds via the folder picker, shows the bound label, and opens a file the agent touched", async () => {
+  it("binds via the Pack section's Add action and opens a file the agent touched", async () => {
     const host = createFakeHost(
       { mode: "chat", chatRoot: "C:\\Users\\qa\\.grokforge\\chat-sandbox", busy: false },
       {
@@ -63,21 +63,17 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    // Before binding: sandbox path stays hidden, button offers "Open folder…".
-    const openFolderBtn = await screen.findByRole("button", { name: "Open folder…" });
-    await user.click(openFolderBtn);
+    // Task 15 — the old dedicated "Local files" panel (Open/Change folder…,
+    // "Tools can use: <folder>") is gone; folder choice now lives behind
+    // the sidebar's Pack section "Add" action.
+    const addBtn = await screen.findByRole("button", { name: "Add" });
+    await user.click(addBtn);
 
     await waitFor(() => assert.ok(host.callsTo("/api/pick-folder").length >= 1));
     await waitFor(() => {
       const chatRootCalls = host.callsTo("/api/chat-root");
       assert.ok(chatRootCalls.length >= 1);
       assert.equal(chatRootCalls[chatRootCalls.length - 1]!.body?.path, "D:\\docs");
-    });
-
-    // Chrome flips to the bound state (SPEC §4: "folder bound label").
-    await waitFor(() => {
-      assert.ok(screen.getByRole("button", { name: "Change folder…" }));
-      assert.ok(screen.getByText(/Tools can use: docs/));
     });
 
     // Start a session and let the agent touch a file under the newly-bound

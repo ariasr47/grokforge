@@ -110,6 +110,28 @@ describe("parseRichDocument", () => {
     assert.equal(doc, null);
   });
 
+  it("sanitizes a file citation's page number and drops an out-of-range one", () => {
+    const doc = parseRichDocument(
+      JSON.stringify({
+        blocks: [
+          { type: "file", name: "lease-2025.pdf", page: 7 },
+          { type: "file", name: "no-page.pdf" },
+          { type: "file", name: "bad-page.pdf", page: -3 },
+        ],
+      }),
+    );
+    assert.ok(doc);
+    assert.equal(doc!.blocks.length, 3);
+    const [withPage, withoutPage, badPage] = doc!.blocks as Array<
+      Extract<(typeof doc)["blocks"][number], { type: "file" }>
+    >;
+    assert.equal(withPage!.page, 7);
+    assert.equal(withoutPage!.page, undefined);
+    // finiteNum clamps rather than drops the block — an out-of-range page
+    // clamps to the nearest bound (1) instead of vanishing the citation.
+    assert.equal(badPage!.page, 1);
+  });
+
   it("keeps recommended on a decision option", () => {
     const doc = parseRichDocument(
       JSON.stringify({

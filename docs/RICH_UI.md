@@ -52,7 +52,7 @@ The shell also lifts an unfenced `grok-ui { ... }` dump (or a bare `{ "version":
 | `timeline` | Dated events |
 | `quote` | Pull quote |
 | `checklist` | Static checklist |
-| `file` | Path chip (inspect, not download) |
+| `file` | Citation chip (inspect, not download) — `name`, optional `path`/`note`, optional 1-based `page` shown as `· p.N` only when sent |
 | `download` | Save text content, or https file link |
 | `map` / `place` | Embedded Google Map from `query` or lat/lng — never a raw iframe src |
 | `image` | https image |

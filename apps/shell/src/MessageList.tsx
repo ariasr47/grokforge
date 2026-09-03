@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { FileText } from "lucide-react";
 import type { ChatMessage } from "./messageBlocks";
 import { toDisplayBlocks } from "./messageBlocks";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -7,8 +8,9 @@ export type { ChatMessage };
 import { Receipts } from "./Receipts";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
+import { Icon } from "./ui/Icon";
 import { writeClipboard } from "./copyClipboard";
-import { elevateArtifact } from "./artifactEligibility";
+import { elevateArtifact, type ElevateKind } from "./artifactEligibility";
 
 interface Props {
   messages: ChatMessage[];
@@ -26,6 +28,10 @@ interface Props {
   scrollRef?: RefObject<HTMLElement | null>;
   artifactOpenMessageId?: string | null;
   onOpenArtifact?: (messageId: string) => void;
+  /** The session's own title — same text ThreadHeader/Beside show. Threaded
+   *  down to the in-thread `.beside` card's title; never a per-message
+   *  title (no such field exists). */
+  title?: string;
 }
 
 function copyText(text: string): Promise<void> {
@@ -101,6 +107,12 @@ const ThinkingPlaceholder = memo(function ThinkingPlaceholder({
 const OPEN_TOOLTIP =
   "Show this turn’s document beside the transcript. Closing hides the panel without deleting the turn.";
 
+/** Real, derived classification — never the mockup's invented specifics
+ *  ("English + Japanese · 2 versions"), since no such data exists here. */
+function besideSubline(kind: ElevateKind): string {
+  return kind === "rich-document" ? "Rich document" : "Long document";
+}
+
 const ChatBubble = memo(function ChatBubble({
   message: m,
   showRetry,
@@ -110,6 +122,7 @@ const ChatBubble = memo(function ChatBubble({
   onChoose,
   artifactOpen,
   onOpenArtifact,
+  title,
 }: {
   message: ChatMessage;
   showRetry?: boolean;
@@ -119,6 +132,7 @@ const ChatBubble = memo(function ChatBubble({
   onChoose?: (label: string, meta?: string) => void;
   artifactOpen?: boolean;
   onOpenArtifact?: (messageId: string) => void;
+  title?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copyErr, setCopyErr] = useState(false);
@@ -250,18 +264,26 @@ const ChatBubble = memo(function ChatBubble({
           )}
         </div>
       ) : null}
-      <div className="msg-foot">
-        {elevatable ? (
+      {elevatable ? (
+        <div className="beside">
+          <span className="ic" aria-hidden="true">
+            <Icon icon={FileText} size={16} />
+          </span>
+          <div>
+            <div className="bt">{title || "Document"}</div>
+            <div className="bs">{besideSubline(elevateKind)}</div>
+          </div>
           <Button
-            variant="ghost"
             size="sm"
-            className="msg-action"
+            className="open"
             onClick={() => onOpenArtifact?.(m.id)}
             title={openTitle}
           >
             Open
           </Button>
-        ) : null}
+        </div>
+      ) : null}
+      <div className="msg-foot">
         {showRegenerate && onRegenerate && (
           <Button
             variant="ghost"
@@ -302,6 +324,7 @@ export const MessageList = memo(function MessageList({
   scrollRef,
   artifactOpenMessageId = null,
   onOpenArtifact,
+  title,
 }: Props & { thinkingDetail?: string | null }) {
   const sliced = useMemo(() => {
     if (messages.length <= windowSize) return messages;
@@ -340,6 +363,7 @@ export const MessageList = memo(function MessageList({
           onChoose={onChoose}
           artifactOpen={artifactOpenMessageId === m.id}
           onOpenArtifact={onOpenArtifact}
+          title={title}
           onRetry={
             isLastUser && onRetryUser
               ? () => onRetryUser(m.id, m.content)

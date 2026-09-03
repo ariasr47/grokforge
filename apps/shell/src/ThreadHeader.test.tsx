@@ -131,3 +131,25 @@ describe("ThreadHeader — Changes chip", () => {
     assert.deepEqual(calls, [1]);
   });
 });
+
+describe("ThreadHeader — Beside chip", () => {
+  it("is absent while nothing is open", () => {
+    render(<ThreadHeader {...baseProps()} artifactOpen={false} />);
+    assert.equal(screen.queryByRole("button", { name: /Beside/ }) === null, true);
+  });
+
+  it("takes the on tone while open and calls onToggleArtifact", () => {
+    const calls: number[] = [];
+    render(
+      <ThreadHeader
+        {...baseProps()}
+        artifactOpen
+        onToggleArtifact={() => calls.push(1)}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: /Beside/ });
+    assert.equal(chip.className.includes("chip-on"), true);
+    fireEvent.click(chip);
+    assert.deepEqual(calls, [1]);
+  });
+});

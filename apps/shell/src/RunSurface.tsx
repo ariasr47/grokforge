@@ -24,9 +24,11 @@ import { ChatPackTurnChip } from "./ChatPackTurnChip";
 import { codeRunProvenanceCopy, projectCodeRunProvenance } from "./codeRunProvenance";
 import { CodeRunProvenanceChip } from "./CodeRunProvenanceChip";
 import { SkillHandoffProvenanceChip } from "./SkillHandoffProvenanceChip";
+import { FileText } from "lucide-react";
 import { MarkdownBody } from "./markdown";
 import { Button } from "./ui/Button";
-import { elevateArtifact } from "./artifactEligibility";
+import { Icon } from "./ui/Icon";
+import { elevateArtifact, type ElevateKind } from "./artifactEligibility";
 import { SETTLE_IN_DOCK } from "./copyDock";
 import { Receipts } from "./Receipts";
 import type { ChatMessage } from "./messageBlocks";
@@ -120,9 +122,20 @@ export interface RunSurfaceProps {
   onChoose?: (label: string, meta?: string) => void;
   artifactOpen?: boolean;
   onOpenArtifact?: (runId: string) => void;
+  /** The session's own title — same text ThreadHeader/Beside show. Threaded
+   *  to the in-thread `.beside` card's title; never a per-run title. */
+  title?: string;
 }
 const OPEN_TOOLTIP =
   "Show this turn’s document beside the transcript. Closing hides the panel without deleting the turn.";
+
+/** Real, derived classification — mirrors MessageList.tsx's own
+ *  besideSubline (kept as an independent copy rather than a shared import
+ *  so RunSurface/MessageList stay decoupled); never the mockup's invented
+ *  specifics ("English + Japanese · 2 versions"), since no such data exists. */
+function besideSubline(kind: ElevateKind): string {
+  return kind === "rich-document" ? "Rich document" : "Long document";
+}
 
 /** Collapse markdown ticks and whitespace so live vendor copies still match. */
 function foldKey(s: string): string {
@@ -218,7 +231,7 @@ export function nextPromptOverflow(prev: boolean, measured: boolean, promptChang
   return prev || measured;
 }
 
-export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onChoose, artifactOpen = false, onOpenArtifact }: RunSurfaceProps) {
+export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onChoose, artifactOpen = false, onOpenArtifact, title }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
@@ -583,15 +596,6 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
       {vouchedAnswer && answer ? (
         <div className="assistant-answer-wrap">
           <div className="assistant-answer-actions">
-            {answerElevatable ? (
-              <Button
-                variant="ghost"
-                onClick={() => onOpenArtifact?.(run.runId)}
-                title={openTitle}
-              >
-                Open
-              </Button>
-            ) : null}
             <Button variant="ghost" onClick={onCopyAnswer} title="Copy message">
               {copyErr ? "Failed" : copied ? "Copied" : "Copy"}
             </Button>
@@ -604,6 +608,25 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
           >
             {artifactOpen ? null : <MarkdownBody text={cleanVendorAnswer(answer)} onChoose={onChoose} />}
           </div>
+          {answerElevatable ? (
+            <div className="beside">
+              <span className="ic" aria-hidden="true">
+                <Icon icon={FileText} size={16} />
+              </span>
+              <div>
+                <div className="bt">{title || "Document"}</div>
+                <div className="bs">{besideSubline(elevate.kind)}</div>
+              </div>
+              <Button
+                size="sm"
+                className="open"
+                onClick={() => onOpenArtifact?.(run.runId)}
+                title={openTitle}
+              >
+                Open
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {run.state === "terminal" && <RunTerminalNotice run={run} onRetryPrompt={onRetryPrompt} onReconnect={onReconnect} onOpenSettings={onOpenSettings} onExportDiagnostics={onExportDiagnostics} />}

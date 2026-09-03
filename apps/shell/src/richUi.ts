@@ -83,6 +83,9 @@ export type RichBlock =
       name: string;
       path?: string;
       note?: string;
+      /** 1-based page reference for a citation (e.g. "lease-2025.pdf · p.7").
+       *  Rendered only when the agent actually sends one — never invented. */
+      page?: number;
     }
   | {
       type: "download";
@@ -397,11 +400,13 @@ function sanitizeBlock(raw: unknown): RichBlock | null {
     case "filechip": {
       const name = str(o.name ?? o.path, 200);
       if (!name) return null;
+      const pageRaw = finiteNum(o.page ?? o.pageNumber, 1, 100_000);
       return {
         type: "file",
         name,
         path: str(o.path, 400) || undefined,
         note: str(o.note ?? o.body, 400) || undefined,
+        page: pageRaw != null ? Math.round(pageRaw) : undefined,
       };
     }
     case "download":

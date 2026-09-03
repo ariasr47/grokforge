@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { createElement } from "react";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, within } from "@testing-library/react";
 import { MessageList, type ChatMessage } from "./MessageList.js";
 
 afterEach(() => cleanup());
@@ -35,7 +35,41 @@ function msgs(overrides: Partial<ChatMessage> = {}): ChatMessage[] {
 }
 
 describe("MessageList historical artifact Open + compact", () => {
-  it("settled elevatable historical assistant offers Open", () => {
+  it("settled elevatable historical assistant offers a .beside card with Open", () => {
+    render(
+      createElement(MessageList, {
+        messages: msgs(),
+        title: "Landlord email",
+        artifactOpenMessageId: null,
+        onOpenArtifact: () => {},
+      }),
+    );
+    const card = document.querySelector(".beside") as HTMLElement | null;
+    assert.ok(card);
+    assert.ok(within(card!).getByText("Landlord email"));
+    assert.ok(within(card!).getByRole("button", { name: /^Open$/i }));
+    assert.ok(screen.getByText("sibling question"));
+    assert.ok(screen.getByText("Steamed rice"));
+  });
+
+  it(".beside sub line names the real content kind — never invents version/language counts", () => {
+    render(
+      createElement(MessageList, {
+        messages: msgs(),
+        title: "Landlord email",
+        artifactOpenMessageId: null,
+        onOpenArtifact: () => {},
+      }),
+    );
+    const sub = document.querySelector(".beside .bs");
+    assert.ok(sub);
+    assert.equal(sub!.textContent, "Rich document");
+    // The mockup's own copy ("English + Japanese · 2 versions") is specific
+    // to its scenario and not real data here — must not leak into the DOM.
+    assert.equal(document.body.textContent?.includes("2 versions"), false);
+  });
+
+  it("falls back to a generic title when no session title is available (never blank, never invented)", () => {
     render(
       createElement(MessageList, {
         messages: msgs(),
@@ -43,12 +77,12 @@ describe("MessageList historical artifact Open + compact", () => {
         onOpenArtifact: () => {},
       }),
     );
-    assert.ok(screen.getByRole("button", { name: /^Open$/i }));
-    assert.ok(screen.getByText("sibling question"));
-    assert.ok(screen.getByText("Steamed rice"));
+    const bt = document.querySelector(".beside .bt");
+    assert.ok(bt);
+    assert.ok(bt!.textContent && bt!.textContent.length > 0);
   });
 
-  it("user / streaming / short replies do not offer Open", () => {
+  it("user / streaming / short replies do not offer a .beside card", () => {
     render(
       createElement(MessageList, {
         messages: [
@@ -60,6 +94,7 @@ describe("MessageList historical artifact Open + compact", () => {
         onOpenArtifact: () => {},
       }),
     );
+    assert.equal(document.querySelector(".beside") === null, true);
     assert.equal(screen.queryByRole("button", { name: /^Open$/i }) === null, true);
   });
 

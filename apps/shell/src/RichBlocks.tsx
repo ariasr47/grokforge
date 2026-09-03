@@ -340,23 +340,19 @@ const Checklist = memo(function Checklist({
   );
 });
 
+/** Citation chip — mono, cyan-tinted, `<name> · p.N`. The page suffix only
+ *  ever appears when the block itself carries one (richUi.ts's sanitizer is
+ *  the only source of `page`); never guessed from name/path. */
 const FileChip = memo(function FileChip({
   block,
 }: {
   block: Extract<RichBlock, { type: "file" }>;
 }) {
+  const label = block.page ? `${block.name} · p.${block.page}` : block.name;
   return (
-    <div className="rich-file" title={block.path || block.name}>
-      <span className="rich-file-icon" aria-hidden>
-        📄
-      </span>
-      <div>
-        <div className="rich-file-name">{block.name}</div>
-        {block.path || block.note ? (
-          <div className="rich-file-meta">{block.path || block.note}</div>
-        ) : null}
-      </div>
-    </div>
+    <span className="rich-cite" title={block.path || block.note || block.name}>
+      {label}
+    </span>
   );
 });
 

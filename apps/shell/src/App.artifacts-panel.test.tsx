@@ -258,7 +258,9 @@ describe("artifacts-panel App journeys", () => {
       assert.ok(el);
       return el as HTMLElement;
     });
-    assert.ok(within(panel).getByRole("heading", { name: /^Artifact$/i }));
+    const heading = within(panel).getByRole("heading");
+    assert.match(heading.textContent ?? "", /Beside/);
+    assert.match(heading.textContent ?? "", /Artifact chat/);
     assert.ok(within(panel).getByText("Best sides"));
     assert.ok(within(panel).getByText("Steamed rice"));
 
@@ -564,9 +566,9 @@ describe("artifacts-panel App journeys", () => {
       ) as unknown as Record<string, unknown>,
     );
     await waitFor(() => assert.ok(screen.queryByLabelText(CHANGES_DOCK_LABEL)));
-    const codeOpen = document.querySelector(".assistant-answer-actions button");
-    assert.ok(codeOpen);
-    fireEvent.click(codeOpen!);
+    // Task 15 — Open now lives on the in-thread .beside card, not
+    // .assistant-answer-actions; the accessible name is the stable hook.
+    fireEvent.click(screen.getByRole("button", { name: /^Open$/i }));
     await waitFor(() => assert.ok(document.querySelector(".artifact-panel")));
     assert.ok(screen.getByLabelText(CHANGES_DOCK_LABEL));
     // The dock splits a row's path into a muted dir span and a filename span
