@@ -28,12 +28,18 @@ const start = page.getByRole("button", { name: "Start a new conversation" });
 if (await start.count()) await start.first().click();
 await page.waitForTimeout(800);
 const after = await page.getByText(alarm).count();
-const continuum = await page.getByText("Code continuum").count();
+// The "Code continuum" heading is gone. A fresh session lands on the home
+// hero, whose h1 is a time-of-day greeting — probe the surface and report the
+// line, rather than matching copy that changes by the hour.
+const homeHero = await page.evaluate(() => {
+  const h = document.querySelector(".home-hero h1");
+  return h ? (h.textContent || "").trim().slice(0, 80) : null;
+});
 const composerPh = await page.getByLabel("Message to agent").getAttribute("placeholder");
 const sendDisabled = await page.getByRole("button", { name: "Send" }).isDisabled();
 const shot = path.join(outDir, "forge-start-new.png");
 await page.screenshot({ path: shot, fullPage: false });
-const report = { before, after, continuum, composerPh, sendDisabled, shot };
+const report = { before, after, homeHero, composerPh, sendDisabled, shot };
 fs.writeFileSync(path.join(outDir, "STARTNEW.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 await browser.close();
