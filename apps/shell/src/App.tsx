@@ -1680,7 +1680,13 @@ export function App() {
           // owned run from the authoritative journal before clearing the
           // reconnect/unknown chrome; failures remain visible and retry on
           // the next transport reopen.
-          void restoreOwnedRuns("disconnect_restore").then(({ ok, hasNonterminal }) => {
+          //
+          // Read through restoreOwnedRunsRef rather than closing over
+          // restoreOwnedRuns directly: this effect is deliberately built
+          // once (see the dependency array below) and must still call
+          // whichever restoreOwnedRuns is CURRENT at the moment the socket
+          // reconnects, not the one captured when the effect first ran.
+          void restoreOwnedRunsRef.current("disconnect_restore").then(({ ok, hasNonterminal }) => {
             if (!ok) return;
             if (!hasNonterminal) {
               endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
@@ -1718,6 +1724,12 @@ export function App() {
       sock.close();
       if (socketRef.current === sock) socketRef.current = null;
     };
+    // The socket is deliberately built once per boot and never torn down
+    // just because a callback identity changed — adding restoreOwnedRuns
+    // (or markDisconnectedActivity's transitive deps) here would rebuild and
+    // reconnect the transport on every render that recreates them, which is
+    // a real behavior change (reconnect storms), not a cleanup. The latest
+    // restoreOwnedRuns is read through restoreOwnedRunsRef above instead.
   }, [boot, markDisconnectedActivity]);
 
   const restoreOwnedRunJournal = useCallback(async (
@@ -1765,6 +1777,15 @@ export function App() {
     );
     return { ok, hasNonterminal };
   }, [restoreOwnedRunJournal]);
+  // Latest-value mirror for the HostSocket connect effect above, which is
+  // built once per boot and deliberately does not depend on restoreOwnedRuns
+  // (see that effect's dependency-array comment). Kept current in an effect,
+  // matching onServerEventRef's pattern above rather than applyRailEvidenceRef's
+  // render-time assignment — see the Global Constraints note on ref timing.
+  const restoreOwnedRunsRef = useRef(restoreOwnedRuns);
+  useEffect(() => {
+    restoreOwnedRunsRef.current = restoreOwnedRuns;
+  });
 
   const reconcileOwnedRuns = useCallback(async (): Promise<{ ok: boolean; hasNonterminal: boolean }> => {
     if (reconcileRunsInFlightRef.current) return reconcileRunsInFlightRef.current;
