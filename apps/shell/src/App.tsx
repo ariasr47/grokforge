@@ -423,7 +423,12 @@ export function App() {
   const [histIdx, setHistIdx] = useState(-1);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  sessionIdRef.current = sessionId;
+  // Mirror in an effect, not during render: a render can be discarded under
+  // concurrent rendering, which would leave this ref set from work that
+  // never committed. Matches stateRef/messagesRef below (Task 2).
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   const observeRosterKeyRef = useRef("");
   const [observeHostOwnerSessionId, setObserveHostOwnerSessionId] = useState<string | null>(null);
   const [artifactOpenBinding, setArtifactOpenBinding] =
@@ -946,7 +951,11 @@ export function App() {
     });
   }, [stampActivity]);
   const applyRailEvidenceRef = useRef(applyRailEvidence);
-  applyRailEvidenceRef.current = applyRailEvidence;
+  // Mirror in an effect, not during render (Task 2) — matches
+  // onServerEventRef's established pattern for a callback-identity mirror.
+  useEffect(() => {
+    applyRailEvidenceRef.current = applyRailEvidence;
+  }, [applyRailEvidence]);
 
   const paintEnvelopeActivity = useCallback((activity: ActivityRecord, runId?: string | null) => {
     const rid = runId ?? normalizedRunIdRef.current ?? null;
@@ -996,7 +1005,11 @@ export function App() {
     });
   }, [stampActivity]);
   const paintEnvelopeActivityRef = useRef(paintEnvelopeActivity);
-  paintEnvelopeActivityRef.current = paintEnvelopeActivity;
+  // Mirror in an effect, not during render (Task 2) — matches
+  // onServerEventRef's established pattern for a callback-identity mirror.
+  useEffect(() => {
+    paintEnvelopeActivityRef.current = paintEnvelopeActivity;
+  }, [paintEnvelopeActivity]);
 
   const markDisconnectedActivity = useCallback(() => {
     const run = liveActivityRunRef.current;
@@ -2043,7 +2056,14 @@ export function App() {
     runStartedAt,
     ownedAllTerminal,
   });
-  busyRef.current = busy;
+  // Mirror in an effect, not during render (Task 2 — same reasoning as
+  // sessionIdRef above). sendText additionally sets this ref eagerly and
+  // synchronously the instant it admits a send (see its own busyRef.current
+  // = true), independent of this mirror, so the double-send guard does not
+  // rely on this effect's timing either.
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
   // Changes dock aggregation — the dock is one panel beside the whole thread
