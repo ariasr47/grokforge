@@ -2374,7 +2374,10 @@ export function App() {
         : state?.workspaceName || state?.chatRoot?.split(/[/\\]/).pop() || null,
     [state?.chatRoot, state?.workspaceName],
   );
-  const activeHome = sessionId ? loadSession(sessionPartition, sessionId) : null;
+  const activeHome = useMemo(
+    () => (sessionId ? loadSession(sessionPartition, sessionId) : null),
+    [sessionPartition, sessionId, sessionList],
+  );
   // Composer placeholder's "<home>" — the same real, never-fabricated title
   // ThreadHeader/ChatHomeName already show for this session.
   const chatHomeLabel = activeHome?.title?.trim() || null;
