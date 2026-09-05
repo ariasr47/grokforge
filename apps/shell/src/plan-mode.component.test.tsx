@@ -237,7 +237,7 @@ test("plan gate keeps its own Accept plan / Keep planning labels alongside the C
             runId: "r1",
           }],
         }}
-        verify={{ state: "ready", members: [] }}
+        verify={{ state: "ready", runLive: false, members: [] }}
         git={{ state: "ready", members: [] }}
         diffQueue={[{ id: "diff-1", path: "a.txt", diff: "+A" }]}
         onAccept={() => undefined}

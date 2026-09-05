@@ -129,7 +129,7 @@ function renderWithChanges(
       <RunSurface run={fixture} catchUp={catchUp} />
       <ChangesDock
         files={files}
-        verify={{ state: "ready", members: [] }}
+        verify={{ state: "ready", runLive: false, members: [] }}
         git={{ state: "ready", members: [] }}
         diffQueue={mergePendingDiffs([], fixture)}
         onAccept={() => undefined}
@@ -483,7 +483,7 @@ test("Changes dock rebuilds pending from durable decision + activity without liv
         state: "ready",
         members: projection.state === "ready" ? projection.members.map((m) => ({ ...m, runId: fixture.runId })) : [],
       }}
-      verify={{ state: "ready", members: [] }}
+      verify={{ state: "ready", runLive: false, members: [] }}
       git={{ state: "ready", members: [] }}
       diffQueue={rebuilt}
       onAccept={(id) => {

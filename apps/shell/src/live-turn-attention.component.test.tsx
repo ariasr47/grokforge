@@ -148,7 +148,7 @@ test("pending diff fills the Changes dock's Accept/Reject until settlement", () 
     return (
       <ChangesDock
         files={{ state: "ready", members }}
-        verify={{ state: "ready", members: [] }}
+        verify={{ state: "ready", runLive: false, members: [] }}
         git={{ state: "ready", members: [] }}
         diffQueue={mergePendingDiffs([], r)}
         onAccept={() => undefined}

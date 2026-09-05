@@ -36,7 +36,7 @@ function member(overrides: Partial<ChangesDockMember> = {}): ChangesDockMember {
   };
 }
 
-const EMPTY_VERIFY: ChangesDockVerifyState = { state: "ready", members: [] };
+const EMPTY_VERIFY: ChangesDockVerifyState = { state: "ready", members: [], runLive: false };
 const EMPTY_GIT: ChangesDockGitState = { state: "ready", members: [] };
 
 function noop() {
@@ -321,7 +321,7 @@ describe("ReviewSurface — Verify and Git columns", () => {
       <ReviewSurface
         {...baseProps({
           verify: {
-            state: "ready",
+            state: "ready", runLive: false,
             members: [
               { activityId: "v-1", invocationId: "vi-1", command: "npm test", execution: "executed", outcome: "pass", outcomeUnavailable: false },
               { activityId: "v-2", invocationId: "vi-2", command: "npm run typecheck", execution: "executed", outcome: "pass", outcomeUnavailable: false },
@@ -335,6 +335,39 @@ describe("ReviewSurface — Verify and Git columns", () => {
     assert.ok(screen.getByText(/labels a single turn/));
     // v-2 has no captured output — Forge never fakes a body for it.
     assert.equal(screen.queryByText("npm run typecheck · raw output") === null, true);
+  });
+
+  it("claims all green only once the run is finished — never while checks are still in flight", () => {
+    const passed = [
+      { activityId: "v-1", invocationId: "vi-1", command: "npm test", execution: "executed", outcome: "pass", outcomeUnavailable: false },
+    ] as const;
+    // Run still live: every check REPORTED so far passed, but more may follow.
+    const { unmount } = render(
+      <ReviewSurface {...baseProps({ verify: { state: "ready", members: [...passed], runLive: true } })} />,
+    );
+    assert.equal(screen.queryByText("all green") === null, true);
+    unmount();
+    // Run finished: the claim is now something Forge can actually stand behind.
+    render(<ReviewSurface {...baseProps({ verify: { state: "ready", members: [...passed], runLive: false } })} />);
+    assert.ok(screen.getByText("all green"));
+  });
+
+  it("never claims all green when a finished run left a check unknown", () => {
+    render(
+      <ReviewSurface
+        {...baseProps({
+          verify: {
+            state: "ready",
+            runLive: false,
+            members: [
+              { activityId: "v-1", invocationId: "vi-1", command: "npm test", execution: "executed", outcome: "pass", outcomeUnavailable: false },
+              { activityId: "v-2", invocationId: "vi-2", command: "npm run typecheck", execution: "executed", outcome: "unknown", outcomeUnavailable: true },
+            ],
+          },
+        })}
+      />,
+    );
+    assert.equal(screen.queryByText("all green") === null, true);
   });
 
   it("empty-message placeholder: with no commitMessageDraft, the field is empty with a placeholder, not an invented message", () => {

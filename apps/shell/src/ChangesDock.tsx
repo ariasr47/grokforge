@@ -19,7 +19,12 @@ export type ChangesDockLoadState<Member> =
   | { state: "ready"; members: Member[] };
 
 export type ChangesDockFilesState = ChangesDockLoadState<ChangesDockMember>;
-export type ChangesDockVerifyState = ChangesDockLoadState<RunVerifyMember>;
+/** Verify carries `runLive` because a summary over checks is only honest once
+ * the run has finished — while it is live, more checks may still arrive. */
+export type ChangesDockVerifyState =
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | { state: "ready"; members: RunVerifyMember[]; runLive: boolean };
 export type ChangesDockGitState = ChangesDockLoadState<RunGitReviewMember>;
 
 export const CHANGES_DOCK_LABEL = "Changes";

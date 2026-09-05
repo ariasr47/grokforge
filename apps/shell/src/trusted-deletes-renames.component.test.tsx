@@ -149,7 +149,7 @@ function renderChanges(
   render(
     <ChangesDock
       files={files}
-      verify={{ state: "ready", members: [] }}
+      verify={{ state: "ready", runLive: false, members: [] }}
       git={{ state: "ready", members: [] }}
       diffQueue={mergePendingDiffs([], fixture)}
       onAccept={() => undefined}

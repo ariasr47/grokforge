@@ -15,7 +15,7 @@ import type { RunVerifyMember } from "./runVerifyList";
 afterEach(() => cleanup());
 
 const EMPTY_FILES: ChangesDockFilesState = { state: "ready", members: [] };
-const EMPTY_VERIFY: ChangesDockVerifyState = { state: "ready", members: [] };
+const EMPTY_VERIFY: ChangesDockVerifyState = { state: "ready", members: [], runLive: false };
 const EMPTY_GIT: ChangesDockGitState = { state: "ready", members: [] };
 
 function member(overrides: Partial<ChangesDockMember> = {}): ChangesDockMember {
@@ -292,7 +292,7 @@ describe("ChangesDock — hunk preview", () => {
   });
 
   it("no diff preview renders when the list is empty", () => {
-    render(<ChangesDock {...baseProps()} verify={{ state: "ready", members: [verifyMember()] }} />);
+    render(<ChangesDock {...baseProps()} verify={{ state: "ready", runLive: false, members: [verifyMember()] }} />);
     assert.equal(screen.queryByText(/^@@/) === null, true);
   });
 });
@@ -457,7 +457,7 @@ describe("ChangesDock — tabs", () => {
       <ChangesDock
         {...baseProps()}
         files={{ state: "ready", members: [member()] }}
-        verify={{ state: "ready", members: [verifyMember()] }}
+        verify={{ state: "ready", runLive: false, members: [verifyMember()] }}
       />,
     );
     const dock = screen.getByRole("region", { name: "Changes" });
@@ -486,7 +486,7 @@ describe("ChangesDock — Verify rows", () => {
       <ChangesDock
         {...baseProps()}
         verify={{
-          state: "ready",
+          state: "ready", runLive: false,
           members: [
             verifyMember({ activityId: "v1", command: "npm test", outcome: "pass" }),
             verifyMember({ activityId: "v2", command: "npm run typecheck", outcome: "fail" }),

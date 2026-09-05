@@ -54,7 +54,7 @@ describe("J1 Write — Review write membership lists in File changes", () => {
     render(
       <ChangesDock
         files={{ state: "ready", members: [{ ...member, runId: "r1" }] }}
-        verify={{ state: "ready", members: [] }}
+        verify={{ state: "ready", runLive: false, members: [] }}
         git={{ state: "ready", members: [] }}
         diffQueue={[]}
         onAccept={() => undefined}

@@ -122,7 +122,7 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
     render(
       <ChangesDock
         files={{ state: "ready", members: [] }}
-        verify={{ state: "ready", members: [] }}
+        verify={{ state: "ready", runLive: false, members: [] }}
         git={{ state: "ready", members: [] }}
         diffQueue={[]}
         onAccept={() => undefined}
@@ -154,7 +154,7 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
           ? { state: "ready", members: filesProjection.members.map((m) => ({ ...m, runId: fixture.runId })) }
           : { state: "ready", members: [] }
       }
-      verify={verifyProjection.state === "ready" ? { state: "ready", members: verifyProjection.members } : { state: "ready", members: [] }}
+      verify={verifyProjection.state === "ready" ? { state: "ready", runLive: false, members: verifyProjection.members } : { state: "ready", runLive: false, members: [] }}
       git={gitProjection.state === "ready" ? { state: "ready", members: gitProjection.members } : { state: "ready", members: [] }}
       diffQueue={[]}
       activityStatusById={activityStatusById}
@@ -330,7 +330,7 @@ test("catch-up failed shows load-failure copy, not empty, no Retry (AC-14)", asy
   render(
     <ChangesDock
       files={{ state: "ready", members: [] }}
-      verify={{ state: "ready", members: [] }}
+      verify={{ state: "ready", runLive: false, members: [] }}
       git={{ state: "error", message }}
       diffQueue={[]}
       onAccept={() => undefined}

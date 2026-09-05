@@ -135,6 +135,15 @@ export function ReviewSurface({
 }: ReviewSurfaceProps) {
   const filesReady = files.state === "ready" ? files.members : [];
   const verifyReady = verify.state === "ready" ? verify.members : [];
+  // "all green" is a claim about a finished set of checks. While the run is
+  // live another check may still land, so the summary stays off until the run
+  // is terminal AND every check it reported passed (Unknown, Running and
+  // Not run all disqualify it via chipLabel).
+  const verifyAllGreen =
+    verify.state === "ready" &&
+    verify.runLive === false &&
+    verifyReady.length > 0 &&
+    verifyReady.every((m) => chipLabel(m) === "Passed");
   const gitReady = git.state === "ready" ? git.members : [];
 
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
@@ -468,9 +477,7 @@ export function ReviewSurface({
           <div>
             <div className="sl">
               <span>Verify</span>
-              {verifyReady.length > 0 && verifyReady.every((m) => chipLabel(m) === "Passed") ? (
-                <span className="mint sl-trail">all green</span>
-              ) : null}
+              {verifyAllGreen ? <span className="mint sl-trail">all green</span> : null}
             </div>
             {verify.state === "loading" ? <p className="changes-loading">{VERIFY_LOADING}</p> : null}
             {verify.state === "error" ? <p className="changes-error">{VERIFY_LOAD_FAILURE}</p> : null}

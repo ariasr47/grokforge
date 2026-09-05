@@ -2054,13 +2054,16 @@ export function App() {
     return { state: "ready", members };
   }, [sessionRuns, catchUpByRunId, productMode]);
   const changesDockVerify: ChangesDockVerifyState = useMemo(() => {
-    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [] };
+    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [], runLive: false };
     const projections = sessionRuns.map((run) => projectRunVerifyList(run, catchUpForRun(catchUpByRunId, run.runId)));
     if (projections.some((p) => p.state === "loading")) return { state: "loading" };
     const errored = projections.find((p): p is typeof p & { state: "error"; message: string } => p.state === "error");
     if (errored) return { state: "error", message: errored.message };
     const members = projections.flatMap((p) => (p.state === "ready" ? p.members : []));
-    return { state: "ready", members };
+    // Any run still in flight keeps the whole set live: a check from an
+    // unfinished run may still land, so no summary over these is settled yet.
+    const runLive = projections.some((p) => (p.state === "ready" || p.state === "absent") && p.runLive);
+    return { state: "ready", members, runLive };
   }, [sessionRuns, catchUpByRunId, productMode]);
   const changesDockGit: ChangesDockGitState = useMemo(() => {
     if (productMode !== "code" || sessionRuns.length === 0) return { state: "ready", members: [] };
