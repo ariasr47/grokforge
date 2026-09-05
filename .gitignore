@@ -49,3 +49,6 @@ docs/design/forge-next/forge-redesign.html
 .playwright-mcp/
 # The private updater signing key must never be committed; the .pub beside it is tracked on purpose.
 .tauri/updater.key
+
+# Dogfood fixtures: 152MB of agent test output, never committed
+docs/dogfood/
