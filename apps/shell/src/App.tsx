@@ -32,7 +32,6 @@ import {
   draftIsSendReady,
 } from "./ComposerPane";
 import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend, queueAdmitted, shouldFlushQueue } from "./composerSend";
-import { isStalePermissionDecision } from "./stalePermissionDecision";
 import { activityIsVendorSessionPlan, activityLooksLikeWrite } from "./activityWriteLike";
 import { atFileSuggestions } from "./atFileQuery";
 import { recentCrashes } from "./crashSink";
@@ -43,7 +42,6 @@ import { PlanArmControl } from "./PlanArmControl";
 import {
   PLAN_ARM_BLOCKED_UNVOUCHED,
   planArmFailureCopy,
-  projectPlanArm,
 } from "./planArm";
 import { projectProjectInstructionsComposer } from "./projectInstructionsComposer";
 import { ProjectInstructionsStatus } from "./ProjectInstructionsStatus";
@@ -57,7 +55,6 @@ import {
   slashTokenFilter,
   SKILLS_UNAVAILABLE,
 } from "./skillsCatalogComposer";
-import { isLivePlanning, planReadyIsEmpty } from "./runPlanSection";
 import {
   isOnboardingDone,
   loadFirstRun,
@@ -80,7 +77,6 @@ import {
   formatToolInput,
   formatToolOutput,
 } from "./toolFormat";
-import { PLAN_DECISION_FAILURE } from "./ActionDock";
 import { ChangesDock } from "./ChangesDock";
 import { ReviewSurface } from "./ReviewSurface";
 import { SettingsView } from "./SettingsView";
@@ -205,6 +201,7 @@ import { clearArtifactBinding } from "./artifactOpenBinding";
 import { useSkillsPalette } from "./useSkillsPalette";
 import { useHomeScreenData } from "./useHomeScreenData";
 import { useChangesProjections } from "./useChangesProjections";
+import { useDecisions } from "./useDecisions";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -326,12 +323,16 @@ export function App() {
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
   const [shellAllowlist, setShellAllowlist] = useState(true);
+  // permissions/diffQueue/oauth stay here (not moved into useDecisions,
+  // despite Task 11's brief) — the "rAF-throttle scroll-to-bottom" effect
+  // below reads all three in its own dependency array at this early
+  // position, well before any legal call site for that hook. See
+  // task-11-report.md Step 1. permissionInFlightRef/recoveryInFlightRef/
+  // planSettling moved fully into useDecisions — nothing outside
+  // decidePermission/recoverFromDock/settlePlan ever touched them.
   const [permissions, setPermissions] = useState<PermissionReq[]>([]);
-  const permissionInFlightRef = useRef<string | null>(null);
-  const recoveryInFlightRef = useRef<string | null>(null);
   const [diffQueue, setDiffQueue] = useState<PendingDiff[]>([]);
   const [planArmError, setPlanArmError] = useState<string | null>(null);
-  const [planSettling, setPlanSettling] = useState(false);
   const [planDecisionError, setPlanDecisionError] = useState<string | null>(null);
   // changeRecoveryFlash/changeRevertPendingEditId moved into useChangesProjections
   // (Task 10) — nothing outside recoverChangeMember ever wrote to them; the
@@ -2066,6 +2067,48 @@ export function App() {
     onError: reportError,
     toast,
   });
+  // permissions/diffQueue/pendingPlanDecision/pendingRecoveryDecision/
+  // planArm/decidePermission/trustFolder/settlePlan/recoverFromDock/
+  // chooseAskOption/anyDecisionPending all live in useDecisions now (Task
+  // 11). Called here, right after useChangesProjections, the earliest point
+  // every input (productMode/connected just above; activeRun/reportError
+  // declared earlier still) is already in scope — planArm specifically
+  // needs productMode/connected, which are not ready any earlier than this
+  // (see task-11-report.md Step 1 for why permissions/diffQueue/oauth's own
+  // state could not move here too, unlike the brief's literal "Moves" line).
+  const {
+    pendingPlanDecision,
+    pendingRecoveryDecision,
+    planArm,
+    decidePermission,
+    trustFolder,
+    settlePlan,
+    recoverFromDock,
+    chooseAskOption,
+    planSettling,
+    anyDecisionPending,
+  } = useDecisions({
+    permissions,
+    setPermissions,
+    diffQueue,
+    oauth,
+    runProjection,
+    runProjectionRef,
+    sessionId,
+    stateRef,
+    applyState,
+    toast,
+    reportError,
+    setSessionWrite,
+    setSessionShell,
+    productMode,
+    connected,
+    activeRun,
+    workspace: state?.workspace ?? null,
+    planEngagement: state?.planEngagement,
+    planArmError,
+    setPlanDecisionError,
+  });
   const livePhase = useMemo(() => {
     if (activeRun) return deriveLivePhaseFromRun(activeRun);
     if (runStartedAt) {
@@ -2100,56 +2143,6 @@ export function App() {
     return copy;
   }, [livePhase, activeRun?.state]);
   const livePlanning = livePhase.kind === "plan";
-  const pendingPlanDecision = useMemo(() => {
-    for (const id of runProjection.runOrder) {
-      const run = runProjection.runsById[id];
-      if (!run || run.sessionId !== sessionId) continue;
-      const decision = Object.values(run.decisions).find(
-        (d) => d.kind === "plan" && d.status === "pending",
-      );
-      if (!decision) continue;
-      return {
-        run,
-        decision,
-        empty: planReadyIsEmpty(run.plan?.body, run.plan?.proposedMembers.length ?? 0),
-      };
-    }
-    return null;
-  }, [runProjection, sessionId]);
-  useEffect(() => {
-    setPlanDecisionError(null);
-  }, [pendingPlanDecision?.decision.requestId, pendingPlanDecision?.run.runId, sessionId]);
-  // Cyan ask tier — recovery_confirmation. Same run-scan shape as
-  // pendingPlanDecision above; editId is resolved the same way RunSurface's
-  // now-removed submitDecision used to (match the activity by invocationId).
-  const pendingRecoveryDecision = useMemo(() => {
-    for (const id of runProjection.runOrder) {
-      const run = runProjection.runsById[id];
-      if (!run || run.sessionId !== sessionId) continue;
-      const decision = Object.values(run.decisions).find(
-        (d) => d.kind === "recovery_confirmation" && d.status === "pending",
-      );
-      if (!decision) continue;
-      const activity = Object.values(run.activities).find(
-        (a) => a.invocationId === decision.invocationId,
-      );
-      return { run, decision, editId: activity?.editId ?? null };
-    }
-    return null;
-  }, [runProjection, sessionId]);
-  const planBusyOther = Boolean(activeRun && !isLivePlanning(activeRun));
-  const planArm = useMemo(
-    () =>
-      projectPlanArm({
-        mode: productMode,
-        workspace: state?.workspace ?? null,
-        connected,
-        planEngagement: state?.planEngagement,
-        busyOther: planBusyOther,
-        armError: planArmError,
-      }),
-    [productMode, state?.workspace, connected, state?.planEngagement, planBusyOther, planArmError],
-  );
   const projectInstructionsComposer = useMemo(
     () =>
       projectProjectInstructionsComposer({
@@ -2533,13 +2526,15 @@ export function App() {
     if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
       return PLAN_ARM_BLOCKED_UNVOUCHED;
     }
-    if (
-      oauth ||
-      permissions.length > 0 ||
-      diffQueue.length > 0 ||
-      pendingPlanDecision ||
-      sessionHasDockOwnedPending
-    ) {
+    // = the old `oauth || permissions.length > 0 || diffQueue.length > 0 ||
+    // pendingPlanDecision || sessionHasDockOwnedPending`, algebraically
+    // unchanged: anyDecisionPending (useDecisions, Task 11) is exactly the
+    // first four terms; sessionHasDockOwnedPending (unmoved, App.tsx-local)
+    // is OR'd back in here. Deps array below deliberately left untouched —
+    // every raw value it names still fully determines anyDecisionPending's
+    // own value, so no entry needed adding, and the Global Constraints
+    // forbid "cleaning up" a dependency array as a side effect of a move.
+    if (anyDecisionPending || sessionHasDockOwnedPending) {
       return SETTLE_CARD_BELOW;
     }
     if (sessionHasNonTerminalRun || busy) return "A run is in progress";
@@ -3105,76 +3100,8 @@ export function App() {
     }
   }, [reportError, toast]);
 
-  const decidePermission = useCallback(
-    async (decision: "allow_once" | "allow_session" | "deny") => {
-      const p = permissions[0];
-      if (!p) return;
-      if (permissionInFlightRef.current === p.id) return;
-      permissionInFlightRef.current = p.id;
-      setPermissions((prev) => prev.filter((x) => x.id !== p.id));
-      try {
-        await api.runPermission({
-          sessionId: p.sessionId,
-          runId: p.runId,
-          requestId: p.id,
-          invocationId: p.invocationId,
-          decision,
-        });
-        if (decision === "allow_session") {
-          if (p.kind === "write") setSessionWrite(true);
-          if (p.kind === "shell") setSessionShell(true);
-        }
-        setPermissions((prev) => {
-          const owner = runProjectionRef.current.runsById[p.runId];
-          const stillPending = owner && Object.values(owner.decisions).some(
-            (d) => d.requestId === p.id && d.kind === "permission" && d.status === "pending",
-          );
-          if (stillPending) return prev.some((x) => x.id === p.id) ? prev : [p, ...prev];
-          return prev.filter((x) => x.id !== p.id);
-        });
-        if (decision !== "allow_once") {
-          toast.push(
-            decision === "deny"
-              ? `Denied ${p.kind}`
-              : `Allowed ${p.kind} (session)`,
-            decision === "deny" ? "info" : "success",
-          );
-        }
-      } catch (err) {
-        if (isStalePermissionDecision(err)) return;
-        setPermissions((prev) => (prev.some((x) => x.id === p.id) ? prev : [p, ...prev]));
-        reportError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (permissionInFlightRef.current === p.id) permissionInFlightRef.current = null;
-      }
-    },
-    [permissions, reportError, toast],
-  );
-
-  const trustFolder = useCallback(async () => {
-    const workspace = stateRef.current?.workspace;
-    if (!sessionId || !workspace) return;
-    try {
-      const result = await api.saveWorkspacePolicy({
-        sessionId,
-        workspace,
-        mode: "trusted_workspace",
-      });
-      const latest = stateRef.current;
-      if (latest) {
-        applyState({
-          ...latest,
-          permissionPolicy: result.policy as PublicState["permissionPolicy"],
-        });
-      }
-      // Current card only — Trusted applies to later turns via the stored
-      // policy. allow_session would skip diffs for binary writes too.
-      await decidePermission("allow_once");
-    } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
-    }
-  }, [applyState, decidePermission, reportError, sessionId]);
-
+  // decidePermission/trustFolder moved into useDecisions (Task 11, called
+  // earlier in App() — see the comment above that call).
   // settleOwnedDiff/acceptDiff/rejectDiff/onChangesDockAccept/
   // onChangesDockReject/onChangesDockRevert/acceptAllDiffs/rejectAllDiffs all
   // moved into useChangesProjections (Task 10, called earlier in App() —
@@ -3751,66 +3678,8 @@ export function App() {
     [sendText],
   );
 
-  const settlePlan = useCallback(
-    async (action: "accept" | "keep_planning") => {
-      if (!pendingPlanDecision) return;
-      setPlanSettling(true);
-      setPlanDecisionError(null);
-      try {
-        await api.runPlan({
-          sessionId: pendingPlanDecision.run.sessionId,
-          runId: pendingPlanDecision.run.runId,
-          requestId: pendingPlanDecision.decision.requestId,
-          invocationId: pendingPlanDecision.decision.invocationId,
-          connectionGeneration: pendingPlanDecision.run.connectionGeneration,
-          action,
-        });
-      } catch (e) {
-        setPlanDecisionError(PLAN_DECISION_FAILURE);
-      } finally {
-        setPlanSettling(false);
-      }
-    },
-    [pendingPlanDecision],
-  );
-
-  const recoverFromDock = useCallback(async () => {
-    const pending = pendingRecoveryDecision;
-    if (!pending) return;
-    if (recoveryInFlightRef.current === pending.decision.requestId) return;
-    if (!pending.editId) {
-      reportError("Recovery details unavailable");
-      return;
-    }
-    recoveryInFlightRef.current = pending.decision.requestId;
-    try {
-      await api.editRecovery({
-        sessionId: pending.run.sessionId,
-        runId: pending.run.runId,
-        editId: pending.editId,
-      });
-    } catch (e) {
-      reportError(e instanceof Error ? e.message : "Recovery failed");
-    } finally {
-      if (recoveryInFlightRef.current === pending.decision.requestId) {
-        recoveryInFlightRef.current = null;
-      }
-    }
-  }, [pendingRecoveryDecision, reportError]);
-
-  // F4: the ask gate's <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> hints (Gate.tsx)
-  // need a real handler per index. recovery_confirmation is the only live
-  // "ask" tier caller today and it always offers exactly one option (Recover,
-  // at index 0 — see ActionDock's `options={[{ label: GATE_RECOVER }]}`), so
-  // only index 0 does anything; Digit2/Digit3 stay bound (not silently
-  // missing) so their hint never lies again once a second option exists.
-  const chooseAskOption = useCallback(
-    (index: number) => {
-      if (!pendingRecoveryDecision) return;
-      if (index === 0) void recoverFromDock();
-    },
-    [pendingRecoveryDecision, recoverFromDock],
-  );
+  // settlePlan/recoverFromDock/chooseAskOption moved into useDecisions
+  // (Task 11, called earlier in App() — see the comment above that call).
 
   const retryLastUser = useCallback(
     (_id: string, content: string) => {
@@ -4066,11 +3935,12 @@ export function App() {
           return;
         }
         if (artifactOpenBinding) {
-          const dockOwns =
-            permissions.length > 0 ||
-            diffQueue.length > 0 ||
-            pendingPlanDecision != null ||
-            oauth != null;
+          // = the old `permissions.length > 0 || diffQueue.length > 0 ||
+          // pendingPlanDecision != null || oauth != null`, verbatim —
+          // anyDecisionPending (useDecisions, Task 11) is exactly this
+          // formula, already used unchanged by sendText's own early-return
+          // check elsewhere in this file.
+          const dockOwns = anyDecisionPending;
           if (dockOwns) return;
           e.preventDefault();
           closeArtifact();
