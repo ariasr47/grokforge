@@ -31,7 +31,7 @@ import {
   EMPTY_DRAFT_SEND,
   draftIsSendReady,
 } from "./ComposerPane";
-import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend, queueAdmitted, shouldFlushQueue } from "./composerSend";
+import { composerChromeBusy, endPageSend, queueAdmitted } from "./composerSend";
 import { activityIsVendorSessionPlan, activityLooksLikeWrite } from "./activityWriteLike";
 import { atFileSuggestions } from "./atFileQuery";
 import { recentCrashes } from "./crashSink";
@@ -49,12 +49,7 @@ import { projectChatPackComposer } from "./chatPackComposer";
 import { ChatPackStatus } from "./ChatPackStatus";
 import { CODE_AGENT_HARD_FAIL, projectCodeAgentComposer } from "./codeAgentComposer";
 import { CodeAgentStatus } from "./CodeAgentStatus";
-import {
-  composeArmedPromptText,
-  shouldClearArmedInvocation,
-  slashTokenFilter,
-  SKILLS_UNAVAILABLE,
-} from "./skillsCatalogComposer";
+import { slashTokenFilter } from "./skillsCatalogComposer";
 import {
   isOnboardingDone,
   loadFirstRun,
@@ -72,7 +67,7 @@ import { parseRunEventEnvelope } from "./runEventSchema";
 import { checkForAppUpdate, type UpdateStatus } from "./desktopUpdate";
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
 import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "./copyDock";
-import { WAITING_PLACEHOLDER_HEAD, type ChatMessage } from "./MessageList";
+import type { ChatMessage } from "./MessageList";
 import {
   formatToolInput,
   formatToolOutput,
@@ -86,13 +81,11 @@ import { inEditable, dockOwnsFocus } from "./inEditable";
 /** Legacy per-run phase label — superseded by derivedLivePhase's phaseCopy for
  *  display, but still threaded through several socket-event handlers below. */
 type RunPhase = "waiting_model" | "reasoning" | "tools" | "writing" | "done" | null;
-import { loadPromptHistory, pushPromptHistory } from "./promptHistory";
+import { loadPromptHistory } from "./promptHistory";
 import {
   cancelledDoneShouldPaint,
-  foldRunAnswersIntoHistory,
   RETRY_PROMPT_SEND_OPTS,
   stopChipBelongsOnTranscript,
-  stripTrailingStopAndAssistant,
 } from "./promptSendHistory";
 import {
   chatListTitle,
@@ -166,7 +159,6 @@ import {
   suggestChatFilename,
   transcriptToMarkdown,
 } from "./exportChat";
-import { expandAtMentions } from "./expandMentions";
 import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type ActivityRecord, type RunProjection, type RunEventEnvelope } from "./runReducer";
 import {
   isOwnedMembership,
@@ -202,6 +194,7 @@ import { useSkillsPalette } from "./useSkillsPalette";
 import { useHomeScreenData } from "./useHomeScreenData";
 import { useChangesProjections } from "./useChangesProjections";
 import { useDecisions } from "./useDecisions";
+import { useComposerSend } from "./useComposerSend";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -309,16 +302,13 @@ export function App() {
   // process (and flashing duplicate sockets in production).
   const onServerEventRef = useRef<(ev: ServerEvent) => void>(() => undefined);
   const [draft, setDraft] = useState("");
-  /** Queue ⇧⏎ (Task 11): a single held draft, bound to the session it was
-   *  queued against — never a bare string. `busy`, `sendText`, and the
-   *  "Queued" chip all key off whichever session is *currently selected*,
-   *  so a draft with no session id of its own would flush into (or show
-   *  in) the wrong session after a switch. `switchSession`/`newSession`
-   *  deliberately do nothing to this slot: the draft simply stays inert —
-   *  hidden and unflushed — until the user selects its own session again,
-   *  at which point it flushes as soon as that session reads idle (see
-   *  composerSend.ts's queueAdmitted/shouldFlushQueue). */
-  const [queuedDraft, setQueuedDraft] = useState<{ sessionId: string; text: string } | null>(null);
+  // queuedDraft/setQueuedDraft (Queue ⇧⏎) moved fully into useComposerSend
+  // (Task 12) — its own useState now lives there; App.tsx only threads
+  // `draft`/`setDraft` through (useSkillsPalette, called earlier, already
+  // needs the real setDraft — see the comment on that call below — and
+  // useComposerSend's own call site is later still, so draft's useState
+  // cannot move without breaking useSkillsPalette). See task-12-report.md
+  // Step 1.
   const [pathInput, setPathInput] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState<string>(INHERITED_DEFAULT_MODEL);
@@ -2216,6 +2206,73 @@ export function App() {
     state?.effort === "auto"
       ? state.effort
       : prefs.effort || "auto";
+  // sendText/send/queueCurrentDraft/cancelQueuedDraft/the queue-flush effect/
+  // onReviewSendToGrok all live in useComposerSend now (Task 12). Called
+  // here, right after effortLevel, the earliest point every input is
+  // already in scope — armedSkillName/skillsPalette come from
+  // useSkillsPalette just above; pendingPlanDecision from useDecisions
+  // further above still; effortLevel itself (this hook's own last
+  // dependency) is declared immediately above this call.
+  const {
+    queuedDraft,
+    setQueuedDraft,
+    sendText,
+    send,
+    queueCurrentDraft,
+    cancelQueuedDraft,
+    onReviewSendToGrok,
+  } = useComposerSend({
+    draft,
+    setDraft,
+    sessionId,
+    busy,
+    connected,
+    codePreAcquireOk,
+    codeHardFail,
+    vendorCode,
+    permissions,
+    setPermissions,
+    diffQueue,
+    setDiffQueue,
+    oauth,
+    pendingPlanDecision,
+    state,
+    effortLevel,
+    skillsPalette,
+    armedSkillName,
+    setArmedSkillName,
+    runProjection,
+    runProjectionRef,
+    busyRef,
+    sendInFlightRef,
+    cancelInFlightRef,
+    messagesRef,
+    pendingPromptMessageIdRef,
+    pendingPromptSessionIdRef,
+    streamEpochRef,
+    cancelGenerationRef,
+    normalizedRunIdRef,
+    applyRailEvidenceRef,
+    paintEnvelopeActivityRef,
+    beginStreamRun,
+    bindNormalizedRun,
+    commitRunProjection,
+    reportError,
+    toast,
+    uid,
+    setHistIdx,
+    setAtSuggestions,
+    setHistory,
+    setErrorBanner,
+    setRecovery,
+    setAwaitingNextTurn,
+    setRunPhase,
+    setRunPhaseDetail,
+    setRunStartedAt,
+    setRunFooter,
+    setMessages,
+    setFirstRun,
+  });
   const sessionPartition = useMemo(
     () =>
       partitionKey(
@@ -3317,366 +3374,15 @@ export function App() {
       });
   }, [toast, reportError, runProjection, sessionId]);
 
-  /**
-   * Returns whether the send was actually admitted (every guard passed and
-   * the request was handed off) — never whether the network round-trip
-   * later succeeded. The queue flush effect relies on this: a queued draft
-   * must only be cleared once it truly left the queue's hands, never on a
-   * guard bail-out (offline, engine down, a pending gate) where dropping
-   * it would silently lose the message with no error and nothing to retry.
-   * Once admission passes, the normal send machinery owns the outcome
-   * (toast/reportError on a later failure) exactly as it would for a live
-   * Enter — the queue's job is done either way.
-   */
-  const sendText = useCallback(
-    async (
-      raw: string,
-      opts?: { skipUserBubble?: boolean; stripTrailingAssistant?: boolean },
-    ): Promise<boolean> => {
-      const armed = shouldClearArmedInvocation(skillsPalette) ? null : armedSkillName;
-      const text = (armed ? composeArmedPromptText(armed, raw) : raw).trim();
-      const skillHandoff = armed ? { name: armed } : null;
-      const ownedRunActive = runProjection.runOrder.some((id) => {
-        const run = runProjection.runsById[id];
-        return run?.sessionId === sessionId && run.state !== "terminal";
-      });
-      if (
-        !composerSendAdmitted({
-          text,
-          sessionBusy: busyRef.current,
-          ownedRunActive,
-          sendInFlight: sendInFlightRef.current,
-        }) ||
-        (!connected && !codePreAcquireOk) ||
-        !sessionId
-      ) {
-        return false;
-      }
-      if (
-        oauth ||
-        permissions.length > 0 ||
-        diffQueue.length > 0 ||
-        pendingPlanDecision
-      ) {
-        return false;
-      }
-      // F8 / AC6 — before any credential is stored, no message is sent and
-      // no unlabeled provider error appears; the composer's disabled-reason
-      // chip is the only signal, so a bypass via Enter (which does not read
-      // the disabled attribute) must be refused here too.
-      if (codeHardFail) return false;
-      if (!state) return false;
-      if (!state.hasApiKey && !vendorCode) return false;
-      if (!state.permissionPolicy || state.permissionPolicy.status !== "confirmed") return false;
-      const mode = state?.mode === "code" ? "code" : "chat";
-      if (mode === "code" && !state?.workspace) {
-        reportError("Open a project folder first — use Open folder…", {
-          source: "prompt",
-        });
-        return false;
-      }
-      if (mode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
-        reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
-        return false;
-      }
-      if (!beginPageSend()) return false;
-      busyRef.current = true;
-      sendInFlightRef.current = true;
-      setDraft("");
-      setHistIdx(-1);
-      setAtSuggestions([]);
-      setHistory(pushPromptHistory(text));
-      setErrorBanner(null);
-      setRecovery(null);
-      setAwaitingNextTurn(false);
-      cancelInFlightRef.current = false;
-      // New generation — accepts only this run's stream events
-      beginStreamRun();
-      setRunPhase("waiting_model");
-      setRunPhaseDetail(WAITING_PLACEHOLDER_HEAD);
-      setRunStartedAt(Date.now());
-      setRunFooter(null);
-
-      // Build transcript base for history + UI (sync, before setState lag)
-      let base = messagesRef.current.slice();
-      if (opts?.stripTrailingAssistant) {
-        base = stripTrailingStopAndAssistant(base);
-      }
-      let promptMessageId: string | null = null;
-      if (!opts?.skipUserBubble) {
-        promptMessageId = uid();
-        base = [...base, { id: promptMessageId, role: "user", content: text }];
-      } else {
-        promptMessageId = [...base].reverse().find((message) => message.role === "user")?.id ?? null;
-      }
-      pendingPromptMessageIdRef.current = promptMessageId;
-      pendingPromptSessionIdRef.current = sessionId;
-      setMessages(base);
-      setFirstRun((fr) => patchFirstRun({ ...fr, sentMessage: true }));
-
-      // Prior turns only — last bubble is the user prompt we're about to send.
-      // Run-backed answers skip text_delta into messages; fold vouched run
-      // answers so follow-up history is not user-only.
-      const runAnswerById: Record<string, string> = {};
-      for (const run of Object.values(runProjectionRef.current.runsById)) {
-        if (run.answerVouched && run.finalAnswer?.trim()) runAnswerById[run.runId] = run.finalAnswer;
-      }
-      const history = foldRunAnswersIntoHistory(
-        base
-          .slice(0, -1)
-          .filter(
-            (m) =>
-              (m.role === "user" ||
-                m.role === "assistant" ||
-                m.role === "system") &&
-              m.content?.trim() &&
-              !m.content.startsWith("Stopped by you"),
-          )
-          .map((m) => ({
-            role: m.role,
-            content: m.content.slice(0, 12_000),
-            projectedRunId: m.projectedRunId,
-          })),
-        runAnswerById,
-      ).slice(-30);
-
-      let outbound = text;
-      if (state?.workspace && /@/.test(text)) {
-        try {
-          outbound = await expandAtMentions(text, async (p) => {
-            const r = await api.workspaceRead(p);
-            return { content: r.content, truncated: r.truncated };
-          });
-        } catch {
-          /* keep original */
-        }
-      }
-
-      try {
-        if (
-          cancelDuringAdmission({
-            cancelRequested: cancelInFlightRef.current,
-            admitted: false,
-          }) === "abort_before_post"
-        ) {
-          endPageSend();
-          sendInFlightRef.current = false;
-          setRunStartedAt(null);
-          setRunPhase(null);
-          setRunPhaseDetail(null);
-          setRunFooter("Stopped by you");
-          setAwaitingNextTurn(true);
-          cancelInFlightRef.current = false;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (
-              !cancelledDoneShouldPaint({
-                promptGeneration: streamEpochRef.current,
-                cancelGeneration: cancelGenerationRef.current,
-                lastRole: last?.role ?? null,
-                lastContent: last?.content ?? "",
-                userCount: prev.filter((m) => m.role === "user").length,
-              })
-            ) {
-              return prev;
-            }
-            return [...prev, { id: uid(), role: "system", content: "Stopped by you." }];
-          });
-          toast.push("Stopped by you", "info");
-          // Admission had already begun (beginPageSend succeeded, the draft
-          // and bubble were already committed) before this race resolved —
-          // same as a live Enter immediately followed by Stop. The queue's
-          // job is done; this is not a guard bail-out to retry.
-          return true;
-        }
-        // Contract path: admission returns the authoritative RunSnapshot (202).
-        // A successful response without it is invalid and is never retried via
-        // the legacy endpoint, which could dispatch the prompt twice.
-        const admitted = await api.promptRun({
-          sessionId,
-          conversationId: sessionId,
-          text: outbound,
-          effort: effortLevel,
-          history,
-          skillHandoff,
-        });
-        if (!admitted.run) throw new Error("Host returned no run snapshot; prompt was not admitted");
-        setArmedSkillName(null);
-        {
-          const run = admitted.run;
-          bindNormalizedRun(run.runId, run.sessionId);
-          if (
-            cancelDuringAdmission({
-              cancelRequested: cancelInFlightRef.current,
-              admitted: true,
-            }) === "cancel_admitted_run" &&
-            sessionId &&
-            run.state !== "terminal"
-          ) {
-            const cancelled = await api.cancelRun(sessionId, run.runId);
-            if (cancelled.run) {
-              commitRunProjection(mergeRunSnapshot(runProjectionRef.current, cancelled.run));
-            }
-            endPageSend();
-            sendInFlightRef.current = false;
-            setRunStartedAt(null);
-            setRunPhase(null);
-            setRunPhaseDetail(null);
-            setRunFooter("Stopped by you");
-            setAwaitingNextTurn(true);
-            return true;
-          }
-          if (run.state === "terminal") {
-            endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
-            setRunPhase(null);
-            setRunPhaseDetail(null);
-            setAwaitingNextTurn(true);
-          }
-          // Project identity immediately, but never fabricate an eventSeq from
-          // the snapshot. Early WS frames may already be in flight; replay the
-          // journal from the reducer's cursor so those frames remain admissible.
-          commitRunProjection(mergeRunSnapshot(runProjectionRef.current, run));
-          try {
-            const replay = await api.runState(run.runId, run.sessionId, 0);
-            const next = reduceRunEvents(mergeRunSnapshot(runProjectionRef.current, replay.run), replay.events);
-            commitRunProjection(next);
-            const nextRun = next.runsById[run.runId];
-            if (nextRun) {
-              // Admission GET can land activity_update before the live WS
-              // frame. Duplicate WS envelopes then no-op the reducer and
-              // never paint Tool activity rows — Chat pack materialize
-              // makes that race common.
-              for (const activity of Object.values(nextRun.activities)) {
-                paintEnvelopeActivityRef.current(activity, nextRun.runId);
-              }
-              setDiffQueue((prev) => mergePendingDiffs(prev, nextRun));
-              setPermissions((prev) => mergePendingPermissions(prev, nextRun));
-              applyRailEvidenceRef.current(nextRun);
-            }
-            if (replay.run.state === "terminal") {
-              endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
-              setRunPhase(null);
-              setRunPhaseDetail(null);
-              setAwaitingNextTurn(true);
-            }
-          } catch {
-            // WS resume remains authoritative and will retry on reconnect.
-          }
-        }
-        return true;
-      } catch (err) {
-        if (!normalizedRunIdRef.current) {
-          pendingPromptMessageIdRef.current = null;
-          pendingPromptSessionIdRef.current = null;
-        }
-        setRunPhase(null);
-        endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
-        setAwaitingNextTurn(true);
-        if (err instanceof ApiError && err.code === "skill_handoff_unavailable") {
-          setArmedSkillName(null);
-          toast.push(SKILLS_UNAVAILABLE, "error");
-          reportError(SKILLS_UNAVAILABLE, { source: "prompt" });
-          return true;
-        }
-        if (err instanceof ApiError && err.code === "plan_engagement_unvouched") {
-          reportError(PLAN_ARM_BLOCKED_UNVOUCHED, { source: "prompt" });
-          return true;
-        }
-        if (err instanceof ApiError && err.code === "plan_decision_pending") {
-          reportError(err.message || "plan_decision_pending", { source: "prompt" });
-          return true;
-        }
-        reportError(err instanceof Error ? err.message : String(err));
-        // Admission had already succeeded (beginPageSend, draft/bubble
-        // committed) before this network failure — the same outcome a live
-        // Enter would have. Not a guard bail-out, so the queue must not
-        // hold and silently retry a message the user already saw sent.
-        return true;
-      }
-    },
-    [
-      connected,
-      sessionId,
-      state?.workspace,
-      state?.mode,
-      state?.planEngagement,
-      state?.permissionPolicy,
-      state?.hasApiKey,
-      vendorCode,
-      codeHardFail,
-      codePreAcquireOk,
-      effortLevel,
-      reportError,
-      beginStreamRun,
-      bindNormalizedRun,
-      runProjection,
-      armedSkillName,
-      skillsPalette,
-      toast,
-      oauth,
-      permissions.length,
-      diffQueue.length,
-      pendingPlanDecision,
-    ],
-  );
-
-  const send = useCallback(async () => {
-    await sendText(draft);
-  }, [draft, sendText]);
-
-  /** Queue ⇧⏎ — holds the current draft against the currently selected
-   *  session; the run's Send stays unavailable while busy, so this is the
-   *  only way to compose a follow-up mid-run. Single slot: queuing again
-   *  replaces whatever was already held (for this or any other session). */
-  const queueCurrentDraft = useCallback(() => {
-    if (!queueAdmitted({ text: draft, busy })) return;
-    if (!sessionId) return;
-    setQueuedDraft({ sessionId, text: draft.trim() });
-    setDraft("");
-    setHistIdx(-1);
-  }, [draft, busy, sessionId]);
-
-  const cancelQueuedDraft = useCallback(() => setQueuedDraft(null), []);
-
-  // Flush once the queued draft's own session is selected and idle — either
-  // because it just went busy->idle while selected, or because the user
-  // switched back to it after it had already finished elsewhere (see
-  // shouldFlushQueue). Goes through the normal sendText path (never a
-  // second, parallel send), same as a live Enter would, and only clears the
-  // slot once sendText reports the send was actually admitted — a guard
-  // bail-out (offline, engine down, a pending gate) leaves the draft queued
-  // and still surfaced as "Queued · 1" instead of silently dropping it.
-  useEffect(() => {
-    if (!queuedDraft) return;
-    if (
-      !shouldFlushQueue({
-        queuedSessionId: queuedDraft.sessionId,
-        currentSessionId: sessionId,
-        busy,
-      })
-    ) {
-      return;
-    }
-    const pending = queuedDraft;
-    void sendText(pending.text).then((sent) => {
-      if (!sent) return;
-      setQueuedDraft((prev) =>
-        prev && prev.sessionId === pending.sessionId && prev.text === pending.text
-          ? null
-          : prev,
-      );
-    });
-  }, [busy, queuedDraft, sessionId, sendText]);
-
-  // The Review surface's line comments, "Ask Grok to change this file…"
-  // field, and "Commit accepted files" all go through this same composer
-  // send path — never a separate api call, and never git run by Forge itself.
-  const onReviewSendToGrok = useCallback(
-    (text: string) => {
-      void sendText(text);
-    },
-    [sendText],
-  );
+  // sendText/send/queueCurrentDraft/cancelQueuedDraft/the queue-flush effect/
+  // onReviewSendToGrok all live in useComposerSend now (Task 12), called
+  // right after effortLevel above — the earliest point every input (state/
+  // oauth/permissions/diffQueue/armedSkillName/skillsPalette/
+  // pendingPlanDecision/effortLevel) is already in scope. draft/setDraft
+  // stay declared above (useSkillsPalette, called earlier, already needs
+  // the real setDraft — see the comment there); queuedDraft/setQueuedDraft
+  // moved fully into the hook (nothing between its old declaration and the
+  // hook's own call position ever referenced it).
 
   // settlePlan/recoverFromDock/chooseAskOption moved into useDecisions
   // (Task 11, called earlier in App() — see the comment above that call).
