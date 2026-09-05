@@ -53,12 +53,8 @@ import { CODE_AGENT_HARD_FAIL, projectCodeAgentComposer } from "./codeAgentCompo
 import { CodeAgentStatus } from "./CodeAgentStatus";
 import {
   composeArmedPromptText,
-  filterSkillCommands,
-  mayOpenSkillsPalette,
-  projectSkillsPalette,
   shouldClearArmedInvocation,
   slashTokenFilter,
-  stripLeadingSlashToken,
   SKILLS_UNAVAILABLE,
 } from "./skillsCatalogComposer";
 import { isLivePlanning, planReadyIsEmpty } from "./runPlanSection";
@@ -228,6 +224,7 @@ import { useArtifactBinding } from "./useArtifactBinding";
 // binding inline the same way closeArtifact does internally — kept as a
 // direct import since those two call sites are not part of Task 7's move.
 import { clearArtifactBinding } from "./artifactOpenBinding";
+import { useSkillsPalette } from "./useSkillsPalette";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -388,9 +385,6 @@ export function App() {
   const [fileIndex, setFileIndex] = useState<string[]>([]);
   const [atSuggestions, setAtSuggestions] = useState<string[]>([]);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
-  const [armedSkillName, setArmedSkillName] = useState<string | null>(null);
-  const [skillsOpen, setSkillsOpen] = useState(false);
-  const [skillsActiveIndex, setSkillsActiveIndex] = useState(0);
   const [history, setHistory] = useState<string[]>(() => loadPromptHistory());
   const [histIdx, setHistIdx] = useState(-1);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -2291,51 +2285,30 @@ export function App() {
       codeAgent?.fallbackReason,
     ],
   );
-  const skillsPalette = useMemo(
-    () =>
-      projectSkillsPalette({
-        mode: productMode,
-        codeAgent,
-        skillsCatalog: state?.skillsCatalog,
-      }),
-    [
-      productMode,
-      codeAgent?.identity,
-      codeAgent?.resolveStatus,
-      codeAgent?.fallbackReason,
-      state?.skillsCatalog?.disposition,
-      state?.skillsCatalog?.commands,
-    ],
-  );
+  const {
+    skillsPalette,
+    skillsOpen,
+    setSkillsOpen,
+    skillsRows,
+    skillsIndex,
+    effectiveArmedName,
+    armedSkillName,
+    setArmedSkillName,
+    armSkill,
+    setSkillsActiveIndex,
+  } = useSkillsPalette({
+    productMode,
+    codeAgent,
+    skillsCatalog: state?.skillsCatalog,
+    draft,
+    composerRef,
+    sessionId,
+    setDraft,
+  });
   const skillsFilter = slashTokenFilter(
     draft,
     composerRef.current?.selectionStart ?? draft.length,
   );
-  const skillsRows =
-    skillsPalette.state === "ready"
-      ? filterSkillCommands(skillsPalette.commands, skillsFilter)
-      : [];
-  const skillsIndex =
-    skillsRows.length === 0
-      ? 0
-      : Math.min(skillsActiveIndex, skillsRows.length - 1);
-  const effectiveArmedName = shouldClearArmedInvocation(skillsPalette)
-    ? null
-    : armedSkillName;
-  useEffect(() => {
-    const caret = composerRef.current?.selectionStart ?? draft.length;
-    const next = mayOpenSkillsPalette(skillsPalette, draft, caret);
-    setSkillsOpen((open) => (open === next ? open : next));
-  }, [skillsPalette.state, draft]);
-  useEffect(() => {
-    if (shouldClearArmedInvocation(skillsPalette)) setArmedSkillName(null);
-  }, [skillsPalette.state]);
-  useEffect(() => {
-    setArmedSkillName(null);
-  }, [sessionId]);
-  useEffect(() => {
-    setSkillsActiveIndex((i) => (i === 0 ? i : 0));
-  }, [draft, skillsPalette.state]);
   const effortLevel: EffortLevel =
     state?.effort === "fast" ||
     state?.effort === "expert" ||
@@ -4268,14 +4241,6 @@ export function App() {
       setAtSuggestions([]);
       setAtActiveIndex(0);
     }
-  };
-
-  const armSkill = (name: string) => {
-    const caret = composerRef.current?.selectionStart ?? draft.length;
-    setDraft(stripLeadingSlashToken(draft, caret));
-    setArmedSkillName(name);
-    setSkillsOpen(false);
-    composerRef.current?.focus();
   };
 
   const insertAtFile = (file: string) => {
