@@ -81,15 +81,7 @@ import {
   formatToolOutput,
 } from "./toolFormat";
 import { PLAN_DECISION_FAILURE } from "./ActionDock";
-import {
-  ChangesDock,
-  type ChangesDockFilesState,
-  type ChangesDockGitState,
-  type ChangesDockMember,
-  type ChangesDockVerifyState,
-} from "./ChangesDock";
-import { projectRunVerifyList } from "./runVerifyList";
-import { projectRunGitReviewList, draftCommitMessageFromGitReview } from "./runGitReviewList";
+import { ChangesDock } from "./ChangesDock";
 import { ReviewSurface } from "./ReviewSurface";
 import { SettingsView } from "./SettingsView";
 import { ChatView } from "./ChatView";
@@ -191,7 +183,6 @@ import {
   mergePendingDiffs,
   mergePendingPermissions,
   isStaleRailChip,
-  projectRunChangeList,
   railEvidenceFromRun,
   settledRailIdentities,
   type PendingDiff,
@@ -199,7 +190,6 @@ import {
 } from "./runChangeList";
 import {
   appliedThroughLastEventSeq,
-  catchUpForRun,
   closeCatchUp,
   failCatchUp,
   openCatchUp,
@@ -214,6 +204,7 @@ import { useArtifactBinding } from "./useArtifactBinding";
 import { clearArtifactBinding } from "./artifactOpenBinding";
 import { useSkillsPalette } from "./useSkillsPalette";
 import { useHomeScreenData } from "./useHomeScreenData";
+import { useChangesProjections } from "./useChangesProjections";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -342,8 +333,9 @@ export function App() {
   const [planArmError, setPlanArmError] = useState<string | null>(null);
   const [planSettling, setPlanSettling] = useState(false);
   const [planDecisionError, setPlanDecisionError] = useState<string | null>(null);
-  const [changeRecoveryFlash, setChangeRecoveryFlash] = useState<Record<string, "reverted" | "conflict">>({});
-  const [changeRevertPendingEditId, setChangeRevertPendingEditId] = useState<string | null>(null);
+  // changeRecoveryFlash/changeRevertPendingEditId moved into useChangesProjections
+  // (Task 10) — nothing outside recoverChangeMember ever wrote to them; the
+  // hook now owns and returns both.
   const [oauth, setOauth] = useState<OAuthPending | null>(null);
   const [forceOpenFailedTools, setForceOpenFailedTools] = useState(false);
   const [runFooter, setRunFooter] = useState<string | null>(null);
@@ -2035,119 +2027,45 @@ export function App() {
   }, [busy]);
   const connected = hostOk;
   const productMode: ProductMode = state?.mode === "code" ? "code" : "chat";
-  // Changes dock aggregation — the dock is one panel beside the whole thread
-  // (not per-run like the old in-stream sections), so it folds every run in
-  // this session together, the same runs `.stream` already renders.
-  const sessionRuns = useMemo(
-    () =>
-      runProjection.runOrder
-        .map((id) => runProjection.runsById[id])
-        .filter((run): run is NonNullable<typeof run> => Boolean(run) && run.sessionId === sessionId),
-    [runProjection, sessionId],
-  );
-  const changesDockFiles: ChangesDockFilesState = useMemo(() => {
-    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [] };
-    const projections = sessionRuns.map((run) => ({
-      run,
-      projection: projectRunChangeList(run, catchUpForRun(catchUpByRunId, run.runId)),
-    }));
-    if (projections.some((p) => p.projection.state === "loading")) return { state: "loading" };
-    const errored = projections.find((p): p is typeof p & { projection: { state: "error"; message: string } } =>
-      p.projection.state === "error",
-    );
-    if (errored) return { state: "error", message: errored.projection.message };
-    const members: ChangesDockMember[] = [];
-    for (const { run, projection } of projections) {
-      if (projection.state !== "ready") continue;
-      for (const member of projection.members) members.push({ ...member, runId: run.runId });
-    }
-    return { state: "ready", members };
-  }, [sessionRuns, catchUpByRunId, productMode]);
-  const changesDockVerify: ChangesDockVerifyState = useMemo(() => {
-    if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [], runLive: false };
-    const projections = sessionRuns.map((run) => projectRunVerifyList(run, catchUpForRun(catchUpByRunId, run.runId)));
-    if (projections.some((p) => p.state === "loading")) return { state: "loading" };
-    const errored = projections.find((p): p is typeof p & { state: "error"; message: string } => p.state === "error");
-    if (errored) return { state: "error", message: errored.message };
-    const members = projections.flatMap((p) => (p.state === "ready" ? p.members : []));
-    // Any run still in flight keeps the whole set live: a check from an
-    // unfinished run may still land, so no summary over these is settled yet.
-    const runLive = projections.some((p) => (p.state === "ready" || p.state === "absent") && p.runLive);
-    return { state: "ready", members, runLive };
-  }, [sessionRuns, catchUpByRunId, productMode]);
-  const changesDockGit: ChangesDockGitState = useMemo(() => {
-    if (productMode !== "code" || sessionRuns.length === 0) return { state: "ready", members: [] };
-    const projections = sessionRuns.map((run) => projectRunGitReviewList(run, catchUpForRun(catchUpByRunId, run.runId)));
-    if (projections.some((p) => p.state === "loading")) return { state: "loading" };
-    const errored = projections.find((p): p is typeof p & { state: "error"; message: string } => p.state === "error");
-    if (errored) return { state: "error", message: errored.message };
-    const members = projections.flatMap((p) => (p.state === "ready" ? p.members : []));
-    return { state: "ready", members };
-  }, [sessionRuns, catchUpByRunId, productMode]);
-  const changesActivityStatusById = useMemo(() => {
-    const map = new Map<string, ActivityRecord["status"]>();
-    for (const run of sessionRuns) {
-      for (const a of Object.values(run.activities)) map.set(a.activityId, a.status);
-    }
-    return map;
-  }, [sessionRuns]);
-  const changesActivityLifecycleById = useMemo(() => {
-    const map = new Map<string, ActivityRecord["lifecycle"]>();
-    for (const run of sessionRuns) {
-      for (const a of Object.values(run.activities)) map.set(a.activityId, a.lifecycle);
-    }
-    return map;
-  }, [sessionRuns]);
-  const changesNonEmpty = (s: { state: string; members?: unknown[] }) =>
-    s.state === "loading" || s.state === "error" || (s.state === "ready" && (s.members?.length ?? 0) > 0);
-  const changesAvailable =
-    changesNonEmpty(changesDockFiles) || changesNonEmpty(changesDockVerify) || changesNonEmpty(changesDockGit);
-  // Review surface owns this same footprint (main + the changes panel) while
-  // open, so the dock steps aside rather than the two competing for space.
-  const changesDockVisible = changesAvailable && changesOpen && view !== "review";
-  // Review surface's raw verify output block and its git-evidence commit
-  // draft both read real activity.output — the same field paintEnvelopeActivity
-  // already formats for the transcript's tool bubbles, just keyed for lookup.
-  const changesActivityOutputById = useMemo(() => {
-    const map = new Map<string, unknown>();
-    for (const run of sessionRuns) {
-      for (const a of Object.values(run.activities)) map.set(a.activityId, a.output);
-    }
-    return map;
-  }, [sessionRuns]);
-  const reviewCommitDraft = useMemo(
-    () =>
-      changesDockGit.state === "ready"
-        ? draftCommitMessageFromGitReview(changesDockGit.members, changesActivityOutputById)
-        : null,
-    [changesDockGit, changesActivityOutputById],
-  );
-  const recoverChangeMember = useCallback(async (member: ChangesDockMember) => {
-    const run = runProjectionRef.current.runsById[member.runId];
-    if (!run) return;
-    setChangeRevertPendingEditId(member.editId);
-    try {
-      await api.editRecovery({ sessionId: run.sessionId, runId: run.runId, editId: member.editId });
-      setChangeRecoveryFlash((prev) => ({
-        ...prev,
-        [member.editId]: "reverted",
-        [member.activityId]: "reverted",
-      }));
-    } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (code === "recovery_conflict") {
-        setChangeRecoveryFlash((prev) => ({
-          ...prev,
-          [member.editId]: "conflict",
-          [member.activityId]: "conflict",
-        }));
-      } else {
-        reportError(e instanceof Error ? e.message : "Recovery failed");
-      }
-    } finally {
-      setChangeRevertPendingEditId(null);
-    }
-  }, [reportError]);
+  // Changes dock projections, activity maps, diff-settlement callbacks, and
+  // recovery UI state all live in useChangesProjections now (Task 10) — one
+  // object so ChangesDock and ReviewSurface (both consume it below) cannot
+  // drift from each other. Called here, right after productMode, the
+  // earliest point every input (runProjection/runProjectionRef/
+  // catchUpByRunId/productMode/sessionId/diffQueue+setter/changesOpen/view/
+  // reportError/toast) is already in scope.
+  const {
+    changesDockFiles,
+    changesDockVerify,
+    changesDockGit,
+    changesActivityStatusById,
+    changesActivityLifecycleById,
+    changesActivityOutputById,
+    changesAvailable,
+    changesDockVisible,
+    reviewCommitDraft,
+    changeRecoveryFlash,
+    changeRevertPendingEditId,
+    acceptDiff,
+    rejectDiff,
+    acceptAllDiffs,
+    rejectAllDiffs,
+    onChangesDockAccept,
+    onChangesDockReject,
+    onChangesDockRevert,
+  } = useChangesProjections({
+    runProjection,
+    runProjectionRef,
+    catchUpByRunId,
+    productMode,
+    sessionId,
+    diffQueue,
+    setDiffQueue,
+    changesOpen,
+    view,
+    onError: reportError,
+    toast,
+  });
   const livePhase = useMemo(() => {
     if (activeRun) return deriveLivePhaseFromRun(activeRun);
     if (runStartedAt) {
@@ -3257,87 +3175,13 @@ export function App() {
     }
   }, [applyState, decidePermission, reportError, sessionId]);
 
-  const settleOwnedDiff = useCallback(async (id: string, action: "accept" | "reject") => {
-    const owner = runProjectionRef.current.runOrder
-      .map((runId) => runProjectionRef.current.runsById[runId])
-      .find((run) => run && Object.values(run.decisions).some((d) => d.kind === "diff" && d.requestId === id));
-    const decision = owner
-      ? Object.values(owner.decisions).find((d) => d.kind === "diff" && d.requestId === id)
-      : undefined;
-    const activity = owner && decision
-      ? Object.values(owner.activities).find(
-          (a) => a.editId && (a.invocationId === decision.invocationId || a.editId === decision.requestId),
-        )
-      : undefined;
-    if (owner && decision && activity?.editId) {
-      await api.runDiff({
-        sessionId: owner.sessionId,
-        runId: owner.runId,
-        requestId: decision.requestId,
-        invocationId: decision.invocationId,
-        editId: activity.editId,
-        action,
-      });
-    } else {
-      await api.diff(id, action);
-    }
-    return Boolean(owner && decision && decision.status === "pending");
-  }, []);
-
-  const acceptDiff = useCallback(async (id: string) => {
-    try {
-      const envelopePending = await settleOwnedDiff(id, "accept");
-      if (!envelopePending) setDiffQueue((q) => q.filter((d) => d.id !== id));
-      else {
-        const latest = Object.values(runProjectionRef.current.runsById)
-          .flatMap((run) => Object.values(run.decisions))
-          .find((d) => d.requestId === id);
-        if (!latest || latest.status !== "pending") {
-          setDiffQueue((q) => q.filter((d) => d.id !== id));
-        }
-      }
-      toast.push("File accepted", "success");
-    } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
-    }
-  }, [reportError, settleOwnedDiff, toast]);
-
-  const rejectDiff = useCallback(async (id: string) => {
-    try {
-      const envelopePending = await settleOwnedDiff(id, "reject");
-      if (!envelopePending) setDiffQueue((q) => q.filter((d) => d.id !== id));
-      else {
-        const latest = Object.values(runProjectionRef.current.runsById)
-          .flatMap((run) => Object.values(run.decisions))
-          .find((d) => d.requestId === id);
-        if (!latest || latest.status !== "pending") {
-          setDiffQueue((q) => q.filter((d) => d.id !== id));
-        }
-      }
-      toast.push("File rejected", "info");
-    } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
-    }
-  }, [reportError, settleOwnedDiff, toast]);
-  // Stable wrappers so ChangesDock (memo()) does not re-render on every App
-  // render just because an inline arrow function got a new identity.
-  const onChangesDockAccept = useCallback((id: string) => void acceptDiff(id), [acceptDiff]);
-  const onChangesDockReject = useCallback((id: string) => void rejectDiff(id), [rejectDiff]);
-  const onChangesDockRevert = useCallback(
-    (member: ChangesDockMember) => void recoverChangeMember(member),
-    [recoverChangeMember],
-  );
+  // settleOwnedDiff/acceptDiff/rejectDiff/onChangesDockAccept/
+  // onChangesDockReject/onChangesDockRevert/acceptAllDiffs/rejectAllDiffs all
+  // moved into useChangesProjections (Task 10, called earlier in App() —
+  // see the comment above that call). onChangesDockCollapse/onOpenReview
+  // stay here: they toggle the dock panel/view, not diff settlement.
   const onChangesDockCollapse = useCallback(() => setChangesOpen(false), [setChangesOpen]);
   const onOpenReview = useCallback(() => setView("review"), []);
-  // DiffPanel's inline queue is gone, but its "settle everything currently
-  // queued" shape is exactly what the Review surface's footer/Ctrl+⇧A need.
-  const acceptAllDiffs = useCallback(() => {
-    for (const d of diffQueue) void acceptDiff(d.id);
-  }, [diffQueue, acceptDiff]);
-  const rejectAllDiffs = useCallback(() => {
-    for (const d of diffQueue) void rejectDiff(d.id);
-  }, [diffQueue, rejectDiff]);
-
 
   const openToolPath = useCallback(async (path: string) => {
     setPeek({ path, content: "Loading…" });
