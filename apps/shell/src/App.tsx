@@ -108,7 +108,6 @@ import {
 } from "./promptSendHistory";
 import {
   chatListTitle,
-  chatSessionPreview,
   clearPackMembers,
   clearSessionNeedsYouEverywhere,
   commitHomeName,
@@ -119,8 +118,6 @@ import {
   flushSessions,
   hasAnyStoredHistory,
   isChatPartition,
-  isExpanded,
-  listNeedsYou,
   listPinnedWorkspaces,
   listSessions,
   loadSession,
@@ -134,18 +131,11 @@ import {
   toggleExpanded,
   updatePackMembers,
   updateSessionMeta,
-  workspaceDisplayName,
   type ChatSession,
 } from "./sessions";
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
 import { computeOverview } from "./OverviewStrip";
-import {
-  type HomeChatHome,
-  type HomeFooterFacts,
-  type HomeNeedsYouItem,
-  type HomeRecentWorkspace,
-} from "./HomeScreen";
-import { Sidebar, type WorkspaceNode } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import {
   buildSessionMarkdown,
   downloadDiagnostics,
@@ -165,8 +155,6 @@ import {
 } from "./api";
 import { installHealthPollTestScheduler } from "./healthPollTestClock";
 import {
-  isPackagedWindowsInstallerSession,
-  SETTINGS_UNSIGNED_LINE,
   type InstallerShaVoucher,
 } from "./installerHonesty";
 import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
@@ -225,6 +213,7 @@ import { useArtifactBinding } from "./useArtifactBinding";
 // direct import since those two call sites are not part of Task 7's move.
 import { clearArtifactBinding } from "./artifactOpenBinding";
 import { useSkillsPalette } from "./useSkillsPalette";
+import { useHomeScreenData } from "./useHomeScreenData";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -3046,172 +3035,6 @@ export function App() {
     if (changed) setSessionList(listSessions(sessionPartition));
   }, [needsYouReasons, sessionPartition]);
 
-  useEffect(() => {
-    if (productMode === "chat") return;
-    const paths = listPinnedWorkspaces();
-    setPinnedPaths(paths);
-    void refreshBranches(paths);
-  }, [refreshBranches, expandTick, productMode]);
-
-  const treeWorkspaces: WorkspaceNode[] = useMemo(() => {
-    if (productMode === "chat") return [];
-    const paths = pinnedPaths.length
-      ? pinnedPaths
-      : state?.workspace
-        ? [state.workspace]
-        : [];
-    return paths.map((path) => ({
-      path,
-      name: workspaceDisplayName(path),
-      branch: branchMap[path] ?? null,
-      sessions: listSessions(path),
-      expanded: isExpanded(path),
-      active: path === state?.workspace,
-    }));
-  }, [
-    productMode,
-    pinnedPaths,
-    branchMap,
-    state?.workspace,
-    expandTick,
-    sessionList,
-  ]);
-
-  const chatSessions = useMemo(
-    () => (productMode === "chat" ? listSessions(sessionPartition) : []),
-    [productMode, sessionPartition, sessionList, expandTick],
-  );
-
-  // Task 13 — Home screen data. Unlike treeWorkspaces/chatSessions above,
-  // these are NOT gated by productMode: Home is a cross-mode launcher (it
-  // is the one place that opens either a Code workspace or a Chat home), so
-  // both columns must reflect real data regardless of which mode happens to
-  // be selected right now. listPinnedWorkspaces()/listSessions() are
-  // synchronous local-store reads (no engine round-trip), so it's safe to
-  // call them fresh here instead of reusing the mode-gated memos above.
-  // sessionList/expandTick carry no value read directly below — they exist
-  // purely as "the store changed, recompute" triggers, the same role they
-  // already play in treeWorkspaces's own dependency array.
-  const homeChatPartition = useMemo(
-    () => partitionKey("chat", state?.chatRoot),
-    [state?.chatRoot],
-  );
-
-  // needsYouReasons is a brand-new object every time runProjection changes —
-  // which, mid-stream, is every single token delta. Depending on that
-  // object's *reference* would recompute homeNeedsYou (and hand HomeScreen
-  // a new array) on every streamed token even though the actual approve/
-  // question assignment essentially never changes during plain streaming.
-  // Depend on its serialized *value* instead, so homeNeedsYou (and anything
-  // memoized on it) stays referentially stable across a run that streams
-  // for a while with no decision pending.
-  const needsYouReasonsKey = useMemo(
-    () =>
-      Object.entries(needsYouReasons)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, reason]) => `${id}:${reason}`)
-        .join(","),
-    [needsYouReasons],
-  );
-
-  const homeNeedsYou: HomeNeedsYouItem[] = useMemo(() => {
-    const workspaces = [...listPinnedWorkspaces(), homeChatPartition];
-    const flagged = workspaces.flatMap((ws) =>
-      listNeedsYou(ws).map((s) => ({ ws, s })),
-    );
-    flagged.sort((a, b) => b.s.updatedAt - a.s.updatedAt);
-    return flagged.map(({ ws, s }) => ({
-      workspace: ws,
-      id: s.id,
-      title: chatListTitle(s),
-      reason: needsYouReasons[s.id],
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionList, expandTick, homeChatPartition, needsYouReasonsKey]);
-
-  const homeRecentWorkspaces: HomeRecentWorkspace[] = useMemo(() => {
-    return listPinnedWorkspaces()
-      .map((path): HomeRecentWorkspace | null => {
-        const sessions = listSessions(path); // already updatedAt-desc
-        const last = sessions[0];
-        if (!last) return null;
-        return {
-          path,
-          name: workspaceDisplayName(path),
-          branch: last.branch ?? null,
-          sessionCount: sessions.length,
-          lastSessionId: last.id,
-          lastTitle: chatListTitle(last),
-          updatedAt: last.updatedAt,
-        };
-      })
-      .filter((w): w is HomeRecentWorkspace => w !== null)
-      .slice(0, 5);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionList, expandTick]);
-
-  // Task 14 — Ctrl+P's sessions mode: every session in every pinned Code
-  // workspace (not just each workspace's latest, unlike homeRecentWorkspaces
-  // above), flattened and sorted most-recent-first so the palette can fuzzy
-  // search across all of them. Same staleness ceiling as homeRecentWorkspaces
-  // — a background workspace's own data only refreshes when sessionList
-  // (the active partition) or expandTick changes, which is the established,
-  // accepted pattern here (Task 13).
-  const paletteSessions: PaletteSessionRow[] = useMemo(() => {
-    const rows: PaletteSessionRow[] = [];
-    for (const path of listPinnedWorkspaces()) {
-      const workspaceName = workspaceDisplayName(path);
-      for (const s of listSessions(path)) {
-        rows.push({
-          id: s.id,
-          workspacePath: path,
-          workspaceName,
-          title: chatListTitle(s),
-          branch: s.branch ?? null,
-          updatedAt: s.updatedAt,
-        });
-      }
-    }
-    return rows.sort((a, b) => b.updatedAt - a.updatedAt);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionList, expandTick]);
-
-  // Chat homes column (Task 13; un-parked — see
-  // .superpowers/sdd/crash-diagnosis.md). Mirrors homeRecentWorkspaces
-  // above: listSessions() already returns updatedAt-desc, capped to the 5
-  // most recent so this column reads as bounded the same way Recent does.
-  // The crash that parked this was never in this data wiring — it was
-  // App.ac9.test.tsx's own `assert.equal` called with a live rendered DOM
-  // element, which walks React's Fiber tree at unbounded depth the moment
-  // the comparison legitimately fails. That assertion (and the same hazard
-  // elsewhere in the suite) is fixed, so this can derive real rows again.
-  const homeChatHomes: HomeChatHome[] = useMemo(() => {
-    return listSessions(homeChatPartition)
-      .map(
-        (s): HomeChatHome => ({
-          id: s.id,
-          title: chatListTitle(s),
-          preview: chatSessionPreview(s),
-          updatedAt: s.updatedAt,
-        }),
-      )
-      .slice(0, 5);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionList, expandTick, homeChatPartition]);
-
-  const homeFooter: HomeFooterFacts = useMemo(
-    () => ({
-      version: buildInfo?.version ?? null,
-      installerWarning: isPackagedWindowsInstallerSession()
-        ? SETTINGS_UNSIGNED_LINE
-        : null,
-      authLabel: railAuthLabel,
-      channel: channelBadge(),
-      isPackagedWindows: isPackagedWindowsInstallerSession(),
-    }),
-    [buildInfo?.version, railAuthLabel],
-  );
-
   const browseFolder = useCallback(async () => {
     const native = await pickFolderNative();
     if (native) {
@@ -3244,6 +3067,44 @@ export function App() {
     [productMode, switchMode, switchSession],
   );
 
+  // useHomeScreenData's inputs are only now all in legal scope: browseFolder
+  // and openHomeSession (both required by its homeOn* wrappers) are
+  // declared just above, later than every other input. Task 7/8 hit the
+  // same constraint (see task-7-report.md/task-8-report.md) — call at the
+  // earliest point everything it needs already exists, not at the state's
+  // original position.
+  const {
+    treeWorkspaces,
+    chatSessions,
+    homeChatPartition,
+    homeNeedsYou,
+    homeRecentWorkspaces,
+    paletteSessions,
+    homeChatHomes,
+    homeFooter,
+    homeOnOpenFolder,
+    homeOnFieldQuery,
+    homeOnAllSessions,
+    homeOnOpenChatHome,
+  } = useHomeScreenData({
+    sessionList,
+    expandTick,
+    productMode,
+    pinnedPaths,
+    setPinnedPaths,
+    branchMap,
+    sessionPartition,
+    workspace: state?.workspace,
+    chatRoot: state?.chatRoot,
+    needsYouReasons,
+    buildInfo,
+    authLabel: railAuthLabel,
+    refreshBranches,
+    openPalette,
+    browseFolder,
+    openHomeSession,
+  });
+
   const startNewCodeSession = useCallback(() => {
     const target = state?.workspace ?? listPinnedWorkspaces()[0] ?? null;
     if (!target) {
@@ -3265,26 +3126,6 @@ export function App() {
     }
   }, [productMode, switchMode, newSession, homeChatPartition]);
 
-  // Stable wrappers for HomeScreen's remaining props. HomeScreen is
-  // React.memo'd; an inline arrow recreated on every App render (App
-  // re-renders on every streamed token while a run is live) would defeat
-  // that memo the instant Home happens to be on screen during a live turn
-  // (e.g. right after a mode switch, before the next turn's first message
-  // lands) — every token would re-render the whole Home tree for no reason.
-  const homeOnOpenFolder = useCallback(() => void browseFolder(), [browseFolder]);
-  // Home's field and its "All sessions" link both open Ctrl+P's sessions
-  // mode (Task 14) rather than the command list — "jump to a session" is
-  // Home's whole purpose. The field's typed text lands straight in the
-  // palette's own input; All-sessions opens the same list unfiltered.
-  const homeOnFieldQuery = useCallback(
-    (text: string) => openPalette("sessions", text),
-    [openPalette],
-  );
-  const homeOnAllSessions = useCallback(() => openPalette("sessions", ""), [openPalette]);
-  const homeOnOpenChatHome = useCallback(
-    (id: string) => openHomeSession(homeChatPartition, id),
-    [openHomeSession, homeChatPartition],
-  );
   const onSelectPaletteSession = useCallback(
     (row: PaletteSessionRow) => openHomeSession(row.workspacePath, row.id),
     [openHomeSession],
