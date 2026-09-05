@@ -28,9 +28,7 @@ import { BootScreen } from "./BootScreen";
 import { AppTopbar } from "./AppTopbar";
 import { EngineStoppedBanner, ErrorBanner } from "./AppBanners";
 import {
-  ComposerPane,
   EMPTY_DRAFT_SEND,
-  composerBlockReasonVisible,
   draftIsSendReady,
 } from "./ComposerPane";
 import { beginPageSend, cancelDuringAdmission, composerChromeBusy, composerSendAdmitted, endPageSend, queueAdmitted, shouldFlushQueue } from "./composerSend";
@@ -44,7 +42,6 @@ import { ContextRing } from "./ContextRing";
 import { PlanArmControl } from "./PlanArmControl";
 import {
   PLAN_ARM_BLOCKED_UNVOUCHED,
-  PLAN_LIVE_FOOTER,
   planArmFailureCopy,
   projectPlanArm,
 } from "./planArm";
@@ -64,10 +61,6 @@ import {
   stripLeadingSlashToken,
   SKILLS_UNAVAILABLE,
 } from "./skillsCatalogComposer";
-import { SkillsPalette } from "./SkillsPalette";
-import { SkillArmedChip } from "./SkillArmedChip";
-import { ChatPackInventory } from "./ChatPackInventory";
-import { ChatHomeName } from "./ChatHomeName";
 import { isLivePlanning, planReadyIsEmpty } from "./runPlanSection";
 import {
   isOnboardingDone,
@@ -75,7 +68,6 @@ import {
   patchFirstRun,
   type FirstRunState,
 } from "./firstRun";
-import { Onboarding } from "./Onboarding";
 import { CommandPalette, type PaletteAction, type PaletteSessionRow } from "./CommandPalette";
 import { Button } from "./ui/Button";
 import { OverlayDialog } from "./ui/Dialog";
@@ -87,12 +79,12 @@ import { parseRunEventEnvelope } from "./runEventSchema";
 import { checkForAppUpdate, type UpdateStatus } from "./desktopUpdate";
 import { notifyDesktop, registerSummonShortcut } from "./desktopNotify";
 import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "./copyDock";
-import { MessageList, WAITING_PLACEHOLDER_HEAD, type ChatMessage } from "./MessageList";
+import { WAITING_PLACEHOLDER_HEAD, type ChatMessage } from "./MessageList";
 import {
   formatToolInput,
   formatToolOutput,
 } from "./toolFormat";
-import { ActionDock, PLAN_DECISION_FAILURE } from "./ActionDock";
+import { PLAN_DECISION_FAILURE } from "./ActionDock";
 import {
   ChangesDock,
   type ChangesDockFilesState,
@@ -100,11 +92,11 @@ import {
   type ChangesDockMember,
   type ChangesDockVerifyState,
 } from "./ChangesDock";
-import { ThreadHeader } from "./ThreadHeader";
 import { projectRunVerifyList } from "./runVerifyList";
 import { projectRunGitReviewList, draftCommitMessageFromGitReview } from "./runGitReviewList";
 import { ReviewSurface } from "./ReviewSurface";
 import { SettingsView } from "./SettingsView";
+import { ChatView } from "./ChatView";
 import { inEditable, dockOwnsFocus } from "./inEditable";
 
 /** Legacy per-run phase label — superseded by derivedLivePhase's phaseCopy for
@@ -150,10 +142,8 @@ import {
   type ChatSession,
 } from "./sessions";
 import { FrameFlush, StreamBuffer } from "./streamBuffer";
-import { computeOverview, OverviewStrip, pickToolsJumpEl, toolsJumpNeedsStart } from "./OverviewStrip";
-import { EmptyStates } from "./EmptyStates";
+import { computeOverview } from "./OverviewStrip";
 import {
-  HomeScreen,
   type HomeChatHome,
   type HomeFooterFacts,
   type HomeNeedsYouItem,
@@ -207,7 +197,6 @@ import {
 import { expandAtMentions } from "./expandMentions";
 import { initialRunProjection, isRunStreamDelta, mergeRunSnapshot, persistableRunProjection, reduceRunEvent, reduceRunEvents, restoreRunProjection, type ActivityRecord, type RunProjection, type RunEventEnvelope } from "./runReducer";
 import {
-  hostObserveRosterEligible,
   isOwnedMembership,
   observeRosterFingerprint,
   ownedRunKeysFromProjection,
@@ -234,11 +223,8 @@ import {
   type CatchUpMap,
   type RestoreIntent,
 } from "./catchUpWindows";
-import { RunSurface } from "./RunSurface";
-import { ArtifactPanel } from "./ArtifactPanel";
 import { elevateArtifact } from "./artifactEligibility";
 import {
-  bindingMatchesTurn,
   clearArtifactBinding,
   openArtifactBinding,
   shouldClearOnConversationChange,
@@ -246,7 +232,6 @@ import {
   type ArtifactContentKind,
   type ArtifactOpenBinding,
 } from "./artifactOpenBinding";
-import { savedPolicyUnusable } from "./PermissionPolicyControl";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -5253,387 +5238,136 @@ export function App() {
               onSendToGrok={onReviewSendToGrok}
             />
           ) : (
-            <div className="panel-chat">
-              <ThreadHeader
-                title={activeHome?.title ?? ""}
-                model={state?.appliedModel || state?.model || null}
-                effortLabel={
-                  effortLevel !== "auto"
-                    ? effortLevel.charAt(0).toUpperCase() + effortLevel.slice(1)
-                    : null
-                }
-                elapsedMinutes={runStartedAt ? Math.floor((liveNow - runStartedAt) / 60000) : null}
-                elapsedSeconds={runStartedAt ? Math.floor((liveNow - runStartedAt) / 1000) : null}
-                liveStatusText={liveCopy.status}
-                decisionPending={
-                  permissions.length > 0 ||
-                  diffQueue.length > 0 ||
-                  Boolean(pendingPlanDecision) ||
-                  sessionHasDockOwnedPending
-                }
-                cancellable={busy}
-                onCancel={requestCancel}
-                overview={
-                  <OverviewStrip
-                    overview={overview}
-                    workspaceName={
-                      productMode === "chat" ? chatRootLabel : (state?.workspaceName ?? null)
-                    }
-                    mode={productMode}
-                    shellCapability={state?.shellCapability}
-                    codeAgentIdentity={state?.codeAgent?.identity}
-                    onJumpToFiles={
-                      overview.filesTouched.length ? () => setChangesOpen(true) : undefined
-                    }
-                    onJumpToTools={
-                      overview.tools > 0
-                        ? () => {
-                            const tools = pickToolsJumpEl();
-                            if (!tools) return;
-                            tools.scrollIntoView({ block: "nearest", behavior: "instant" });
-                            const you = document.querySelector<HTMLElement>(".you");
-                            if (you) {
-                              const toolsR0 = tools.getBoundingClientRect();
-                              const youR = you.getBoundingClientRect();
-                              if (toolsJumpNeedsStart({ toolsTop: toolsR0.top, youBottom: youR.bottom })) {
-                                tools.scrollIntoView({ block: "start", behavior: "instant" });
-                              }
-                            }
-                          }
-                        : undefined
-                    }
-                  />
-                }
-                onExport={exportCurrentChat}
-                exportDisabled={messages.length === 0}
-                changesCount={
-                  changesDockFiles.state === "ready" ? changesDockFiles.members.length : undefined
-                }
-                changesOpen={changesOpen}
-                onToggleChanges={() => setChangesOpen((v) => !v)}
-                changesAvailable={changesAvailable}
-                artifactOpen={Boolean(artifactOpenBinding)}
-                onToggleArtifact={closeArtifact}
-              />
-              {productMode === "chat" ? (
-                <ChatHomeName
-                  mode={productMode}
-                  committedName={activeHome?.committedName === true}
-                  title={activeHome?.title ?? ""}
-                  saveFailed={homeNameSaveFailed}
-                  onCommit={(title) => {
-                    if (!sessionId) return;
-                    setHomeNameDraft(title);
-                    renameSession(sessionPartition, sessionId, title);
-                  }}
-                  onRetry={() => {
-                    if (!sessionId) return;
-                    renameSession(
-                      sessionPartition,
-                      sessionId,
-                      homeNameDraft || activeHome?.title || "",
-                    );
-                  }}
-                />
-              ) : null}
-              {(openingWs || runFooter || livePlanning) && (
-                <div className="run-footer" role="status">
-                  {openingWs ? "Opening workspace…" : livePlanning ? PLAN_LIVE_FOOTER : runFooter}
-                </div>
-              )}
-
-              <div className={`chat-stage${artifactOpenBinding ? " chat-stage--artifact-open" : ""}`}>
-              <div className="sr-only" aria-live="polite">{artifactAnnounce}</div>
-              <div className="transcript" tabIndex={-1} ref={transcriptRef}>
-                {showConversationsNotFound && !skillsOpen && atSuggestions.length === 0 ? (
-                  <EmptyStates
-                    kind="conversations-not-found"
-                    onSaveDiagnostics={() => void exportSessionDiagnostics()}
-                    onStartNewConversation={() => {
-                      setNotFoundDismissed(true);
-                    }}
-                  />
-                ) : showOnboarding ? (
-                  <Onboarding
-                    firstRun={firstRun}
-                    hasWorkspace={Boolean(state?.workspace)}
-                    signedIn={Boolean(state?.hasApiKey)}
-                    mode={productMode}
-                    onOpenFolder={() => void browseFolder()}
-                    onOpenSettings={() => setView("settings")}
-                    onSetMode={(m) => {
-                      setFirstRun((fr) =>
-                        patchFirstRun({ ...fr, pickedMode: true }),
-                      );
-                      void switchMode(m);
-                    }}
-                    onDismiss={() =>
-                      setFirstRun((fr) => patchFirstRun({ ...fr, dismissed: true }))
-                    }
-                    installerShaVoucher={
-                      buildInfo?.installerShaVoucher ?? { status: "pending" }
-                    }
-                    packagedWindowsHonesty={isPackagedWindowsInstallerSession()}
-                  />
-                ) : messages.length === 0 && !normalizedRunVisible && hostOk && !skillsOpen && atSuggestions.length === 0 ? (
-                  !state?.hasApiKey && !vendorCode ? (
-                    <EmptyStates
-                      kind="signed-out"
-                      onSettings={() => setView("settings")}
-                      onSignIn={startGrokSignIn}
-                    />
-                  ) : (
-                    // Task 13 — Home screen. Replaces the old "ready"/
-                    // "no-workspace" EmptyStates kinds: mode-agnostic (see
-                    // homeNeedsYou/homeRecentWorkspaces/homeChatHomes above),
-                    // so it renders the same regardless of productMode or
-                    // whether a Code workspace happens to be open.
-                    <HomeScreen
-                      // No OS user name is available anywhere on `state`,
-                      // the desktop bridge, or api.ts (checked) — greet
-                      // without one rather than inventing "there".
-                      greetingName={null}
-                      needsYou={homeNeedsYou}
-                      recentWorkspaces={homeRecentWorkspaces}
-                      chatHomes={homeChatHomes}
-                      footer={homeFooter}
-                      onFieldQuery={homeOnFieldQuery}
-                      onOpenNeedsYou={openHomeSession}
-                      onOpenWorkspace={openHomeSession}
-                      onOpenChatHome={homeOnOpenChatHome}
-                      onAllSessions={homeOnAllSessions}
-                      onNewChatHome={startNewChatHome}
-                      onOpenFolder={homeOnOpenFolder}
-                      onNewSession={startNewCodeSession}
-                      onNewChat={startNewChatHome}
-                    />
-                  )
-                ) : messages.length === 0 && !normalizedRunVisible && !hostOk ? (
-                  <EmptyStates
-                    kind="host-offline"
-                    onReconnect={
-                      engineRetryAllowed ? () => void retryHost() : undefined
-                    }
-                  />
-                ) : (
-                  <>
-                    {runProjection.runOrder.some((id) => runProjection.runsById[id]?.sessionId === sessionId) && (
-                    <div className="stream">
-                      <div className="spine" aria-hidden="true" />
-                      {runProjection.runOrder.map((id) => {
-                        const run = runProjection.runsById[id];
-                        if (!run || run.sessionId !== sessionId) return null;
-                        const runCatchUp = catchUpForRun(catchUpByRunId, run.runId);
-                        return (
-                        <div key={id} className="run-stack">
-                        <RunSurface run={run} catchUp={runCatchUp} offline={!hostOk} productMode={productMode} codeAgent={state?.codeAgent ?? null} childAgents={state?.childAgents} browserWork={state?.browserWork} mcpServers={state?.mcpServers} hooks={state?.hooks} hostRosterEligible={hostObserveRosterEligible({ owned: activeOwnedRunKeys, key: { sessionId: run.sessionId, runId: run.runId }, runState: run.state, activeSessionId: sessionId, hostOwnerSessionId: observeHostOwnerSessionId })} ownershipLost={run.failure?.code === "execution_owner_lost"} onRetryPrompt={(prompt) => void sendText(prompt, RETRY_PROMPT_SEND_OPTS)} onReconnect={() => void retryHost()} onOpenSettings={() => setView("settings")} onExportDiagnostics={() => void exportSessionDiagnostics()} onChoose={fillComposerFromChoice} artifactOpen={bindingMatchesTurn(artifactOpenBinding, { surface: "run", id: run.runId })} onOpenArtifact={openRunArtifact} title={activeHome?.title ?? ""} />
-                        </div>
-                        );
-                      })}
-                    </div>
-                    )}
-                    {!hostOk && (
-                      <div className="transcript-offline" role="status">
-                        <strong>{activeRun ? "Offline" : "Forge's engine stopped."}</strong> {activeRun ? "Forge is offline. Your prompt and received output are preserved. Reconnect to confirm this run’s outcome." : "Your conversation is saved."}
-                        {engineRetryAllowed ? " Forge is trying to reconnect." : ""}
-                        {engineRetryAllowed && (
-                          <Button variant="primary" onClick={() => void retryHost()}>
-                            Try again
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                    <MessageList
-                      messages={visibleMessages}
-                      scrollRef={transcriptRef}
-                      busy={normalizedRunVisible ? false : busy || Boolean(runStartedAt)}
-                      thinkingDetail={runPhaseDetail}
-                      lastUserId={lastUserId}
-                      lastAssistantId={lastAssistantId}
-                      onRetryUser={retryLastUser}
-                      onRegenerate={regenerateLast}
-                      onChoose={fillComposerFromChoice}
-                      onOpenPath={(p) => void openToolPath(p)}
-                      forceOpenFailedTools={forceOpenFailedTools}
-                      artifactOpenMessageId={
-                        artifactOpenBinding?.turn.surface === "message"
-                          ? artifactOpenBinding.turn.id
-                          : null
-                      }
-                      onOpenArtifact={openMessageArtifact}
-                      title={activeHome?.title ?? ""}
-                    />
-                  </>
-                )}
-                <div ref={bottomRef} />
-              </div>
-              <ArtifactPanel
-                body={boundArtifact?.body ?? null}
-                contentKind={boundArtifact?.contentKind ?? null}
-                title={activeHome?.title ?? ""}
-                onClose={closeArtifact}
-                onChoose={fillComposerFromChoice}
-              />
-              </div>
-
-              <ActionDock
-                permissions={permissions}
-                oauth={oauth}
-                onPermission={(d) => void decidePermission(d)}
-                onTrustFolder={
-                  permissions[0]?.kind === "write" && state?.workspace
-                    ? () => void trustFolder()
-                    : undefined
-                }
-                onEditCommand={
-                  permissions[0]?.kind === "shell"
-                    ? () => editGateCommand(permissions[0]!.detail)
-                    : undefined
-                }
-                workspaceName={state?.workspaceName ?? null}
-                onOauthCancel={() => {
-                  void api.oauthCancel();
-                  setOauth(null);
-                }}
-                planDecision={
-                  pendingPlanDecision
-                    ? {
-                        empty: pendingPlanDecision.empty,
-                        proposedMembers: pendingPlanDecision.run.plan?.proposedMembers ?? [],
-                        body: pendingPlanDecision.run.plan?.body ?? null,
-                        settling: planSettling,
-                        error: planDecisionError,
-                      }
-                    : null
-                }
-                onPlanAccept={() => void settlePlan("accept")}
-                onPlanKeepPlanning={() => void settlePlan("keep_planning")}
-                recoveryDecision={
-                  pendingRecoveryDecision
-                    ? {
-                        id: pendingRecoveryDecision.decision.requestId,
-                        question: pendingRecoveryDecision.decision.detail,
-                      }
-                    : null
-                }
-                onRecover={() => void recoverFromDock()}
-              />
-
-              <ComposerPane
-                skillsMenu={
-                  <SkillsPalette
-                    open={skillsOpen}
-                    projection={skillsPalette}
-                    filter={skillsFilter}
-                    activeIndex={skillsIndex}
-                    onSelect={armSkill}
-                    onDismiss={() => setSkillsOpen(false)}
-                  />
-                }
-                armedSkill={
-                  effectiveArmedName ? (
-                    <SkillArmedChip
-                      name={effectiveArmedName}
-                      onClear={() => setArmedSkillName(null)}
-                    />
-                  ) : null
-                }
-                dragOver={dragOver}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOver(false);
-                  const files = Array.from(e.dataTransfer.files || []);
-                  if (files.length) {
-                    void attachFilesToComposer(files);
-                    return;
-                  }
-                  const text = e.dataTransfer.getData("text/plain")?.trim();
-                  if (text) {
-                    setDraft((d) =>
-                      `${d}${d && !d.endsWith("\n") ? "\n\n" : ""}${text}`,
-                    );
-                  }
-                  composerRef.current?.focus();
-                }}
-                atSuggestions={atSuggestions}
-                atActiveIndex={atActiveIndex}
-                onAtActiveIndexChange={setAtActiveIndex}
-                onDismissAt={() => {
-                  setAtSuggestions([]);
-                  setAtActiveIndex(0);
-                }}
-                onInsertAt={insertAtFile}
-                onPinToPack={(file) => void mutateChatPack({ action: "pin_file", path: file })}
-                composerRef={composerRef}
-                draft={draft}
-                onDraftChange={onComposerChange}
-                onComposerKeyDown={onComposerKeyDown}
-                sendDisabledReason={sendDisabledReason}
-                lockedReason={
-                  oauth ||
-                  permissions.length > 0 ||
-                  diffQueue.length > 0 ||
-                  pendingPlanDecision ||
-                  sessionHasDockOwnedPending
-                    ? SETTLE_CARD_BELOW
-                    : null
-                }
-                productMode={productMode}
-                connected={connected}
-                onAttachFiles={(files) => void attachFilesToComposer(files)}
-                busy={busy}
-                onCancel={requestCancel}
-                onSend={() => void send()}
-                onQueue={queueCurrentDraft}
-                onCancelQueued={cancelQueuedDraft}
-                queuedCount={queuedDraft && queuedDraft.sessionId === sessionId ? 1 : 0}
-                decisionPending={decisionPending}
-                chatHomeLabel={chatHomeLabel}
-                chips={composerChips}
-                contextRing={contextRing}
-                metaFacts={composerMetaFacts}
-                footer={
-                  <>
-                {packInventoryVisible ? (
-                  <ChatPackInventory
-                    projection={chatPackComposer}
-                    members={armedPackMembers}
-                    mutationInFlight={packMutationInFlight}
-                    workspaceFiles={fileIndex}
-                    onPin={(path) => void mutateChatPack({ action: "pin_file", path })}
-                    onUnpin={(path) => void mutateChatPack({ action: "unpin_file", path })}
-                    onSaveNote={(note) => void mutateChatPack({ action: "set_note", note })}
-                    onClearNote={() => void mutateChatPack({ action: "clear_note" })}
-                    onClearPack={() => void mutateChatPack({ action: "clear_pack" })}
-                  />
-                ) : null}
-                {savedPolicyUnusable(state?.permissionPolicy?.fallbackReason) && (
-                  <div className="composer-policy-notice" role="status">
-                    Forge couldn’t use the saved permission policy. Review is active.
-                  </div>
-                )}
-                {composerBlockReasonVisible(sendDisabledReason, draft) ? (
-                  <div className="composer-block-reason" role="status">
-                    {sendDisabledReason}
-                  </div>
-                ) : null}
-                {(busy || runStartedAt || livePlanning) && (liveCopy.status || liveCopy.footer) && (
-                  <div className="composer-thinking" role="status">
-                    <span className="run-dot" />
-                    {livePlanning
-                      ? `${liveCopy.status} · ${liveCopy.footer}`
-                      : liveCopy.footer || liveCopy.status}
-                  </div>
-                )}
-                  </>
-                }
-              />
-            </div>
+            <ChatView
+              activeHome={activeHome}
+              state={state}
+              effortLevel={effortLevel}
+              runStartedAt={runStartedAt}
+              liveNow={liveNow}
+              liveCopy={liveCopy}
+              permissions={permissions}
+              diffQueue={diffQueue}
+              pendingPlanDecision={pendingPlanDecision}
+              sessionHasDockOwnedPending={sessionHasDockOwnedPending}
+              busy={busy}
+              requestCancel={requestCancel}
+              overview={overview}
+              productMode={productMode}
+              chatRootLabel={chatRootLabel}
+              setChangesOpen={setChangesOpen}
+              exportCurrentChat={exportCurrentChat}
+              messages={messages}
+              changesDockFiles={changesDockFiles}
+              changesOpen={changesOpen}
+              changesAvailable={changesAvailable}
+              artifactOpenBinding={artifactOpenBinding}
+              closeArtifact={closeArtifact}
+              homeNameSaveFailed={homeNameSaveFailed}
+              sessionId={sessionId}
+              setHomeNameDraft={setHomeNameDraft}
+              renameSession={renameSession}
+              sessionPartition={sessionPartition}
+              homeNameDraft={homeNameDraft}
+              openingWs={openingWs}
+              runFooter={runFooter}
+              livePlanning={livePlanning}
+              artifactAnnounce={artifactAnnounce}
+              transcriptRef={transcriptRef}
+              bottomRef={bottomRef}
+              showConversationsNotFound={showConversationsNotFound}
+              skillsOpen={skillsOpen}
+              atSuggestions={atSuggestions}
+              exportSessionDiagnostics={exportSessionDiagnostics}
+              setNotFoundDismissed={setNotFoundDismissed}
+              showOnboarding={showOnboarding}
+              firstRun={firstRun}
+              browseFolder={browseFolder}
+              setView={setView}
+              setFirstRun={setFirstRun}
+              switchMode={switchMode}
+              buildInfo={buildInfo}
+              normalizedRunVisible={normalizedRunVisible}
+              hostOk={hostOk}
+              vendorCode={vendorCode}
+              startGrokSignIn={startGrokSignIn}
+              homeNeedsYou={homeNeedsYou}
+              homeRecentWorkspaces={homeRecentWorkspaces}
+              homeChatHomes={homeChatHomes}
+              homeFooter={homeFooter}
+              homeOnFieldQuery={homeOnFieldQuery}
+              openHomeSession={openHomeSession}
+              homeOnOpenChatHome={homeOnOpenChatHome}
+              homeOnAllSessions={homeOnAllSessions}
+              startNewChatHome={startNewChatHome}
+              homeOnOpenFolder={homeOnOpenFolder}
+              startNewCodeSession={startNewCodeSession}
+              engineRetryAllowed={engineRetryAllowed}
+              retryHost={retryHost}
+              runProjection={runProjection}
+              catchUpByRunId={catchUpByRunId}
+              activeOwnedRunKeys={activeOwnedRunKeys}
+              observeHostOwnerSessionId={observeHostOwnerSessionId}
+              sendText={sendText}
+              fillComposerFromChoice={fillComposerFromChoice}
+              openRunArtifact={openRunArtifact}
+              activeRun={activeRun}
+              visibleMessages={visibleMessages}
+              runPhaseDetail={runPhaseDetail}
+              lastUserId={lastUserId}
+              lastAssistantId={lastAssistantId}
+              retryLastUser={retryLastUser}
+              regenerateLast={regenerateLast}
+              openToolPath={openToolPath}
+              forceOpenFailedTools={forceOpenFailedTools}
+              openMessageArtifact={openMessageArtifact}
+              boundArtifact={boundArtifact}
+              oauth={oauth}
+              decidePermission={decidePermission}
+              trustFolder={trustFolder}
+              editGateCommand={editGateCommand}
+              planSettling={planSettling}
+              planDecisionError={planDecisionError}
+              settlePlan={settlePlan}
+              pendingRecoveryDecision={pendingRecoveryDecision}
+              recoverFromDock={recoverFromDock}
+              setOauth={setOauth}
+              skillsPalette={skillsPalette}
+              skillsFilter={skillsFilter}
+              skillsIndex={skillsIndex}
+              armSkill={armSkill}
+              setSkillsOpen={setSkillsOpen}
+              effectiveArmedName={effectiveArmedName}
+              setArmedSkillName={setArmedSkillName}
+              dragOver={dragOver}
+              setDragOver={setDragOver}
+              attachFilesToComposer={attachFilesToComposer}
+              setDraft={setDraft}
+              atActiveIndex={atActiveIndex}
+              setAtActiveIndex={setAtActiveIndex}
+              setAtSuggestions={setAtSuggestions}
+              insertAtFile={insertAtFile}
+              mutateChatPack={mutateChatPack}
+              composerRef={composerRef}
+              draft={draft}
+              onComposerChange={onComposerChange}
+              onComposerKeyDown={onComposerKeyDown}
+              sendDisabledReason={sendDisabledReason}
+              connected={connected}
+              send={send}
+              queueCurrentDraft={queueCurrentDraft}
+              cancelQueuedDraft={cancelQueuedDraft}
+              queuedDraft={queuedDraft}
+              decisionPending={decisionPending}
+              chatHomeLabel={chatHomeLabel}
+              composerChips={composerChips}
+              contextRing={contextRing}
+              composerMetaFacts={composerMetaFacts}
+              packInventoryVisible={packInventoryVisible}
+              chatPackComposer={chatPackComposer}
+              armedPackMembers={armedPackMembers}
+              packMutationInFlight={packMutationInFlight}
+              fileIndex={fileIndex}
+            />
           )}
         </main>
         </Panel>
