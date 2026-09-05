@@ -400,6 +400,15 @@ describe("acp-live-streams App path", () => {
   it("App source does not treat private thinking_delta/text_delta/tool_run as live authority when a journal run is bound", () => {
     const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "App.tsx"), "utf8");
     assert.equal(appSource.includes("Writing answer…"), false);
-    assert.match(appSource, /normalizedRunIdRef\.current/);
+    // The normalizedRunIdRef.current guards this test is pinning (inside
+    // onServerEvent's thinking_delta/text_delta/tool_run handlers) moved out
+    // of App.tsx and into useRunEventStream.ts (Task 13) — the guards
+    // themselves are unchanged (see useRunEventStream.ts's own
+    // onServerEvent, moved verbatim; task-13-report.md's diff proof), only
+    // their file did. Read both sources so this assertion keeps meaning
+    // "the guard exists somewhere in the App's own implementation" rather
+    // than "the guard exists in this one particular file".
+    const hookSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "useRunEventStream.ts"), "utf8");
+    assert.match(appSource + hookSource, /normalizedRunIdRef\.current/);
   });
 });
