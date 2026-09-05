@@ -1,29 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
-  ensureDesktopHost,
-  HostSocket,
   isTauri,
   localBuildIdentity,
   mergeState,
   pickFolderNative,
-  pollHostHealth,
-  restartDesktopHost,
   ApiError,
   type DesktopHostStatus,
   type EffortLevel,
   type ProductMode,
   type PublicState,
-  type ServerEvent,
   type TrustedCommandClassesView,
 } from "./api";
-import {
-  DIAGNOSTICS_REVEAL_MS,
-  INITIAL_PHASE_LINE,
-  SLOW_START_MS,
-  phaseLine,
-} from "./launchState";
-import { LaunchFailureCard, canRetryEngine } from "./LaunchFailureCard";
+import { INITIAL_PHASE_LINE } from "./launchState";
+import { LaunchFailureCard } from "./LaunchFailureCard";
 import { BootScreen } from "./BootScreen";
 import { AppTopbar } from "./AppTopbar";
 import { EngineStoppedBanner, ErrorBanner } from "./AppBanners";
@@ -128,10 +118,6 @@ import {
   hostPort,
   INHERITED_DEFAULT_MODEL,
 } from "./api";
-import { installHealthPollTestScheduler } from "./healthPollTestClock";
-import {
-  type InstallerShaVoucher,
-} from "./installerHonesty";
 import { loadPrefs, patchPrefs, themeLabel, type Prefs } from "./prefs";
 import { useToast } from "./Toast";
 import { readFilesForAttach } from "./contextAttach";
@@ -165,6 +151,7 @@ import { useChangesProjections } from "./useChangesProjections";
 import { useDecisions } from "./useDecisions";
 import { useComposerSend } from "./useComposerSend";
 import { useRunEventStream } from "./useRunEventStream";
+import { useEngineHealth } from "./useEngineHealth";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -204,19 +191,16 @@ export function App() {
   const [launchStatus, setLaunchStatus] = useState<DesktopHostStatus | null>(
     null,
   );
-  const [slowStart, setSlowStart] = useState(false);
-  const [diagRevealed, setDiagRevealed] = useState(false);
-  const slowStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const diagTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // F6 — bounded recovery attempts (mirrors the launcher's own 3-attempt
-  // bound, SPEC §2.6/§5). Reset to 0 on any successful recovery.
-  const recoveryAttemptsRef = useRef(0);
-  const TERMINAL_ATTEMPTS = 3;
-  // F5 — consecutive failed 4s health polls while the app is ready. Chip
-  // reacts after 1 (subtle); the engine-stopped chrome (band/banner/composer
-  // reason) only appears after 2 (AC-U10 — a single blip must not flash it).
-  const [healthFailStreak, setHealthFailStreak] = useState(0);
-  const healthFailStreakRef = useRef(0);
+  // slowStart/diagRevealed/the two boot timers/recoveryAttemptsRef/
+  // TERMINAL_ATTEMPTS/healthFailStreak(+ref) all moved fully into
+  // useEngineHealth (Task 14) — no consumer outside bootApp/retryHost/the
+  // socket-connect effect/the health-poll effect, all moved with them.
+  // boot/bootMsg/launchStatus (above) stay here regardless: this hook's own
+  // back-references (below) need onServerEvent/restoreOwnedRuns/
+  // markDisconnectedActivity/reconcileOwnedRuns from useRunEventStream's
+  // return, so its earliest legal call site is well after
+  // exportSessionDiagnostics's own, earlier, already-declared read of all
+  // three — see task-14-report.md Step 1.
   const [view, setView] = useState<View>("chat");
   const [state, setState] = useState<PublicState | null>(null);
   // SPEC §2.8 property 4 / INTERFACE_CONTRACT.md (GATE Q N-8) — the ONLY
@@ -231,18 +215,14 @@ export function App() {
   const applyState = useCallback((payload: PublicState) => {
     setState((prev) => mergeState(prev, payload));
   }, []);
-  // GATE Z round 3 (AC25) — `GET /api/health`'s `version`/`channel`/
-  // `channelLabel` (INTERFACE_CONTRACT.md §6, promised for "diagnostics
-  // export, AC25/AC26") rendered somewhere a non-developer can find and read
-  // aloud, not only inside the diagnostics file.
-  const [buildInfo, setBuildInfo] = useState<{
-    version?: string;
-    channel?: string;
-    channelLabel?: string;
-    installerShaVoucher: InstallerShaVoucher;
-  } | null>(null);
+  // buildInfo moved fully into useEngineHealth (Task 14) — no consumer
+  // outside refreshBuildInfo/the health-poll effect, both moved with it.
   const [hostOk, setHostOk] = useState(false);
-  const [wsOk, setWsOk] = useState(false);
+  // wsOk moved fully into useEngineHealth (Task 14) — its only consumer,
+  // the socket-connect effect, moved with it. hostOk stays: refreshBranches
+  // (below) reads it in its own dependency array at a position well before
+  // useEngineHealth's earliest legal call site — see task-14-report.md
+  // Step 1.
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [runProjection, setRunProjection] = useState<RunProjection>(() => {
     try { return restoreRunProjection(JSON.parse(localStorage.getItem("grokforge.runProjection.v1") || "null")); } catch { return initialRunProjection(); }
@@ -268,12 +248,10 @@ export function App() {
   // reconcileOwnedRuns/restoreOwnedRunJournal, both moved with them.
   // catchUpByRunId is still read here (a ChatView JSX prop and
   // useChangesProjections's own input) via the hook's return, below.
-  const socketRef = useRef<HostSocket | null>(null);
-  // Keep the transport subscription stable while the render callback evolves.
-  // Recreating HostSocket on every projection/toast update can create an
-  // unbounded reconnect chain during a degraded engine, exhausting the test
-  // process (and flashing duplicate sockets in production).
-  const onServerEventRef = useRef<(ev: ServerEvent) => void>(() => undefined);
+  // socketRef/onServerEventRef moved fully into useEngineHealth (Task 14).
+  // socketRef is returned from there (the "reconnect/replay" effect below
+  // reads socketRef.current directly); onServerEventRef's only reader is
+  // the socket-connect effect, moved with it.
   const [draft, setDraft] = useState("");
   // queuedDraft/setQueuedDraft (Queue ⇧⏎) moved fully into useComposerSend
   // (Task 12) — its own useState now lives there; App.tsx only threads
@@ -725,196 +703,65 @@ export function App() {
     uid,
   });
 
-  useEffect(() => {
-    onServerEventRef.current = onServerEvent;
-  }, [onServerEvent]);
-
-  const clearBootTimers = useCallback(() => {
-    if (slowStartTimerRef.current) clearTimeout(slowStartTimerRef.current);
-    if (diagTimerRef.current) clearTimeout(diagTimerRef.current);
-    slowStartTimerRef.current = null;
-    diagTimerRef.current = null;
-  }, []);
-
-  useEffect(() => clearBootTimers, [clearBootTimers]);
-
-  /** N-2/N-3 (QA GATE Q pass 1c, AC-S8) — `Details`/diagnostics build
-   *  identity must be populated in exactly the states where `GET
-   *  /api/health` cannot be trusted: a full-screen failure card means the
-   *  engine (by definition) is not answering — or, before the N-3 fix, that
-   *  something answering isn't actually this install's engine. Set the
-   *  local build identity (no network, sourced from the running executable
-   *  and compile-time constants — see `localBuildIdentity()`)
-   *  unconditionally first, so `buildInfo` is never null in the one state
-   *  the row is about; then refine with the engine's own `/api/health` when
-   *  that succeeds (only possible against a port the launcher actually
-   *  published, per `hostPort()`'s N-3 note) since that is ground truth
-   *  when reachable. */
-  const refreshBuildInfo = useCallback(async () => {
-    const local = await localBuildIdentity();
-    setBuildInfo({
-      version: local.version,
-      channel: local.channel,
-      channelLabel: local.channelLabel,
-      installerShaVoucher: { status: "pending" },
-    });
-    try {
-      const h = await api.health();
-      setBuildInfo({
-        version: h.version ?? local.version,
-        channel: h.channel ?? local.channel,
-        channelLabel: h.channelLabel ?? local.channelLabel,
-        installerShaVoucher: { status: "live", value: h.installerSha256 ?? null },
-      });
-    } catch {
-      setBuildInfo({
-        version: local.version,
-        channel: local.channel,
-        channelLabel: local.channelLabel,
-        installerShaVoucher: { status: "unreachable" },
-      });
-    }
-  }, []);
-
-  /** F2 — initial boot only: unconditionally shows the spinner card (there is
-   *  nothing to preserve yet) and terminates in "ready" or "error". */
-  const bootApp = useCallback(async () => {
-    setBoot("booting");
-    setBootMsg(INITIAL_PHASE_LINE);
-    setSlowStart(false);
-    setDiagRevealed(false);
-    clearBootTimers();
-    slowStartTimerRef.current = setTimeout(() => setSlowStart(true), SLOW_START_MS);
-    diagTimerRef.current = setTimeout(() => setDiagRevealed(true), DIAGNOSTICS_REVEAL_MS);
-
-    const status = await ensureDesktopHost();
-    setLaunchStatus(status);
-    setBootMsg((prev) => phaseLine(status, prev));
-
-    // A launcher-reported failure already carries a named reason (F3); a
-    // long shell-side retry loop here would only delay the failure card
-    // without changing the outcome (AC4 — never indefinite). A launcher
-    // success gets more attempts since the shell's own health probe is the
-    // belt-and-suspenders check that the answer is real.
-    const ok = await pollHostHealth(status.ok ? 20 : 6, 150);
-    clearBootTimers();
-    // N-2 — unconditional: a failed boot still gets a shot at the build
-    // identity (see refreshBuildInfo above), which is what feeds the
-    // LaunchFailureCard `Details` disclosure below.
-    if (!ok) {
-      await refreshBuildInfo();
-      // F6's bound counts RECOVERY attempts (explicit "Try again" clicks via
-      // retryHost), not this initial boot — "three failing restart_host
-      // calls" (PLAN F6) is the bound, so recoveryAttemptsRef starts at 0
-      // here regardless of outcome.
-      setBoot("error");
-      setHostOk(false);
-      return;
-    }
-    recoveryAttemptsRef.current = 0;
-    setHostOk(true);
-    setHealthFailStreak(0);
-    healthFailStreakRef.current = 0;
-    try {
-      const s = await api.state();
-      applyState(s);
-      setModelDraft(s.model);
-      if (s.workspace) {
-        setPathInput(s.workspace);
-        setFirstRun((fr) => patchFirstRun({ ...fr, openedFolder: true }));
-      }
-      if (s.hasApiKey) {
-        setFirstRun((fr) => patchFirstRun({ ...fr, signedIn: true }));
-      }
-      if (typeof s.shellAllowlist === "boolean") setShellAllowlist(s.shellAllowlist);
-    } catch {
-      /* optional */
-    }
-    // Dual-source SHA: become ready with local identity (pending voucher) so
-    // Welcome/Settings can paint Loading instead of flashing unavailable
-    // while the health refine is in flight.
-    setBoot("ready");
-    void refreshBuildInfo();
-  }, [clearBootTimers, refreshBuildInfo]);
-
-  useEffect(() => {
-    void bootApp();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (boot !== "ready") return;
-    const sock = new HostSocket({
-      onStatus: (c) => {
-        setWsOk(c);
-      if (c) {
-          healthFailStreakRef.current = 0;
-          setHealthFailStreak(0);
-          setHostOk(true);
-          // Transport liveness is not run liveness. Reconcile every cached
-          // owned run from the authoritative journal before clearing the
-          // reconnect/unknown chrome; failures remain visible and retry on
-          // the next transport reopen.
-          //
-          // Read through restoreOwnedRunsRef rather than closing over
-          // restoreOwnedRuns directly: this effect is deliberately built
-          // once (see the dependency array below) and must still call
-          // whichever restoreOwnedRuns is CURRENT at the moment the socket
-          // reconnects, not the one captured when the effect first ran.
-          void restoreOwnedRunsRef.current("disconnect_restore").then(({ ok, hasNonterminal }) => {
-            if (!ok) return;
-            if (!hasNonterminal) {
-              endPageSend(); sendInFlightRef.current = false; setRunStartedAt(null);
-              setRunPhase(null);
-              setRunPhaseDetail(null);
-              setRunFooter(null);
-              setAwaitingNextTurn(true);
-              cancelInFlightRef.current = false;
-            }
-          });
-          return;
-        }
-        // The transport status is authoritative for the live activity run:
-        // freeze current evidence before reconnect attempts can deliver any
-        // late identities or updates.
-        markDisconnectedActivity();
-        // Win+PrtScn / focus loss can briefly drop WS — don't silent-cancel.
-        // Surface interruption clearly if a run was in flight.
-        if (busyRef.current) {
-          setRunFooter(
-            "Reconnecting — Connection lost. Forge is reconnecting. Your prompt and received output are preserved. Run status will be confirmed when the connection returns.",
-          );
-          setRunPhaseDetail("Reconnecting");
-          toast.push(
-            "Connection blip while Grok was running — reconnecting",
-            "info",
-          );
-        }
-      },
-    });
-    socketRef.current = sock;
-    sock.on((ev) => onServerEventRef.current(ev));
-    sock.connect();
-    return () => {
-      sock.close();
-      if (socketRef.current === sock) socketRef.current = null;
-    };
-    // The socket is deliberately built once per boot and never torn down
-    // just because a callback identity changed — adding restoreOwnedRuns
-    // (or markDisconnectedActivity's transitive deps) here would rebuild and
-    // reconnect the transport on every render that recreates them, which is
-    // a real behavior change (reconnect storms), not a cleanup. The latest
-    // restoreOwnedRuns is read through restoreOwnedRunsRef above instead.
-  }, [boot, markDisconnectedActivity]);
-
-  // Latest-value mirror for the HostSocket connect effect above, which is
-  // built once per boot and deliberately does not depend on restoreOwnedRuns
-  // (see that effect's dependency-array comment). Kept current in an effect,
-  // matching onServerEventRef's pattern above rather than applyRailEvidenceRef's
-  // render-time assignment — see the Global Constraints note on ref timing.
-  const restoreOwnedRunsRef = useRef(restoreOwnedRuns);
-  useEffect(() => {
-    restoreOwnedRunsRef.current = restoreOwnedRuns;
+  // clearBootTimers/refreshBuildInfo/bootApp, the mount-boot effect, the
+  // socket connect/reconnect effect (plus its restoreOwnedRunsRef mirror),
+  // the health-poll effect, engineRetryAllowed, and retryHost all live in
+  // useEngineHealth now (Task 14) — called here, right after
+  // useRunEventStream's own closing brace (the position onServerEventRef's
+  // mirror effect itself used to occupy), the earliest point every input is
+  // legally in scope: onServerEvent/restoreOwnedRuns/markDisconnectedActivity/
+  // reconcileOwnedRuns (a fourth, brief-unnamed back-reference the
+  // health-poll effect actually needs — see useEngineHealth.ts's own doc
+  // comment) all come from useRunEventStream's return just above.
+  // boot/bootMsg/launchStatus/hostOk stay declared above, byte-for-byte
+  // untouched — see useEngineHealth.ts's params doc for why (an earlier,
+  // unmoved reader of each pins its declaration ahead of this hook's
+  // earliest legal call site) — and are threaded through as parameters
+  // instead; nothing here re-destructures any of the four, since App.tsx
+  // already owns all four locally under those exact names.
+  // refreshBuildInfo is part of the hook's return type (matching the
+  // brief's literal Returns list) but is not destructured here: grep
+  // confirms it has zero external callers even in the pre-move source
+  // (only bootApp/retryHost ever called it, both moved into this same
+  // hook) — the same shape as Task 9's needsYouReasonsKey/Task 10's
+  // recoverChangeMember, and noUnusedLocals would fail on an unused
+  // destructured binding.
+  const {
+    slowStart,
+    diagRevealed,
+    wsOk,
+    healthFailStreak,
+    buildInfo,
+    engineRetryAllowed,
+    retryHost,
+    socketRef,
+    bootApp,
+  } = useEngineHealth({
+    boot,
+    setBoot,
+    setBootMsg,
+    launchStatus,
+    setLaunchStatus,
+    setHostOk,
+    runProjectionRef,
+    busyRef,
+    sendInFlightRef,
+    cancelInFlightRef,
+    setRunStartedAt,
+    setRunPhase,
+    setRunPhaseDetail,
+    setRunFooter,
+    setAwaitingNextTurn,
+    setPathInput,
+    setFirstRun,
+    setModelDraft,
+    setShellAllowlist,
+    applyState,
+    toast,
+    onServerEvent,
+    restoreOwnedRuns,
+    markDisconnectedActivity,
+    reconcileOwnedRuns,
   });
 
   // Normalized terminal truth owns the legacy run chrome regardless of which
@@ -935,47 +782,6 @@ export function App() {
     setAwaitingNextTurn(true);
     cancelInFlightRef.current = false;
   }, [ownedAllTerminal, sessionId]);
-
-  // F5 — liveness is independent from socket lifecycle. Keeping this poll in
-  // its own effect prevents a failed probe's state update from tearing down and
-  // recreating the WebSocket (which can otherwise amplify reconnect work).
-  useEffect(() => {
-    if (boot !== "ready") return;
-    const healthCadence = 4000;
-    const pollHealth = () => { void api.health().then((h) => {
-      healthFailStreakRef.current = 0;
-      setHealthFailStreak(0);
-      setHostOk(true);
-      setBuildInfo((prev) => ({
-        version: h.version ?? prev?.version,
-        channel: h.channel ?? prev?.channel,
-        channelLabel: h.channelLabel ?? prev?.channelLabel,
-        installerShaVoucher: { status: "live", value: h.installerSha256 ?? null },
-      }));
-      // A healthy transport does not prove a run outcome. Poll only runs that
-      // remain nonterminal in the owned projection, and merge journal truth
-      // idempotently. Hours-long live runs remain live; missed terminals are
-      // recovered without requiring a reload or a second prompt.
-      const hasOwnedNonterminal = runProjectionRef.current.runOrder.some((id) => {
-        const run = runProjectionRef.current.runsById[id];
-        return Boolean(run && run.state !== "terminal");
-      });
-      if (hasOwnedNonterminal) void reconcileOwnedRuns();
-    }).catch(() => {
-      healthFailStreakRef.current += 1;
-      const streak = healthFailStreakRef.current;
-      setHealthFailStreak(streak);
-      setBuildInfo((prev) =>
-        prev
-          ? { ...prev, installerShaVoucher: { status: "unreachable" as const } }
-          : prev,
-      );
-      if (streak >= 2) setHostOk(false);
-    }); };
-    const testCleanup = installHealthPollTestScheduler(pollHealth);
-    const healthTimer = testCleanup ? undefined : setInterval(pollHealth, healthCadence);
-    return () => { if (healthTimer !== undefined) clearInterval(healthTimer); testCleanup?.(); };
-  }, [boot]);
 
   // Reconnect/replay is driven by the reducer's durable per-session cursors.
   // The socket never guesses a cursor and never replays another session.
@@ -1036,12 +842,8 @@ export function App() {
     };
   }, [state?.workspace, hostOk]);
 
-  // AC-U5 — with `owned: false` no restart/reconnect affordance renders
-  // anywhere (dev-shell-only state; unreachable in a packaged prod build).
-  const engineRetryAllowed = useMemo(
-    () => canRetryEngine(launchStatus ?? { owned: true }),
-    [launchStatus],
-  );
+  // engineRetryAllowed moved fully into useEngineHealth (Task 14) — see
+  // that hook's own call site above.
   const chip = useMemo(() => statusChip(state), [state]);
   // Sidebar footer (Code): same auth source the topbar's Settings line
   // shows, in the two words the rail's footer copy is allowed.
@@ -1763,73 +1565,8 @@ export function App() {
     [messages, diffQueue, projectedRunIds, runProjection],
   );
 
-  /**
-   * F5/F6 — the single "Try again" recovery path, used by both the boot
-   * failure card (F3/F4) and the mid-session engine-death band (F5).
-   *
-   * - Mid-session (boot === "ready"): NEVER shows the spinner card — that
-   *   would hide the transcript, which AC16/AC-U6 forbid. A failed attempt
-   *   just leaves the debounced band up, UNLESS this is the terminal
-   *   (3rd consecutive) attempt, which forces the full failure card (AC18).
-   * - From the failure card (boot === "error"): shows the spinner while
-   *   retrying, UNLESS bounded recovery is already exhausted, in which case
-   *   it retries silently with no spinner at all (AC18 — "not a repeating or
-   *   indefinite spinner").
-   */
-  const retryHost = useCallback(async () => {
-    const attemptNumber = recoveryAttemptsRef.current + 1;
-    const terminalAttempt = attemptNumber >= TERMINAL_ATTEMPTS;
-    const cameFromFailureCard = boot === "error";
-    const showSpinner = cameFromFailureCard && !terminalAttempt;
-
-    if (showSpinner) {
-      setBoot("booting");
-      setBootMsg(INITIAL_PHASE_LINE);
-      setSlowStart(false);
-      setDiagRevealed(false);
-      clearBootTimers();
-      slowStartTimerRef.current = setTimeout(() => setSlowStart(true), SLOW_START_MS);
-      diagTimerRef.current = setTimeout(() => setDiagRevealed(true), DIAGNOSTICS_REVEAL_MS);
-    }
-
-    const status = await restartDesktopHost();
-    setLaunchStatus(status);
-    if (showSpinner) setBootMsg((prev) => phaseLine(status, prev));
-
-    const healthy = await pollHostHealth(status.ok ? 20 : 6, 150);
-    clearBootTimers();
-    // N-2 — same best-effort refresh as bootApp: a retry that ends back on
-    // the failure card (terminal AC18 state, or a re-failed retry from the
-    // card itself) still updates the build identity Details renders.
-    await refreshBuildInfo();
-
-    if (healthy) {
-      recoveryAttemptsRef.current = 0;
-      setHostOk(true);
-      setHealthFailStreak(0);
-      healthFailStreakRef.current = 0;
-      if (boot !== "ready") {
-        try {
-          const s = await api.state();
-          applyState(s);
-          setModelDraft(s.model);
-          if (typeof s.shellAllowlist === "boolean") setShellAllowlist(s.shellAllowlist);
-        } catch {
-          /* optional */
-        }
-        setBoot("ready");
-      } else {
-        void restoreOwnedRuns("explicit_reconnect");
-      }
-      return;
-    }
-
-    recoveryAttemptsRef.current = attemptNumber;
-    setHostOk(false);
-    if (terminalAttempt || cameFromFailureCard) {
-      setBoot("error");
-    }
-  }, [boot, clearBootTimers, refreshBuildInfo, restoreOwnedRuns]);
+  // retryHost moved fully into useEngineHealth (Task 14) — see that hook's
+  // own call site above.
 
   const openPath = useCallback(async (p: string) => {
     const trimmed = p.trim();
