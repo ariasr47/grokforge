@@ -223,15 +223,11 @@ import {
   type CatchUpMap,
   type RestoreIntent,
 } from "./catchUpWindows";
-import { elevateArtifact } from "./artifactEligibility";
-import {
-  clearArtifactBinding,
-  openArtifactBinding,
-  shouldClearOnConversationChange,
-  shouldClearOnSourceGone,
-  type ArtifactContentKind,
-  type ArtifactOpenBinding,
-} from "./artifactOpenBinding";
+import { useArtifactBinding } from "./useArtifactBinding";
+// retryLastUser/regenerateLast (below, outside useArtifactBinding) clear the
+// binding inline the same way closeArtifact does internally — kept as a
+// direct import since those two call sites are not part of Task 7's move.
+import { clearArtifactBinding } from "./artifactOpenBinding";
 import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -407,9 +403,6 @@ export function App() {
   }, [sessionId]);
   const observeRosterKeyRef = useRef("");
   const [observeHostOwnerSessionId, setObserveHostOwnerSessionId] = useState<string | null>(null);
-  const [artifactOpenBinding, setArtifactOpenBinding] =
-    useState<ArtifactOpenBinding | null>(null);
-  const [artifactAnnounce, setArtifactAnnounce] = useState("");
   const [classesView, setClassesView] = useState<TrustedCommandClassesView | null>(null);
   const [classesStatus, setClassesStatus] = useState<TrustedCommandClassesStatus>("no_workspace");
   const [sessionList, setSessionList] = useState<ChatSession[]>([]);
@@ -453,6 +446,23 @@ export function App() {
   const pendingPromptSessionIdRef = useRef<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  // Task 7: useArtifactBinding needs messagesRef, so it cannot sit at the
+  // exact original state-declaration position (~line 410, before
+  // messagesRef exists) — this is the earliest point every input
+  // (sessionId, runProjection, messages, runProjectionRef, messagesRef) is
+  // already in scope. Its two internal effects only read committed state
+  // (never a ref) and only ever call setArtifactOpenBinding(null), so
+  // running earlier relative to App()'s other effects cannot change any
+  // outcome — see task-7-report.md.
+  const {
+    artifactOpenBinding,
+    setArtifactOpenBinding,
+    boundArtifact,
+    artifactAnnounce,
+    closeArtifact,
+    openRunArtifact,
+    openMessageArtifact,
+  } = useArtifactBinding({ sessionId, runProjection, messages, runProjectionRef, messagesRef });
   const openInFlightRef = useRef<string | null>(null);
   const lastOpenAtRef = useRef(0);
   const stateRef = useRef(state);
@@ -4182,87 +4192,6 @@ export function App() {
     setDraft(command);
     setTimeout(() => composerRef.current?.focus(), 0);
   }, []);
-
-  const closeArtifact = useCallback(() => {
-    setArtifactOpenBinding((prev) => {
-      if (prev) setArtifactAnnounce("Artifact closed");
-      return clearArtifactBinding(prev);
-    });
-  }, []);
-
-  const openRunArtifact = useCallback(
-    (runId: string) => {
-      if (!sessionId) return;
-      const run = runProjectionRef.current.runsById[runId];
-      const r = elevateArtifact(run?.finalAnswer ?? "");
-      if (r.kind === "none") return;
-      setArtifactOpenBinding((prev) =>
-        openArtifactBinding(prev, {
-          conversationId: sessionId,
-          turn: { surface: "run", id: runId },
-          contentKind: r.kind === "long-markdown" ? "long-markdown" : "rich-document",
-        }),
-      );
-      setArtifactAnnounce("Artifact opened");
-    },
-    [sessionId],
-  );
-
-  const openMessageArtifact = useCallback(
-    (messageId: string) => {
-      if (!sessionId) return;
-      const msg = messagesRef.current.find((m) => m.id === messageId);
-      const r = elevateArtifact(msg?.content ?? "");
-      if (r.kind === "none") return;
-      setArtifactOpenBinding((prev) =>
-        openArtifactBinding(prev, {
-          conversationId: sessionId,
-          turn: { surface: "message", id: messageId },
-          contentKind: r.kind === "long-markdown" ? "long-markdown" : "rich-document",
-        }),
-      );
-      setArtifactAnnounce("Artifact opened");
-    },
-    [sessionId],
-  );
-
-  const boundArtifact = useMemo(() => {
-    if (!artifactOpenBinding || !sessionId) return null;
-    if (artifactOpenBinding.conversationId !== sessionId) return null;
-    const { turn } = artifactOpenBinding;
-    if (turn.surface === "run") {
-      const run = runProjection.runsById[turn.id];
-      if (!run || run.sessionId !== sessionId) return null;
-      const r = elevateArtifact(run.finalAnswer ?? "");
-      if (r.kind === "none" || !r.body) return null;
-      return { body: r.body, contentKind: r.kind as ArtifactContentKind };
-    }
-    const msg = messages.find((m) => m.id === turn.id);
-    if (!msg) return null;
-    const r = elevateArtifact(msg.content);
-    if (r.kind === "none" || !r.body) return null;
-    return { body: r.body, contentKind: r.kind as ArtifactContentKind };
-  }, [artifactOpenBinding, sessionId, runProjection, messages]);
-
-  useEffect(() => {
-    if (!artifactOpenBinding) return;
-    if (shouldClearOnConversationChange(artifactOpenBinding.conversationId, sessionId)) {
-      setArtifactOpenBinding(null);
-    }
-  }, [sessionId, artifactOpenBinding]);
-
-  useEffect(() => {
-    if (!artifactOpenBinding) return;
-    const present = new Set<string>();
-    for (const id of runProjection.runOrder) {
-      const run = runProjection.runsById[id];
-      if (run?.sessionId === sessionId) present.add(run.runId);
-    }
-    for (const m of messages) present.add(m.id);
-    if (shouldClearOnSourceGone(artifactOpenBinding.turn, present)) {
-      setArtifactOpenBinding(null);
-    }
-  }, [artifactOpenBinding, runProjection, messages, sessionId]);
 
   const lastUserId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
