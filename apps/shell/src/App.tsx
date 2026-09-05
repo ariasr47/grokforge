@@ -254,8 +254,8 @@ import {
   type ArtifactContentKind,
   type ArtifactOpenBinding,
 } from "./artifactOpenBinding";
-import { PermissionPolicyControl, savedPolicyUnusable } from "./PermissionPolicyControl";
-import { BypassPermissionsControl } from "./BypassPermissionsControl";
+import { savedPolicyUnusable } from "./PermissionPolicyControl";
+import { PolicyControls } from "./PolicyControls";
 import { PolicyChip, POLICY_SENTENCE, effectivePolicyKind } from "./PolicyChip";
 import { TrustedCommandClassesControl } from "./TrustedCommandClassesControl";
 import type { TrustedCommandClassesStatus } from "./TrustedCommandClassesControl";
@@ -2388,9 +2388,11 @@ export function App() {
 
   // Review ⌄ composer popover — backed by the same PermissionPolicyControl
   // / BypassPermissionsControl logic (save flow, Bypass's own confirmation
-  // gate) the Settings page uses, just reachable from the composer too. A
-  // separate computation from Settings' own, so neither can regress the
-  // other's already-tested wiring.
+  // gate) the Settings page uses, just reachable from the composer too.
+  // Task 4: both call sites now share that wiring via PolicyControls; what
+  // stays here is composer-only (the chip's kind/sentence), computed
+  // separately from Settings' own so neither can regress the other's
+  // already-tested wiring.
   const policyPublicView = (
     state as PublicState & {
       permissionPolicy?: { effectiveMode?: string; fallbackReason?: string | null; status?: string };
@@ -2412,33 +2414,13 @@ export function App() {
   });
   const policySentence = policyPublicView?.status === "confirmed" ? POLICY_SENTENCE[policyKind] : null;
   const policyChipContent = (
-    <>
-      <PermissionPolicyControl
-        status={!state ? "loading" : !state.workspace ? "no_workspace" : policyPublicView?.status === "confirmed" ? "confirmed" : hostOk ? "unconfirmed" : "offline"}
-        confirmedMode={policyPublicView?.effectiveMode === "trusted_workspace" ? "trusted_workspace" : policyPublicView?.effectiveMode === "review" ? "review" : null}
-        fallbackReason={policyPublicView?.fallbackReason}
-        disabled={Boolean(runStartedAt)}
-        onSave={async (mode) => {
-          const latest = stateRef.current;
-          if (!sessionId || !latest?.workspace) throw new Error("No session or workspace");
-          const result = await api.saveWorkspacePolicy({ sessionId, workspace: latest.workspace, mode });
-          applyState({ ...latest, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
-        }}
-      />
-      {sessionId ? (
-        <BypassPermissionsControl
-          sessionId={sessionId}
-          unlocked={Boolean(bypassPublicView?.unlocked)}
-          available={Boolean(bypassPublicView?.available)}
-          active={Boolean(bypassPublicView?.activeForSession)}
-          blockedReason={bypassPublicView?.blockedReason}
-          onActiveChange={(active) => {
-            if (!state || !bypassPublicView) return;
-            applyState({ ...state, bypassPermissions: { ...bypassPublicView, activeForSession: active } });
-          }}
-        />
-      ) : null}
-    </>
+    <PolicyControls
+      state={state}
+      sessionId={sessionId}
+      hostOk={hostOk}
+      runStartedAt={runStartedAt}
+      onApplyState={applyState}
+    />
   );
 
   const chatPackComposer = projectChatPackComposer({
@@ -5261,81 +5243,65 @@ export function App() {
                 </p>
                 {(() => {
                   const policy = (state as PublicState & { permissionPolicy?: { effectiveMode?: string; fallbackReason?: string | null; status?: string } })?.permissionPolicy;
-                  const bypass = (state as PublicState & { bypassPermissions?: { unlocked?: boolean; available?: boolean; activeForSession?: boolean; blockedReason?: string | null } })?.bypassPermissions;
-                  return <>
-                    <PermissionPolicyControl
-                      status={!state ? "loading" : !state.workspace ? "no_workspace" : policy?.status === "confirmed" ? "confirmed" : hostOk ? "unconfirmed" : "offline"}
-                      confirmedMode={policy?.effectiveMode === "trusted_workspace" ? "trusted_workspace" : policy?.effectiveMode === "review" ? "review" : null}
-                      fallbackReason={policy?.fallbackReason}
-                      disabled={Boolean(runStartedAt)}
-                      onSave={async (mode) => {
-                        const latest = stateRef.current;
-                        if (!sessionId || !latest?.workspace) throw new Error("No session or workspace");
-                        const result = await api.saveWorkspacePolicy({ sessionId, workspace: latest.workspace, mode });
-                        applyState({ ...latest, permissionPolicy: result.policy as PublicState["permissionPolicy"] });
-                      }}
-                    />
-                    <TrustedCommandClassesControl
-                      key={state?.workspace ?? "no-workspace"}
-                      status={
-                        !state?.workspace
-                          ? "no_workspace"
-                          : !hostOk
-                            ? "offline"
-                            : classesStatus
-                      }
-                      policyMode={
-                        policy?.effectiveMode === "trusted_workspace"
-                          ? "trusted_workspace"
-                          : policy?.effectiveMode === "review"
-                            ? "review"
-                            : null
-                      }
-                      confirmed={classesView ?? {
-                        classes: [],
-                        revision: "fallback",
-                        source: "fallback",
-                        fallbackReason: "missing",
-                        savedForWorkspace: false,
-                        catalog: [],
-                      }}
-                      onSave={async (classes, expectedRevision) => {
-                        if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
-                        try {
-                          const result = await api.saveTrustedCommandClasses({
-                            sessionId,
-                            workspace: state.workspace,
-                            classes,
-                            expectedRevision,
-                          });
-                          setClassesView(result.classes);
-                          toast.push("Trusted command classes saved.", "success");
-                        } catch (e) {
-                          if (e instanceof ApiError && e.code === "class_revision_conflict") {
-                            try {
-                              const fresh = await api.trustedCommandClasses(state.workspace);
-                              setClassesView(fresh.classes);
-                            } catch {
-                              /* keep last confirmed */
-                            }
-                          }
-                          const code = e instanceof ApiError ? e.code : "class_save_failed";
-                          throw Object.assign(e instanceof Error ? e : new Error("save failed"), { code });
-                        }
-                      }}
-                    />
-                    {sessionId && <BypassPermissionsControl
+                  return (
+                    <PolicyControls
+                      state={state}
                       sessionId={sessionId}
-                      unlocked={Boolean(bypass?.unlocked)}
-                      available={Boolean(bypass?.available)}
-                      active={Boolean(bypass?.activeForSession)}
-                      blockedReason={bypass?.blockedReason}
-                      onActiveChange={(active) => {
-                        if (!state || !bypass) return;
-                        applyState({ ...state, bypassPermissions: { ...bypass, activeForSession: active } });
-                      }}
-                    />}
-                  </>;
+                      hostOk={hostOk}
+                      runStartedAt={runStartedAt}
+                      onApplyState={applyState}
+                    >
+                      <TrustedCommandClassesControl
+                        key={state?.workspace ?? "no-workspace"}
+                        status={
+                          !state?.workspace
+                            ? "no_workspace"
+                            : !hostOk
+                              ? "offline"
+                              : classesStatus
+                        }
+                        policyMode={
+                          policy?.effectiveMode === "trusted_workspace"
+                            ? "trusted_workspace"
+                            : policy?.effectiveMode === "review"
+                              ? "review"
+                              : null
+                        }
+                        confirmed={classesView ?? {
+                          classes: [],
+                          revision: "fallback",
+                          source: "fallback",
+                          fallbackReason: "missing",
+                          savedForWorkspace: false,
+                          catalog: [],
+                        }}
+                        onSave={async (classes, expectedRevision) => {
+                          if (!sessionId || !state?.workspace) throw new Error("No session or workspace");
+                          try {
+                            const result = await api.saveTrustedCommandClasses({
+                              sessionId,
+                              workspace: state.workspace,
+                              classes,
+                              expectedRevision,
+                            });
+                            setClassesView(result.classes);
+                            toast.push("Trusted command classes saved.", "success");
+                          } catch (e) {
+                            if (e instanceof ApiError && e.code === "class_revision_conflict") {
+                              try {
+                                const fresh = await api.trustedCommandClasses(state.workspace);
+                                setClassesView(fresh.classes);
+                              } catch {
+                                /* keep last confirmed */
+                              }
+                            }
+                            const code = e instanceof ApiError ? e.code : "class_save_failed";
+                            throw Object.assign(e instanceof Error ? e : new Error("save failed"), { code });
+                          }
+                        }}
+                      />
+                    </PolicyControls>
+                  );
                 })()}
                 <div className="row" style={{ marginBottom: 16 }}>
                   <Button variant="primary" onClick={startGrokSignIn}>
