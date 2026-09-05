@@ -2438,6 +2438,25 @@ export function App() {
   };
 
   // Global keys: palette, composer, sessions, permissions, diffs
+  //
+  // Task 15 (.superpowers/sdd/structure/task-15-report.md) considered
+  // extracting this effect into apps/shell/src/useShortcuts.ts and decided
+  // not to. Every one of its real inputs — the 25 entries in the dependency
+  // array below, plus five referentially-stable setters/refs the array
+  // omits (setPaletteOpen, setView, setPeek, setSkillsOpen, composerRef) —
+  // is state owned elsewhere in App(), and the effect itself returns
+  // nothing any other code consumes: it is a dispatch table, not a domain
+  // with state of its own. Wrapping it in a hook would not shrink this
+  // list, only relocate an equally long one into a same-shaped parameter
+  // object in a different file. One entry, `oauth`, is not read anywhere
+  // in the body below any more (superseded by `anyDecisionPending`, Task
+  // 11) and would still have to be threaded through just to keep this
+  // array unchanged, per the standing rule against touching dependency
+  // arrays as a side effect of a move — extraction would freeze that dead
+  // parameter permanently into a new file instead of leaving it as a
+  // same-file loose end. See the report for the full evidence, including
+  // confirmation that the dockOwnsFocus/inEditable trust guard exercised
+  // by gate-keyboard-trust.integration.test.tsx is unchanged.
   useEffect(() => {
     const unbind = tinykeys(window, {
       "$mod+KeyK": (e) => {
@@ -2679,6 +2698,20 @@ export function App() {
     }
   }, [state?.hasApiKey]);
 
+  // Task 15 (.superpowers/sdd/structure/task-15-report.md) considered
+  // extracting this memo into apps/shell/src/useCommandPalette.ts and
+  // decided not to, for the same reason as the tinykeys effect above:
+  // every one of its ~27 real inputs (the dependency array below, plus
+  // referentially-stable setters/refs it omits) is state owned elsewhere
+  // in App(), none of it is owned here, and its one real conditional rule
+  // (`engineRetryAllowed` hiding "Reconnect engine") is already exercised
+  // end to end by App.failure.test.tsx's AC-U5 test. One dependency,
+  // `diffQueue.length`, is a leftover from the "Jump to diffs" command
+  // removed below (see that comment) — nothing in this body reads it any
+  // more, but the standing rule against touching dependency arrays as a
+  // side effect of a move means extraction would carry it forward as a
+  // permanently-required, permanently-unused parameter. See the report for
+  // the full evidence.
   const paletteActions: PaletteAction[] = useMemo(() => {
     const acts: PaletteAction[] = [
       {
