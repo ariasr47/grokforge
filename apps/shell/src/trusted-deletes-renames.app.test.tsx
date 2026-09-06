@@ -252,8 +252,17 @@ describe("trusted-deletes-renames App pins (AC-21/22)", () => {
       }),
     }, 2) as unknown as Record<string, unknown>);
 
+    // Receipts (cf2eb09) render an activity as a verb and the real target —
+    // "Ran" / "del gone.txt" — never the raw ACP tool name, so asserting
+    // `run_shell` text could not match whether the group was open or not.
     await waitFor(() => {
-      assert.ok(screen.getByText(/run_shell|run shell/i));
+      for (const head of Array.from(document.querySelectorAll<HTMLElement>(".rhead"))) {
+        if (head.getAttribute("aria-expanded") === "false") head.click();
+      }
+      const ran = Array.from(document.querySelectorAll<HTMLElement>(".rrow")).find((row) =>
+        row.querySelector(".verb")?.textContent?.trim() === "Ran"
+        && (row.querySelector(".what")?.textContent ?? "").includes("del gone.txt"));
+      assert.ok(ran, "the trusted shell delete must paint as its own Ran receipt");
     });
     assert.equal(screen.queryByRole("region", { name: CHANGES_DOCK_LABEL }) === null, true);
     assert.equal(screen.queryByText(FILE_CHANGES_KIND_DELETED) === null, true);

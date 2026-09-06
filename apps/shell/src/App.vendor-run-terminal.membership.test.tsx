@@ -130,7 +130,24 @@ function toolActivity(index: number, lifecycle: "pending" | "terminal" = "termin
   };
 }
 
+/**
+ * Open every receipts group.
+ *
+ * Receipts render collapsed on a hydrated terminal run, and a collapsed group
+ * puts no rows in the DOM at all — so "this session's tool is present" cannot
+ * pass, and, worse, "the foreign session's tools are absent" passes vacuously.
+ * Both directions need the rows actually rendered.
+ */
+function openReceipts(): void {
+  for (const head of Array.from(document.querySelectorAll<HTMLElement>(".rhead"))) {
+    if (head.getAttribute("aria-expanded") === "false") head.click();
+  }
+}
+
 function foreignLeakVisible(): boolean {
+  // A foreign row hidden inside a collapsed group is still a leak the moment
+  // the operator opens it, and "no rows rendered" must never read as "clean".
+  openReceipts();
   const text = document.body.textContent ?? "";
   return text.includes("Codex fail") || text.includes("list dir 7") || text.includes("list dir 29");
 }
@@ -353,6 +370,7 @@ describe("vendor-run-terminal membership (Activity live-paint isolation)", () =>
     const { ws } = await mountApp();
     await waitFor(() => {
       assert.ok(document.querySelector(`[data-run-id="${RUN_B}"]`));
+      openReceipts();
       assert.ok(screen.getByText("list dir 3"));
     });
     assert.equal(screen.queryByText("Codex fail") === null, true);
