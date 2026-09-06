@@ -20,6 +20,11 @@ import { CHANGES_DOCK_LABEL, GIT_REVIEW_LOADING } from "../dock/ChangesDock";
 
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
+  // This file lives in src/app/ since the Task 16 reorg, so reaching apps/
+  // takes three levels (app -> src -> shell -> apps), not two. When this was
+  // wrong the guard below simply reported the agent "missing" and all seven
+  // Git-review tests silently skipped rather than failing.
+  "..",
   "..",
   "..",
   "host",

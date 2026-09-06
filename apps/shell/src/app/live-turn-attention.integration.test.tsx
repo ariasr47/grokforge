@@ -13,6 +13,11 @@ import { WebSocket as BrowserWebSocket } from "ws";
 const TURN_COPY = "Your turn";
 const agentPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
+  // This file lives in src/app/ since the Task 16 reorg, so reaching apps/
+  // takes three levels (app -> src -> shell -> apps), not two. When this was
+  // wrong the guard below simply reported the agent "missing" and both spine
+  // tests silently skipped rather than failing — invisible in the summary.
+  "..",
   "..",
   "..",
   "host",
