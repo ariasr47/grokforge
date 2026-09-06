@@ -2,7 +2,7 @@ import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import { WebSocket } from "ws";
 import { setRuntimePort } from "../api";
@@ -60,6 +60,38 @@ class StartupFailure extends Error {
 }
 
 const looksPortTaken = (output: string) => /EADDRINUSE|already in use/i.test(output);
+
+/**
+ * Every host child still believed alive.
+ *
+ * `afterEach` reaps hosts through the returned object's `close()`, which covers
+ * the normal path completely. It cannot cover a test process that dies before
+ * its hooks run — an abort, an uncaught throw, a harness timeout — and every
+ * host alive at that moment is orphaned, keeps its port, and outlives the run.
+ * A synchronous best-effort sweep on `exit` catches those. A forced tree-kill
+ * from outside takes the children with it, so this only has to handle the
+ * in-process endings.
+ */
+const liveChildren = new Set<ChildProcess>();
+let sweepInstalled = false;
+
+function trackChild(child: ChildProcess): void {
+  liveChildren.add(child);
+  child.once("exit", () => liveChildren.delete(child));
+  if (sweepInstalled) return;
+  sweepInstalled = true;
+  process.on("exit", () => {
+    for (const orphan of liveChildren) {
+      if (!orphan.pid || orphan.exitCode !== null) continue;
+      try {
+        // `exit` handlers may only do synchronous work.
+        if (process.platform === "win32") {
+          spawnSync("taskkill", ["/PID", String(orphan.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+        } else orphan.kill("SIGKILL");
+      } catch { /* best effort — the run is already ending */ }
+    }
+  });
+}
 
 /** Kill the host and its ACP grandchildren; never throws. */
 async function hardKill(child: ChildProcess): Promise<void> {
@@ -184,6 +216,16 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
   let actualPort = 0;
   let health!: HostHealth;
   const startupOutput = () => output;
+  // Every throw below happens before the returned object — the one carrying
+  // `close()` — exists, so `hosts.push(h)` never runs and `afterEach` has
+  // nothing to tear down. Whatever this call created, this call must reap.
+  const abandonStartup = async () => {
+    await hardKill(child);
+    if (existing) return; // the caller owns these dirs and is still using them
+    for (const dir of [home, workspace]) {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
   for (let attempt = 0; ; attempt++) {
     env.GROKFORGE_PORT = String(port);
     child = spawn(process.execPath, ["--import", "tsx", hostEntry], {
@@ -192,6 +234,7 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
+    trackChild(child);
     const MAX_LOG = 64 * 1024;
     output = "";
     const appendLog = (chunk: unknown) => {
@@ -214,9 +257,10 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
       }
       break;
     } catch (error) {
-      await hardKill(child);
       const retryable = error instanceof StartupFailure && error.portTaken && attempt < START_ATTEMPTS - 1;
-      if (!retryable) throw error;
+      if (!retryable) { await abandonStartup(); throw error; }
+      // Another attempt reuses the same dirs, so only the child goes.
+      await hardKill(child);
       // Only reachable for an explicitly requested port (an ephemeral one is
       // free by construction): the previous owner may still be letting go.
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
@@ -227,7 +271,16 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
   // production launcher instead of falling back to 8787.
   setRuntimePort(actualPort);
   const ws = new WebSocket(`ws://127.0.0.1:${actualPort}/ws`);
-  await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error("WS open timeout")), 5_000); ws.once("open", () => { clearTimeout(timer); resolve(); }); ws.once("error", reject); });
+  try {
+    await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error("WS open timeout")), 5_000); ws.once("open", () => { clearTimeout(timer); resolve(); }); ws.once("error", reject); });
+  } catch (error) {
+    // The host is healthy and fully alive here, so this is the costliest place
+    // to give up without reaping: the caller never receives the object holding
+    // `close()`, and the host would keep its port for the rest of the run.
+    try { ws.close(); } catch { /* never opened */ }
+    await abandonStartup();
+    throw new Error(`reliable host socket never opened on ${baseUrl}: ${String(error)} pid=${child.pid}\n${output}`);
+  }
   const killProcess = async () => {
     ws.close();
     // `hardKill` takes the whole tree: the host owns an ACP grandchild, and
