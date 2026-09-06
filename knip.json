@@ -20,8 +20,8 @@
     },
     "apps/shell": {
       "entry": [
-        "src/main.tsx",
-        "src/verifyGrokUi.tsx",
+        "src/app/main.tsx",
+        "src/app/verifyGrokUi.tsx",
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
         "src/**/*.vitest.ts",
