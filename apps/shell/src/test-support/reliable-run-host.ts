@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
+import net from "node:net";
 import { WebSocket } from "ws";
 import { setRuntimePort } from "../api";
 
@@ -20,7 +21,29 @@ export interface ReliableRunHost {
 interface HostHealth { ok: boolean; port: number; pid: number; dataDir: string }
 
 /** How many times a requested port may be re-attempted before we give up. */
-const START_ATTEMPTS = 3;
+const START_ATTEMPTS = 5;
+
+/**
+ * Wait until `port` can actually be bound again.
+ *
+ * Killing the host does not immediately hand its port back: the forced exit
+ * leaves accepted sockets draining, and an OS-assigned port lives in the
+ * dynamic range, where an unrelated process can also claim it. The
+ * host-replacement tests kill a host and rebind that exact port, so "the host
+ * is gone" has to mean "its port is free" or the replacement races the kill.
+ */
+async function waitForPortFree(port: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = net.createServer();
+      probe.once("error", () => resolve(false));
+      probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)));
+    });
+    if (free) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 
 /** The host's first stdout line: `GROKFORGE_HOST_LISTENING port=<n> pid=<n>`. */
 const LISTENING_LINE = /GROKFORGE_HOST_LISTENING port=(\d+) pid=(\d+)/;
@@ -211,6 +234,9 @@ export async function startReliableRunHost(fixture = "", port = 0, existing?: { 
     // killing only the Node parent leaks handles/processes and eventually makes
     // the full shell suite fail with esbuild `spawn UNKNOWN`.
     await hardKill(child);
+    // Callers that rebind this exact port next (host-replacement tests) must
+    // not race the kernel still letting go of it.
+    await waitForPortFree(actualPort);
   };
   return { baseUrl, workspace, home, process: child, ws, startupOutput, killPreservingData: killProcess, close: async () => {
     await killProcess();
