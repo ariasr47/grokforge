@@ -450,24 +450,40 @@ export function createFakeHost(
       // response missing `run` (see api.ts promptRun's declared return type).
       // This synthesized run is provisional scaffolding only: it exists so
       // sendText's admission branch can proceed past the `!admitted.run`
-      // guard. Its runId is never referenced by a scripted runJournals entry,
-      // so the immediate follow-up GET /api/runs/{runId} 404s and is
-      // swallowed by sendText's own catch (WS resume remains authoritative).
-      // Tests that need real run/busy chrome still drive it via a scripted
-      // run_started/run_terminal WS envelope, same as before this fix.
+      // guard, never to model a real in-flight turn.
+      //
+      // It is minted already terminal, not "running". Nothing in this
+      // fixture ever addresses this exact runId again — it is registered in
+      // no runJournals entry, and a test drives its OWN run/busy chrome via
+      // a scripted run_started/run_terminal WS envelope under a runId it
+      // chose itself, never this one. mergeRunSnapshot/reduceRunEvent key
+      // strictly by runId, so a "running" placeholder here would strand the
+      // session: ownedAllTerminal/activeRun (App.tsx) require every run
+      // projected for the session to reach terminal, and this one never
+      // would. Terminal + answered + unvouched is the inert choice: worked
+      // out from how the rest of the app reads a RunSnapshot —
+      // RunTerminalNotice no-ops on terminalKind "answered" with no declined
+      // decision (unlike "failed"/"cancelled", which paint a visible
+      // banner), and a null finalAnswer is skipped by both the vouched-
+      // answer bubble and mergeLiveRunsForExport. A test that needs real
+      // run/busy chrome still layers its own scripted run_started/
+      // run_terminal pair on top, same as before this fix — that pair now
+      // lands on a second, genuinely live projection entry, and the session
+      // reads busy exactly as long as that second entry stays non-terminal
+      // (this placeholder, already settled, never contributes to it).
       const runId = `fake-run-${++promptRunSeq}`;
       const run: RunSnapshot = {
         sessionId: (body?.sessionId as string | undefined) ?? state.sessionId ?? "",
         runId,
         connectionGeneration: 1,
-        state: "running",
+        state: "terminal",
         acceptedPrompt: (body?.text as string | undefined) ?? "",
         admittedAt: "",
         updatedAt: "",
         lastEventSeq: 0,
         policy: {},
         model: {},
-        terminalKind: null,
+        terminalKind: "answered",
         finalAnswer: null,
         answerVouched: false,
         failure: null,
