@@ -8,6 +8,7 @@ import { App } from "./App";
 import { setRuntimePort } from "./api";
 import { startReliableRunHost, waitForRunEvent, type ReliableRunHost } from "./test-support/reliable-run-host";
 import { reloadSessionsFromDisk } from "./sessions";
+import { endPageSend } from "./composerSend";
 import { WebSocket as BrowserWebSocket } from "ws";
 
 const TURN_COPY = "Your turn";
@@ -59,6 +60,15 @@ function restoreGeometryProperty(
 afterEach(async () => {
   cleanup();
   restoreFollowGeometry();
+  // `pageSendInFlight` is module state that deliberately outlives an App
+  // remount, and `endPageSend` only runs when a run reaches terminal. Both
+  // Observe spine tests end while their shell permission is still unanswered,
+  // so the run never terminates and the latch is still held when the next test
+  // mounts — where it silently refuses the send (composerSendAdmitted returns
+  // false, no prompt ever reaches the host) and the run-event wait times out.
+  // In a real page this resets with the module on reload; across tests in one
+  // process it has to be released here, like the globals above.
+  endPageSend();
   globalThis.WebSocket = originalWebSocket;
   for (const ws of SafeWebSocket.instances) {
     try { ws.close(); } catch { /* already closed */ }
