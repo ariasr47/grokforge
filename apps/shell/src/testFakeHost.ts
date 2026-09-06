@@ -12,6 +12,7 @@ import type {
 } from "./api";
 import { CODE_CHAT_PACK_VIEW, emptyChatPackView } from "./api";
 import type { DesktopCommand } from "./desktopBridge";
+import type { RunSnapshot } from "./runReducer";
 
 const TRUSTED_CLASS_CATALOG: TrustedCommandClassCatalogEntry[] = [
   { id: "npm", label: "npm" },
@@ -254,6 +255,9 @@ export function createFakeHost(
   let nextPlanError: { status: number; error: string; code: string } | null = null;
   let nextPromptRefuse = opts.promptRefuse ?? null;
   let pendingPlanDecision = false;
+  /** Synthesizes a distinct runId per admitted prompt — see the /api/prompt
+   *  success path below. */
+  let promptRunSeq = 0;
   let nextChatPackRefuse = opts.chatPackRefuse ?? null;
   let pendingHydrate: {
     conversationId: string;
@@ -440,7 +444,35 @@ export function createFakeHost(
         };
       }
       state.busy = true;
-      return { ok: true };
+      // Contract shape (INTERFACE_CONTRACT.md): a successful admission always
+      // carries the authoritative RunSnapshot — App.tsx's sendText throws
+      // "Host returned no run snapshot; prompt was not admitted" on any
+      // response missing `run` (see api.ts promptRun's declared return type).
+      // This synthesized run is provisional scaffolding only: it exists so
+      // sendText's admission branch can proceed past the `!admitted.run`
+      // guard. Its runId is never referenced by a scripted runJournals entry,
+      // so the immediate follow-up GET /api/runs/{runId} 404s and is
+      // swallowed by sendText's own catch (WS resume remains authoritative).
+      // Tests that need real run/busy chrome still drive it via a scripted
+      // run_started/run_terminal WS envelope, same as before this fix.
+      const runId = `fake-run-${++promptRunSeq}`;
+      const run: RunSnapshot = {
+        sessionId: (body?.sessionId as string | undefined) ?? state.sessionId ?? "",
+        runId,
+        connectionGeneration: 1,
+        state: "running",
+        acceptedPrompt: (body?.text as string | undefined) ?? "",
+        admittedAt: "",
+        updatedAt: "",
+        lastEventSeq: 0,
+        policy: {},
+        model: {},
+        terminalKind: null,
+        finalAnswer: null,
+        answerVouched: false,
+        failure: null,
+      };
+      return { accepted: true, run };
     }
     if (path === "/api/plan-engagement" && method === "POST") {
       if (state.mode === "chat") {
