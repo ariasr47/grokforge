@@ -82,7 +82,13 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: notes\.pdf ---/);
+      // An attach now inserts the file as an @mention plus its contents in the
+      // same shape a mention expands to — `@name` + MENTION_ATTACH_MARKER +
+      // `--- File: name ---` (1341742, contextAttach.ts). The old
+      // `--- Attached: name ---` block no longer exists anywhere.
+      assert.match(value, /^\s*@notes\.pdf\b/);
+      assert.match(value, /--- File: notes\.pdf ---/);
+      assert.match(value, /--- End: notes\.pdf ---/);
       assert.match(value, /Hello PDF/);
       assert.doesNotMatch(value, /PDF binary not extracted/);
     });
@@ -102,7 +108,7 @@ describe("Chat PDF attach journeys", () => {
       const prompts = host.callsTo("/api/prompt");
       assert.ok(prompts.length >= 1);
       const text = String(prompts[prompts.length - 1]!.body?.text ?? "");
-      assert.match(text, /--- Attached: notes\.pdf ---/);
+      assert.match(text, /--- File: notes\.pdf ---/);
       assert.match(text, /Hello PDF/);
     });
   });
@@ -170,8 +176,13 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: ok\.pdf ---/);
-      assert.doesNotMatch(value, /--- Attached: bad\.pdf ---/);
+      // Same shape as above. Matching the block that ships also makes the
+      // exclusion real: against the old `--- Attached: ---` wording it passed
+      // whatever happened, because no block used that wording any more.
+      assert.match(value, /--- File: ok\.pdf ---/);
+      assert.match(value, /Hello PDF/);
+      assert.doesNotMatch(value, /--- File: bad\.pdf ---/);
+      assert.doesNotMatch(value, /@bad\.pdf/);
     });
     await waitFor(() => {
       assert.ok(screen.getByText("Attached 1 file as text"));
