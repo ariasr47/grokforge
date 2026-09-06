@@ -60,6 +60,32 @@ async function activeAppSessionId(): Promise<string> {
   const parsed = JSON.parse(localStorage.getItem("grokforge.sessions.v2")!) as { activeId: Record<string, string> };
   return Object.values(parsed.activeId)[0]!;
 }
+/**
+ * Find one activity receipt.
+ *
+ * Receipts (cf2eb09, "receipts replace tool activity groups") render an
+ * activity as a humanised verb and target — "Read" / "README.md" — never the
+ * raw ACP tool name, and the group renders collapsed, so the rows do not exist
+ * in the DOM at all until it is opened. Asserting on `read_file` text therefore
+ * cannot pass, with or without a disconnect.
+ */
+async function findReceipt(verb: string, target: RegExp, scope?: HTMLElement): Promise<HTMLElement> {
+  let hit: HTMLElement | undefined;
+  await waitFor(() => {
+    const root = scope ?? document.body;
+    for (const head of root.querySelectorAll<HTMLElement>(".rhead")) {
+      if (head.getAttribute("aria-expanded") === "false") head.click();
+    }
+    hit = Array.from(root.querySelectorAll<HTMLElement>(".rrow")).find((row) =>
+      row.querySelector(".verb")?.textContent?.trim() === verb
+      && target.test(row.querySelector(".what")?.textContent ?? ""));
+    assert.ok(hit, `no ${verb} receipt matching ${target} among [${
+      Array.from(root.querySelectorAll<HTMLElement>(".rrow")).map((row) => (row.textContent || "").trim()).join(" | ")
+    }]`);
+  }, { timeout: 10_000 });
+  return hit!;
+}
+
 async function prompt(h: ReliableRunHost, sessionId: string, text = "fixture prompt") {
   let response: Response;
   try { response = await fetch(`${h.baseUrl}/api/prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, text, effort: "auto", history: [] }) }); }
@@ -381,7 +407,7 @@ for (const mode of ["chat", "code"] as const) {
     await waitFor(() => { appSocket = currentAppSocket(Number(new URL(h.baseUrl).port)); });
     appSocket!.close();
     await screen.findByText(/Reconnecting — Connection lost\. Forge is reconnecting\./);
-    const activity = await screen.findByText(/read_file: succeeded|read file/i);
+    const activity = await findReceipt("Read", /README\.md/);
     assert.ok(activity);
     const runSurface = screen.getByRole("article", { name: `Run ${mode} complete event run` });
     assert.ok(within(runSurface).getByText(/Model:/));
@@ -404,9 +430,14 @@ for (const mode of ["chat", "code"] as const) {
     const surfaces = screen.getAllByRole("article", { name: `Run ${mode} complete event run` });
     assert.equal(surfaces.length, 1, "all event classes must remain under one owning RunSurface");
     assert.ok(within(surfaces[0]!).getByText("pre-terminal reasoning"));
-    assert.ok(within(surfaces[0]!).getByText(/read_file: succeeded|read file/i));
-    assert.ok(within(surfaces[0]!).getByText("Run shell"));
-    assert.ok(within(surfaces[0]!).getByText("Edit file"));
+    assert.ok(await findReceipt("Read", /README\.md/, surfaces[0]!));
+    // The permission and diff classes are asserted on the journal above
+    // (`decisionKinds`), not on the DOM here: terminal settles leftover
+    // permission and diff cards so Send unlocks (61b2b7e), so "Run shell" and
+    // "Edit file" are deliberately absent from the surface once the run has
+    // failed. They are present while the run is live.
+    assert.equal(within(surfaces[0]!).queryByRole("button", { name: "Allow" }) === null, true,
+      "a terminal run must not still offer a live permission action");
     assert.equal(within(surfaces[0]!).getAllByText("answer received before failure").length, 1);
     assert.equal(screen.getAllByText("Run failed", { exact: true }).length, 1);
   });
