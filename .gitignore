@@ -44,3 +44,11 @@ apps/shell/src-tauri/resources/
 
 # Seeded design canvas (2.6MB, generated from docs/design/forge-next/*.dc.html)
 docs/design/forge-next/forge-redesign.html
+
+# Tool scratch dirs that appear at the repo root
+.playwright-mcp/
+# The private updater signing key must never be committed; the .pub beside it is tracked on purpose.
+.tauri/updater.key
+
+# Dogfood fixtures: 152MB of agent test output, never committed
+docs/dogfood/
