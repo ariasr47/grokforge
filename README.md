@@ -38,6 +38,8 @@ npm install
 npm run desktop
 ```
 
+> [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH is recommended. `rg` is one of the two allowed fixed-inspection commands, so without it in-app `rg` inspections fail to spawn and one `@grokforge/grok-acp` boundary test skips — `npm test` still passes, but the skip is printed with its reason.
+
 ### First-time flow (in-app)
 
 1. **Open folder…**  
