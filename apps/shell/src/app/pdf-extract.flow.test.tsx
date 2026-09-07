@@ -107,7 +107,7 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: notes\.pdf ---/);
+      assert.match(value, /--- File: notes\.pdf ---/);
       assert.match(value, /Hello PDF/);
       assert.doesNotMatch(value, /PDF binary not extracted/);
     });
@@ -127,7 +127,7 @@ describe("Chat PDF attach journeys", () => {
       const prompts = host.callsTo("/api/prompt");
       assert.ok(prompts.length >= 1);
       const text = String(prompts[prompts.length - 1]!.body?.text ?? "");
-      assert.match(text, /--- Attached: notes\.pdf ---/);
+      assert.match(text, /--- File: notes\.pdf ---/);
       assert.match(text, /Hello PDF/);
     });
   });
@@ -152,7 +152,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: secret\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: secret\.pdf ---/);
     assert.equal(screen.queryByText(/^secret\.pdf:/) === null, true);
 
     attachViaPicker([pdfFile("scan.pdf", await fixtureEmptyExtractPdf())]);
@@ -163,7 +163,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: scan\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: scan\.pdf ---/);
 
     attachViaPicker([pdfFile("bad.pdf", fixtureCorruptPdf())]);
     await waitFor(() => {
@@ -173,7 +173,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: bad\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: bad\.pdf ---/);
     assert.equal(screen.queryByText(/OCR/i) === null, true);
   });
 
@@ -195,8 +195,8 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: ok\.pdf ---/);
-      assert.doesNotMatch(value, /--- Attached: bad\.pdf ---/);
+      assert.match(value, /--- File: ok\.pdf ---/);
+      assert.doesNotMatch(value, /--- File: bad\.pdf ---/);
     });
     await waitFor(() => {
       assert.ok(screen.getByText("Attached 1 file as text"));
