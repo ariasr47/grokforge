@@ -1,0 +1,70 @@
+# Line endings are LF everywhere in this repo.
+#
+# Without this file, a Windows checkout using the Git-for-Windows default
+# (core.autocrlf=true, set in the system gitconfig) rewrites every text file to
+# CRLF in the working tree even though the stored blobs are LF-only. `npm run
+# lint` (biome check, formatter.lineEnding defaults to "lf") then reports a
+# formatting violation on every file it covers, and the lefthook pre-commit
+# biome hook fails the same way -- on files that are byte-identical to HEAD.
+# CI, Linux and macOS never see it, so it reads as a phantom local failure.
+#
+# Declaring the attributes here makes git normalize on checkout regardless of a
+# contributor's local autocrlf setting. No stored blob changes: as of this
+# commit no text blob in history contains a CR byte.
+#
+# One-time fix for a working tree that is already CRLF. Do NOT reach for
+# `git add --renormalize .`. Measured on this repo, it stages nothing (a CRLF
+# working file cleans to the identical LF blob), leaves every file CRLF, and
+# only refreshes the stat cache -- which silences the 891 "modified" entries
+# git status reports for those files. That hides the symptom while lint stays
+# red. The files have to be rewritten, so remove and restore them:
+#
+#     git ls-files -z | xargs -0 rm -f && git checkout -- .
+#
+# (a fresh clone does the same). Commit real work first -- that command discards
+# uncommitted changes to tracked files.
+
+# Default: let git classify text vs binary, and check text out as LF.
+* text=auto eol=lf
+
+# Source and config, pinned explicitly so a heuristic miss can't opt a file out.
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.cjs    text eol=lf
+*.mjs    text eol=lf
+*.json   text eol=lf
+*.jsonc  text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+*.svg    text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.lock   text eol=lf
+*.rs     text eol=lf
+*.nsh    text eol=lf
+*.sh     text eol=lf
+
+# Binary. Every image tracked here carries stray CR bytes inside its pixel data,
+# so leaving them to the text heuristic is a corruption risk worth not taking.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.pdf    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+
+# Tauri updater signing key: byte-exact, never converted in either direction.
+.tauri/updater.key.pub -text
+
+# cmd.exe can mis-parse an LF-only batch file, so these stay CRLF on checkout.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf

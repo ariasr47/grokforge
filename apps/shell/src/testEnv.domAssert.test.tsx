@@ -16,9 +16,9 @@
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, render, screen } from "@testing-library/react";
-import { App } from "./App";
-import { createFakeHost, FakeWebSocket } from "./testFakeHost";
-import { reloadSessionsFromDisk } from "./sessions";
+import { App } from "./app/App";
+import { createFakeHost, FakeWebSocket } from "./app/testFakeHost";
+import { reloadSessionsFromDisk } from "./lib/sessions";
 
 let originalFetch: typeof fetch;
 let originalWebSocket: typeof WebSocket;

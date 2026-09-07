@@ -2,18 +2,48 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.mjs"],
-      "ignore": [".spire/**", "docs/**", ".changeset/**"]
+      "entry": [
+        "scripts/*.mjs"
+      ],
+      "ignore": [
+        "docs/**",
+        ".changeset/**",
+        ".spire/**",
+        ".grok/**",
+        ".claude/**",
+        ".codex/**",
+        ".agents/**"
+      ],
+      "ignoreDependencies": [
+        "concurrently"
+      ]
     },
     "apps/shell": {
-      "entry": ["src/main.tsx", "src/verifyGrokUi.tsx"],
-      "project": ["src/**/*.{ts,tsx}"],
-      "ignore": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testEnv.ts"]
+      "entry": [
+        "src/app/main.tsx",
+        "src/app/verifyGrokUi.tsx",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.vitest.ts",
+        "src/**/*.vitest.tsx",
+        "src/testEnv.ts",
+        "src/test-support/**"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ],
+      "ignoreDependencies": [
+        "@tauri-apps/plugin-window-state"
+      ]
     },
     "apps/host": {
-      "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts"],
-      "ignore": ["src/**/*.test.ts"]
+      "entry": [
+        "src/index.ts",
+        "src/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
     }
   }
 }

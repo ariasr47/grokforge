@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import { WebSocket } from "ws";
-import { setRuntimePort } from "../api";
+import { setRuntimePort } from "../lib/api";
 
 export interface ReliableRunHost {
   baseUrl: string;
