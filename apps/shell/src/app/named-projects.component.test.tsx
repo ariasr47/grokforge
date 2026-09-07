@@ -86,10 +86,36 @@ test("Chat footer: pack chip before composer-meta; placeholder name", async () =
   });
   globalThis.fetch = host.fetchImpl;
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  // This case is about the *placeholder*, and chatListTitle only shows it
+  // "while the home has no auto-title yet" (its own doc): with committedName
+  // false it returns any title that isn't the "New chat" default, and only
+  // falls through to the placeholder when there is none. The shared
+  // resetBrowserState fixture seeds "Auto title", which is exactly the
+  // condition that suppresses the placeholder — so this test asserted a state
+  // its own setup made unreachable. Re-seed the same home with no title.
+  reloadSessionsFromDisk({
+    byWorkspace: {
+      [CHAT_PART]: [{
+        id: HOME_A,
+        workspace: CHAT_PART,
+        title: "",
+        committedName: false,
+        packMembers: { files: [], note: null },
+        messages: [],
+        updatedAt: Date.now(),
+        status: "live",
+        subagents: [],
+        open: true,
+      }],
+    },
+    activeId: { [CHAT_PART]: HOME_A },
+    pinned: [CHAT_PART],
+    expanded: [CHAT_PART],
+  });
   render(<App />);
   await screen.findByLabelText("Message to agent");
   await waitFor(() => assert.ok(screen.getByText(PACK_COMPOSER_EMPTY)));
-  assert.ok(screen.getByRole("button", { name: /^Name this home$/ }));
+  assert.ok(screen.getByRole("button", { name: new RegExp(`^${HOME_NAME_PLACEHOLDER}$`) }));
   // Task 11 retired .composer-footer for chips beside the field (.composer
   // .bar, where the Pack chip now lives) plus a single .cmeta meta line —
   // .composer-wrap still wraps both, in that same order, so "pack before
