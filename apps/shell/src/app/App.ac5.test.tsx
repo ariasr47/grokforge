@@ -165,22 +165,14 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
     const rowHeads = await screen.findAllByRole("button", { name: /notes\.txt/i });
     await user.click(rowHeads[rowHeads.length - 1]!);
 
-    // KNOWN FAILURE (confirmed, not a transport bug): the row now paints
-    // correctly (Read / D:\docs\notes.txt / "Q3 plan: ship dual-mode." all
-    // render — verified by DOM dump), but no "Open " button appears.
-    // RunSurface.tsx's own <Receipts> call (around its "activity-output"
-    // section) never passes an `onOpenPath` prop, unlike TranscriptBody.tsx's
-    // <Receipts onOpenPath={(p) => void openToolPath(p)}> for the legacy,
-    // un-projected message pipeline. Pre-fix, this test passed only because
-    // the fixture's admission threw (see testFakeHost.ts's own /api/prompt
-    // comment), bindNormalizedRun never ran, and the scripted bare tool_run
-    // frames painted through the legacy pipeline instead — where onOpenPath
-    // *is* wired. Once a real send binds a Contract v1 run, this activity
+    // Fixed on this branch (fix/fakehost-prompt-shape): RunSurface.tsx's own
+    // <Receipts> call (its "activity-output" section) now forwards an
+    // `onOpenPath` prop, same source as TranscriptBody.tsx's <MessageList
+    // onOpenPath={(p) => void openToolPath(p)}> for the legacy, un-projected
+    // pipeline. Once a real send binds a Contract v1 run, this activity
     // renders exclusively via RunSurface (the legacy copy is filtered out of
-    // visibleMessages by its own projectedRunId), which has no Open action.
-    // Fixing this requires wiring onOpenPath through RunSurface — an App.tsx/
-    // RunSurface.tsx change, out of this branch's scope. Left failing rather
-    // than weakened.
+    // visibleMessages by its own projectedRunId) — it now has a working Open
+    // action too.
     const openBtn = screen.getByRole("button", { name: /^Open /i });
     await user.click(openBtn);
     await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));

@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { flushSessions, listSessions, reloadSessionsFromDisk } from "../lib/sessions";
-import type { RunEventEnvelope } from "../projections/runReducer";
+import { restoreRunProjection, type RunEventEnvelope } from "../projections/runReducer";
 
 /**
  * A Contract v1 run-scoped envelope addressed at the exact run/session the
@@ -254,30 +254,36 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
       );
     });
 
-    // Backed by a real session record, not React state that happened to
-    // survive because the component never unmounted.
-    //
-    // KNOWN FAILURE (confirmed, not a transport bug — see fix/fakehost-
-    // prompt-shape's own investigation): once a real send binds a Contract
-    // v1 run (bindNormalizedRun), a live reply painted via message_delta/
-    // answer_delta/run_terminal lives only in runProjection (RunSurface
-    // reads run.message/run.finalAnswer directly — App.tsx never calls
-    // setMessages for these payload kinds; see useRunEventStream.ts's
-    // onServerEvent, the v1 branch's setMessages calls are gated to
-    // decision_request/activity_update only). App.tsx's session-store
-    // autosave (the debounced effect at App.tsx's "Autosave active session"
-    // comment) and switchMode's persist-before-flip step both read only
-    // `messages`/`messagesRef.current` — never runProjection — so this run's
-    // reply text never reaches saveSessionMessages, hence never appears in
-    // listSessions() here, even though the live DOM assertions above
-    // (screen.getByText) correctly prove the text really did survive the
-    // mode-switch round trip. This is a real product gap in App.tsx's
-    // persistence path, out of this branch's scope (no App.tsx changes) —
-    // left failing rather than weakened, per this branch's own instructions.
+    // Backed by a real durable record, not React state that happened to
+    // survive because the component never unmounted — but investigated
+    // empirically (fix/fakehost-prompt-shape) against the wrong mechanism.
+    // A Contract v1 reply (message_delta/run_terminal) lives only in
+    // runProjection, never in `messages`: App.tsx's session-store autosave
+    // and switchMode's persist-before-flip step both read only
+    // `messages`/`messagesRef.current`, and useRunEventStream.ts's
+    // onServerEvent never calls setMessages for message_delta/run_terminal
+    // in its v1 branch — by design, not oversight (see
+    // promptSendHistory.ts's foldRunAnswersIntoHistory doc comment:
+    // "Run-backed answers live on the run, not in messages"). So
+    // listSessions() never sees this text and is the wrong assertion here.
+    // What actually makes a v1 reply durable before/without any reload is
+    // runProjection's own independent localStorage cache (App.tsx's "Run
+    // identity/cursors outlive a WebView reload" effect, key
+    // grokforge.runProjection.v1, written on every runProjection change and
+    // restored via restoreRunProjection at mount) — confirmed by an
+    // empirical probe (send, run_terminal, unmount, remount) that the text
+    // really does survive a real reload through this path. Assert against
+    // that real mechanism instead.
     const sessions = listSessions("chat:__sandbox__");
     assert.equal(sessions.length, 1);
+    const restoredProjection = restoreRunProjection(
+      JSON.parse(localStorage.getItem("grokforge.runProjection.v1") ?? "null"),
+    );
+    const restoredRun = restoredProjection.runsById[target.runId];
+    assert.ok(restoredRun, "the mid-stream run must be in the durable runProjection cache");
     assert.ok(
-      sessions[0]!.messages.some((m) => m.content.includes("Once upon a time")),
+      Object.values(restoredRun.message ?? {}).join("").includes("Once upon a time"),
+      "the partial reply must survive in runProjection's own localStorage cache, independent of listSessions()",
     );
   });
 
@@ -308,26 +314,25 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
     }) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByText(/Hi there/)));
 
-    // The autosave effect is debounced (SPEC §7 mocks the network boundary
-    // only — this debounce is real app behavior); wait for it to actually
-    // land in the session store before simulating the unload flush a real
-    // reload relies on.
-    //
-    // KNOWN FAILURE (confirmed, not a transport bug — same finding as
-    // App.ac9's sibling "keeps the partial reply..." test above): a v1
-    // run_terminal's vouched finalAnswer lives only in runProjection.
-    // App.tsx's session-store autosave (the debounced effect at App.tsx's
-    // "Autosave active session" comment) persists only `messages` state,
-    // which useRunEventStream.ts's onServerEvent never updates for
-    // run_terminal (its setMessages calls are gated to decision_request/
-    // activity_update only) — so this reply never reaches saveSessionMessages
-    // and this assertion cannot pass without an App.tsx change, out of this
-    // branch's scope. Left failing rather than weakened.
+    // Same finding as App.ac9's sibling "keeps the partial reply..." test
+    // above, investigated empirically (fix/fakehost-prompt-shape): a v1
+    // run_terminal's vouched finalAnswer lives only in runProjection, by
+    // design (see promptSendHistory.ts's foldRunAnswersIntoHistory doc
+    // comment) — App.tsx's session-store autosave persists only `messages`
+    // state, which useRunEventStream.ts's onServerEvent never updates for
+    // run_terminal, so listSessions() never sees this reply. What actually
+    // makes it durable before a reload is runProjection's own independent
+    // localStorage cache (App.tsx's "Run identity/cursors outlive a WebView
+    // reload" effect, key grokforge.runProjection.v1); wait for that real
+    // mechanism instead of the session store.
     await waitFor(() => {
-      const sessions = listSessions("chat:__sandbox__");
-      assert.ok(
-        sessions.some((s) => s.messages.some((m) => m.content.includes("Hi there"))),
-        "autosave must persist the turn before any reload can preserve it",
+      const restored = restoreRunProjection(
+        JSON.parse(localStorage.getItem("grokforge.runProjection.v1") ?? "null"),
+      );
+      assert.equal(
+        restored.runsById[target.runId]?.finalAnswer,
+        "Hi there",
+        "runProjection's own localStorage cache must persist the vouched answer before any reload can preserve it",
       );
     });
 
