@@ -40,6 +40,7 @@ function baseParams(
     workspace: null,
     chatRoot: null,
     needsYouReasons: {},
+    vouchedRunAnswers: {},
     buildInfo: null,
     authLabel: "Grok · API key",
     refreshBranches: async () => {},
@@ -196,5 +197,103 @@ describe("useHomeScreenData", () => {
       "1.2.3",
       "a real version flows through unchanged once buildInfo has one",
     );
+  });
+
+  // fix/home-preview-run-reply: a Contract v1 run's reply never lands in
+  // `messages` (promptSendHistory.ts's foldRunAnswersIntoHistory doc
+  // comment), so homeChatHomes must consult vouchedRunAnswers (keyed by the
+  // last user message's projectedRunId) rather than only the session store.
+  it("chat-home preview: a vouched run answer is shown instead of the operator's own last prompt", () => {
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        "chat:__sandbox__": [
+          session({
+            id: "s1",
+            workspace: "chat:__sandbox__",
+            title: "Tell me a story",
+            updatedAt: 1000,
+            messages: [
+              { id: "m1", role: "user", content: "Tell me a story", projectedRunId: "run-1" },
+            ],
+          }),
+        ],
+      },
+      activeId: {},
+      pinned: [],
+      expanded: [],
+    });
+
+    const { result } = renderHook(() =>
+      useHomeScreenData(
+        baseParams({ vouchedRunAnswers: { "run-1": "Once upon a time, in a far kingdom." } }),
+      ),
+    );
+
+    const row = result.current.homeChatHomes.find((c) => c.id === "s1");
+    assert.ok(row, "expected the seeded session to appear as a chat home");
+    assert.equal(
+      row?.preview,
+      "Once upon a time, in a far kingdom.",
+      "preview must show the run's vouched answer, not the operator's own last prompt",
+    );
+  });
+
+  it("chat-home preview degrades to the operator's last prompt when the run has no vouched answer yet (still streaming, failed, or cancelled)", () => {
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        "chat:__sandbox__": [
+          session({
+            id: "s1",
+            workspace: "chat:__sandbox__",
+            title: "Tell me a story",
+            updatedAt: 1000,
+            messages: [
+              { id: "m1", role: "user", content: "Tell me a story", projectedRunId: "run-1" },
+            ],
+          }),
+        ],
+      },
+      activeId: {},
+      pinned: [],
+      expanded: [],
+    });
+
+    // No entry for "run-1" — the same shape as a run that hasn't reached
+    // its terminal event yet, or reached one with no vouched answer
+    // (failed/cancelled). Must not invent or show partial text either way.
+    const { result } = renderHook(() =>
+      useHomeScreenData(baseParams({ vouchedRunAnswers: {} })),
+    );
+
+    const row = result.current.homeChatHomes.find((c) => c.id === "s1");
+    assert.equal(
+      row?.preview,
+      "Tell me a story",
+      "no vouched answer yet -> falls back to the plain last-message preview",
+    );
+  });
+
+  it("chat-home preview: a session with no run at all still shows its last message, unchanged from before this fix", () => {
+    reloadSessionsFromDisk({
+      byWorkspace: {
+        "chat:__sandbox__": [
+          session({
+            id: "s1",
+            workspace: "chat:__sandbox__",
+            title: "Hello",
+            updatedAt: 1000,
+            messages: [{ id: "m1", role: "user", content: "Hello there" }],
+          }),
+        ],
+      },
+      activeId: {},
+      pinned: [],
+      expanded: [],
+    });
+
+    const { result } = renderHook(() => useHomeScreenData(baseParams()));
+
+    const row = result.current.homeChatHomes.find((c) => c.id === "s1");
+    assert.equal(row?.preview, "Hello there");
   });
 });

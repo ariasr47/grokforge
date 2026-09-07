@@ -128,7 +128,7 @@ import {
   suggestChatFilename,
   transcriptToMarkdown,
 } from "../lib/exportChat";
-import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvents, restoreRunProjection, type RunProjection } from "../projections/runReducer";
+import { initialRunProjection, mergeRunSnapshot, persistableRunProjection, reduceRunEvents, restoreRunProjection, vouchedAnswersByRunId, type RunProjection } from "../projections/runReducer";
 import {
   observeRosterFingerprint,
   ownedRunKeysFromProjection,
@@ -1835,6 +1835,19 @@ export function App() {
     }
     return map;
   }, [runProjection]);
+
+  // Home's Chat-homes preview (useHomeScreenData.ts's homeChatHomes, via
+  // chatHomePreview): a Contract v1 run's reply lives only in runProjection
+  // (promptSendHistory.ts's foldRunAnswersIntoHistory doc comment), never
+  // in `messages` — without this, Home is stuck showing the operator's own
+  // last prompt after Grok has actually answered (fix/home-preview-run-reply).
+  // vouchedAnswersByRunId is the same runId -> answer rule
+  // useComposerSend.ts already builds inline to fold history; reused here
+  // rather than a second definition of "the reply".
+  const vouchedRunAnswers = useMemo(
+    () => vouchedAnswersByRunId(runProjection),
+    [runProjection],
+  );
   const needsYouIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const nextIds = new Set(Object.keys(needsYouReasons));
@@ -1933,6 +1946,7 @@ export function App() {
     workspace: state?.workspace,
     chatRoot: state?.chatRoot,
     needsYouReasons,
+    vouchedRunAnswers,
     buildInfo,
     authLabel: railAuthLabel,
     refreshBranches,

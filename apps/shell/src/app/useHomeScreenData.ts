@@ -14,12 +14,12 @@ import {
 } from "../surfaces/HomeScreen";
 import {
   chatListTitle,
-  chatSessionPreview,
   isExpanded,
   listNeedsYou,
   listPinnedWorkspaces,
   listSessions,
   partitionKey,
+  truncatePreviewText,
   workspaceDisplayName,
   type ChatSession,
 } from "../lib/sessions";
@@ -73,6 +73,18 @@ export interface UseHomeScreenDataParams {
    * too.
    */
   needsYouReasons: Record<string, "approve" | "question">;
+  /**
+   * Every run's vouched final answer, keyed by runId (runReducer.ts's
+   * vouchedAnswersByRunId — the same notion of "the reply"
+   * promptSendHistory.ts's foldRunAnswersIntoHistory already relies on).
+   * homeChatHomes is the one reader: a v1 run's reply never lands in
+   * `messages` (that helper's own doc comment), so a chat home's preview
+   * needs this to show Grok's actual answer instead of the operator's own
+   * last prompt. Read only by homeChatHomes (via chatHomePreview) and
+   * vouchedRunAnswersKey (its serialized form) — same two-reader shape as
+   * needsYouReasons/needsYouReasonsKey just above.
+   */
+  vouchedRunAnswers: Record<string, string>;
   buildInfo: {
     version?: string;
     channel?: string;
@@ -138,6 +150,41 @@ export interface UseHomeScreenDataResult {
 }
 
 /**
+ * homeChatHomes's own preview rule (fix/home-preview-run-reply): same
+ * backward walk as sessions.ts's chatSessionPreview — the most recent
+ * non-empty entry in `sess.messages` — but at each step, a `user` message
+ * that started a run (`projectedRunId`) prefers that run's vouched answer
+ * from `vouchedRunAnswers` over its own stored content, mirroring
+ * promptSendHistory.ts's foldRunAnswersIntoHistory (same per-message rule:
+ * `role === "user" && projectedRunId`, same runId -> answer lookup) rather
+ * than inventing a second notion of "the reply". A Contract v1 run's reply
+ * never lands in `messages` itself (that helper's own doc comment), so
+ * without this a chat home's preview is stuck on the operator's own last
+ * prompt even after Grok has actually answered.
+ *
+ * Degrades to the plain message text — today's behavior — whenever there
+ * is nothing to prefer: no run bound yet, the run is still streaming (no
+ * terminal event means no entry in vouchedRunAnswers yet), or the run
+ * ended without a vouched answer (failed/cancelled). Never shows partial
+ * streamed text as if it were the reply.
+ */
+function chatHomePreview(
+  sess: ChatSession,
+  vouchedRunAnswers: Record<string, string>,
+): string | null {
+  for (let i = sess.messages.length - 1; i >= 0; i -= 1) {
+    const m = sess.messages[i]!;
+    if (m.role === "user" && m.projectedRunId) {
+      const answer = vouchedRunAnswers[m.projectedRunId]?.trim();
+      if (answer) return truncatePreviewText(answer);
+    }
+    const flat = truncatePreviewText(m.content);
+    if (flat) return flat;
+  }
+  return null;
+}
+
+/**
  * Home screen data — moved verbatim out of App.tsx (Task 9): the
  * branch-refresh effect, the nine memos it and the rest of Home's data feed
  * (treeWorkspaces, chatSessions, homeChatPartition, needsYouReasonsKey,
@@ -174,6 +221,7 @@ export function useHomeScreenData({
   workspace,
   chatRoot,
   needsYouReasons,
+  vouchedRunAnswers,
   buildInfo,
   authLabel,
   refreshBranches,
@@ -247,6 +295,21 @@ export function useHomeScreenData({
         .map(([id, reason]) => `${id}:${reason}`)
         .join(","),
     [needsYouReasons],
+  );
+
+  // Same reference-vs-value problem as needsYouReasonsKey above, for the
+  // same reason: vouchedRunAnswers is rebuilt (new object) from
+  // runProjection on every streamed token, but a run only ever gains a
+  // vouched answer once, at its own terminal event. Depend on the
+  // serialized value so homeChatHomes doesn't recompute on every token of
+  // some unrelated live run.
+  const vouchedRunAnswersKey = useMemo(
+    () =>
+      Object.entries(vouchedRunAnswers)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, answer]) => `${id}:${answer}`)
+        .join(","),
+    [vouchedRunAnswers],
   );
 
   const homeNeedsYou: HomeNeedsYouItem[] = useMemo(() => {
@@ -326,13 +389,13 @@ export function useHomeScreenData({
         (s): HomeChatHome => ({
           id: s.id,
           title: chatListTitle(s),
-          preview: chatSessionPreview(s),
+          preview: chatHomePreview(s, vouchedRunAnswers),
           updatedAt: s.updatedAt,
         }),
       )
       .slice(0, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionList, expandTick, homeChatPartition]);
+  }, [sessionList, expandTick, homeChatPartition, vouchedRunAnswersKey]);
 
   const homeFooter: HomeFooterFacts = useMemo(
     () => ({
