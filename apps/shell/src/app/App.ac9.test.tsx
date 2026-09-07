@@ -8,6 +8,31 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { flushSessions, listSessions, reloadSessionsFromDisk } from "../lib/sessions";
+import type { RunEventEnvelope } from "../projections/runReducer";
+
+/**
+ * A Contract v1 run-scoped envelope addressed at the exact run/session the
+ * app just bound via bindNormalizedRun (see testFakeHost.ts's own
+ * `lastPromptRun` doc). Once a real send admits through POST /api/prompt,
+ * App.tsx's onServerEvent only reduces this shape — a bare unscoped
+ * `{type, ...}` frame is deliberately ignored post-bind.
+ */
+function envelope(
+  target: { runId: string; sessionId: string },
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId: target.sessionId,
+    runId: target.runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -171,11 +196,13 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
 
     // Mid-stream: host busy, partial text already rendered.
     ws.emit({ type: "state", state: { ...host.state, busy: true } });
-    ws.emit({ type: "text_delta", text: "Once upon a time, in a " });
-    ws.emit({ type: "text_delta", text: "far kingdom" });
+    ws.emit(envelope(target, 1, { kind: "message_delta", segmentId: "s1", delta: "Once upon a time, in a " }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 2, { kind: "message_delta", segmentId: "s1", delta: "far kingdom" }) as unknown as Record<string, unknown>);
     await waitFor(() =>
       assert.ok(screen.getByText(/Once upon a time, in a far kingdom/)),
     );
@@ -229,6 +256,24 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
 
     // Backed by a real session record, not React state that happened to
     // survive because the component never unmounted.
+    //
+    // KNOWN FAILURE (confirmed, not a transport bug — see fix/fakehost-
+    // prompt-shape's own investigation): once a real send binds a Contract
+    // v1 run (bindNormalizedRun), a live reply painted via message_delta/
+    // answer_delta/run_terminal lives only in runProjection (RunSurface
+    // reads run.message/run.finalAnswer directly — App.tsx never calls
+    // setMessages for these payload kinds; see useRunEventStream.ts's
+    // onServerEvent, the v1 branch's setMessages calls are gated to
+    // decision_request/activity_update only). App.tsx's session-store
+    // autosave (the debounced effect at App.tsx's "Autosave active session"
+    // comment) and switchMode's persist-before-flip step both read only
+    // `messages`/`messagesRef.current` — never runProjection — so this run's
+    // reply text never reaches saveSessionMessages, hence never appears in
+    // listSessions() here, even though the live DOM assertions above
+    // (screen.getByText) correctly prove the text really did survive the
+    // mode-switch round trip. This is a real product gap in App.tsx's
+    // persistence path, out of this branch's scope (no App.tsx changes) —
+    // left failing rather than weakened, per this branch's own instructions.
     const sessions = listSessions("chat:__sandbox__");
     assert.equal(sessions.length, 1);
     assert.ok(
@@ -251,14 +296,33 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "text_delta", text: "Hi there" });
-    ws.emit({ type: "done", reason: "stop" });
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
+    ws.emit(envelope(target, 1, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Hi there",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByText(/Hi there/)));
 
     // The autosave effect is debounced (SPEC §7 mocks the network boundary
     // only — this debounce is real app behavior); wait for it to actually
     // land in the session store before simulating the unload flush a real
     // reload relies on.
+    //
+    // KNOWN FAILURE (confirmed, not a transport bug — same finding as
+    // App.ac9's sibling "keeps the partial reply..." test above): a v1
+    // run_terminal's vouched finalAnswer lives only in runProjection.
+    // App.tsx's session-store autosave (the debounced effect at App.tsx's
+    // "Autosave active session" comment) persists only `messages` state,
+    // which useRunEventStream.ts's onServerEvent never updates for
+    // run_terminal (its setMessages calls are gated to decision_request/
+    // activity_update only) — so this reply never reaches saveSessionMessages
+    // and this assertion cannot pass without an App.tsx change, out of this
+    // branch's scope. Left failing rather than weakened.
     await waitFor(() => {
       const sessions = listSessions("chat:__sandbox__");
       assert.ok(

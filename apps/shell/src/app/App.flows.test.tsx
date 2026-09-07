@@ -126,8 +126,16 @@ describe("AC3 — Chat send + stream reply without a folder gate", () => {
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "text_delta", text: "Hi there" });
-    ws.emit({ type: "done", reason: "stop" });
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
+    ws.emit(runEnvelope(target.sessionId, target.runId, 1, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Hi there",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
       assert.ok(screen.getByText(/Hi there/));
@@ -201,8 +209,16 @@ render(<App />);
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     let ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "text_delta", text: "Chat reply" });
-    ws.emit({ type: "done", reason: "stop" });
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const chatRun = host.lastPromptRun!;
+    ws.emit(runEnvelope(chatRun.sessionId, chatRun.runId, 1, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Chat reply",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByText(/Chat reply/)));
 
     const chatPartitionKey = "chat:__sandbox__";
@@ -244,8 +260,16 @@ render(<App />);
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 2));
     ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "text_delta", text: "Code reply" });
-    ws.emit({ type: "done", reason: "stop" });
+    await waitFor(() => assert.ok(host.lastPromptRun && host.lastPromptRun.runId !== chatRun.runId));
+    const codeRun = host.lastPromptRun!;
+    ws.emit(runEnvelope(codeRun.sessionId, codeRun.runId, 1, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Code reply",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByText(/Code reply/)));
 
     const codePartitionKey = "C:\\repo";

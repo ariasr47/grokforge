@@ -11,6 +11,31 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "../lib/sessions";
+import type { ActivityRecord, RunEventEnvelope } from "../projections/runReducer";
+
+/**
+ * A Contract v1 run-scoped envelope addressed at the exact run/session the
+ * app just bound via bindNormalizedRun (see testFakeHost.ts's own
+ * `lastPromptRun` doc). Once a real send admits through POST /api/prompt,
+ * App.tsx's onServerEvent only reduces this shape — a bare unscoped
+ * `{type, ...}` frame is deliberately ignored post-bind.
+ */
+function envelope(
+  target: { runId: string; sessionId: string },
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId: target.sessionId,
+    runId: target.runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -71,46 +96,47 @@ describe("AC4 — Chat: an escaping path is rendered as a failed, visible tool r
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
+
+    const pendingActivity: ActivityRecord = {
       activityId: "escape-activity",
-      toolCallId: "escape-1",
+      invocationId: "escape-1",
+      name: "read_file",
       lifecycle: "pending",
       execution: null,
       status: "running",
-      name: "read_file",
       input: { path: "../../../../windows/win.ini" },
-      summary: null,
-      command: null,
       output: null,
       error: null,
-      reasonCode: null,
-      reason: null,
-      shellDisplayName: null,
-      detailAvailable: false,
-    });
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
-      activityId: "escape-activity",
-      toolCallId: "escape-1",
+      diff: null,
+      path: null,
+      policy: {},
+      automaticEligibility: "not_eligible",
+      autoApplied: false,
+      command: null,
+      editId: null,
+      recovery: null,
+      summary: null,
+    };
+    const rejectedActivity: ActivityRecord = {
+      ...pendingActivity,
       lifecycle: "terminal",
       execution: "not_executed",
       status: "rejected",
-      name: "read_file",
-      input: { path: "../../../../windows/win.ini" },
-      summary: "Path escapes workspace",
-      command: null,
-      output: null,
       error: "Path escapes workspace",
-      reasonCode: "shell_resolution_failed",
-      reason: "Path escapes workspace",
-      shellDisplayName: null,
-      detailAvailable: true,
-    });
-    ws.emit({ type: "text_delta", text: "I can't read outside your folder." });
-    ws.emit({ type: "done", reason: "stop" });
+      summary: "Path escapes workspace",
+    };
+    ws.emit(envelope(target, 1, { kind: "activity_update", activity: pendingActivity }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 2, { kind: "activity_update", activity: rejectedActivity }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 3, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "I can't read outside your folder.",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
 
     // Failed tool runs open by default (Receipts: hasFail => open).
     await waitFor(() => {

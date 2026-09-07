@@ -156,6 +156,20 @@ export interface FakeHost {
   completeHydrate: () => PublicState | null;
   healthInstallerSha256: string | null;
   healthFail: boolean;
+  /**
+   * Identity of the most recent successful POST /api/prompt admission (null
+   * until the first one). sendText binds normalizedRunIdRef to exactly this
+   * runId/sessionId pair via bindNormalizedRun — see the /api/prompt
+   * handler's own comment below for why this fixture cannot address that
+   * run itself. Once bound, App.tsx's onServerEvent only reduces Contract v1
+   * run-scoped envelopes (schemaVersion 1 + eventSeq) addressed at a
+   * matching runId/sessionId/connectionGeneration; it no longer paints a
+   * bare unscoped `{type, ...}` frame. A test that needs its scripted WS
+   * events to actually paint after a real composer send must read this and
+   * address its envelopes at this exact runId/sessionId (connectionGeneration
+   * is always 1 — see the synthesized RunSnapshot below).
+   */
+  lastPromptRun: { runId: string; sessionId: string } | null;
 }
 
 const BASE_STATE: PublicState = {
@@ -258,6 +272,7 @@ export function createFakeHost(
   /** Synthesizes a distinct runId per admitted prompt — see the /api/prompt
    *  success path below. */
   let promptRunSeq = 0;
+  let lastPromptRun: { runId: string; sessionId: string } | null = null;
   let nextChatPackRefuse = opts.chatPackRefuse ?? null;
   let pendingHydrate: {
     conversationId: string;
@@ -488,6 +503,7 @@ export function createFakeHost(
         answerVouched: false,
         failure: null,
       };
+      lastPromptRun = { runId, sessionId: run.sessionId };
       return { accepted: true, run };
     }
     if (path === "/api/plan-engagement" && method === "POST") {
@@ -937,6 +953,9 @@ export function createFakeHost(
     },
     set healthFail(value: boolean) {
       healthFail = value;
+    },
+    get lastPromptRun() {
+      return lastPromptRun;
     },
   };
 }

@@ -9,6 +9,31 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "../lib/sessions";
+import type { ActivityRecord, RunEventEnvelope } from "../projections/runReducer";
+
+/**
+ * A Contract v1 run-scoped envelope addressed at the exact run/session the
+ * app just bound via bindNormalizedRun (see testFakeHost.ts's own
+ * `lastPromptRun` doc). Once a real send admits through POST /api/prompt,
+ * App.tsx's onServerEvent only reduces this shape — a bare unscoped
+ * `{type, ...}` frame is deliberately ignored post-bind.
+ */
+function envelope(
+  target: { runId: string; sessionId: string },
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId: target.sessionId,
+    runId: target.runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -87,46 +112,48 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
 
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
+
+    const pendingActivity: ActivityRecord = {
       activityId: "activity-1",
-      toolCallId: "t1",
+      invocationId: "t1",
+      name: "read_file",
       lifecycle: "pending",
       execution: null,
       status: "running",
-      name: "read_file",
       input: { path: "D:\\docs\\notes.txt" },
-      summary: null,
-      command: null,
       output: null,
       error: null,
-      reasonCode: null,
-      reason: null,
-      shellDisplayName: null,
-      detailAvailable: false,
-    });
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
-      activityId: "activity-1",
-      toolCallId: "t1",
+      diff: null,
+      path: null,
+      policy: {},
+      automaticEligibility: "not_eligible",
+      autoApplied: false,
+      command: null,
+      editId: null,
+      recovery: null,
+      summary: null,
+    };
+    const succeededActivity: ActivityRecord = {
+      ...pendingActivity,
       lifecycle: "terminal",
       execution: "executed",
       status: "succeeded",
-      name: "read_file",
       input: { path: "notes.txt" },
-      summary: "D:\\docs\\notes.txt",
-      command: null,
       output: "Q3 plan: ship dual-mode.",
-      error: null,
-      reasonCode: null,
-      reason: null,
-      shellDisplayName: null,
-      detailAvailable: true,
-    });
-    ws.emit({ type: "text_delta", text: "Here's what's in the file." });
-    ws.emit({ type: "done", reason: "stop" });
+      summary: "D:\\docs\\notes.txt",
+    };
+    ws.emit(envelope(target, 1, { kind: "activity_update", activity: pendingActivity }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 2, { kind: "activity_update", activity: succeededActivity }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 3, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Here's what's in the file.",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
 
     // Receipts group may start open or collapsed depending on groupKey —
     // make sure it's open, then expand the row itself to reach its
@@ -138,6 +165,22 @@ describe("AC5 — Chat: bind a folder, then open a file under it", () => {
     const rowHeads = await screen.findAllByRole("button", { name: /notes\.txt/i });
     await user.click(rowHeads[rowHeads.length - 1]!);
 
+    // KNOWN FAILURE (confirmed, not a transport bug): the row now paints
+    // correctly (Read / D:\docs\notes.txt / "Q3 plan: ship dual-mode." all
+    // render — verified by DOM dump), but no "Open " button appears.
+    // RunSurface.tsx's own <Receipts> call (around its "activity-output"
+    // section) never passes an `onOpenPath` prop, unlike TranscriptBody.tsx's
+    // <Receipts onOpenPath={(p) => void openToolPath(p)}> for the legacy,
+    // un-projected message pipeline. Pre-fix, this test passed only because
+    // the fixture's admission threw (see testFakeHost.ts's own /api/prompt
+    // comment), bindNormalizedRun never ran, and the scripted bare tool_run
+    // frames painted through the legacy pipeline instead — where onOpenPath
+    // *is* wired. Once a real send binds a Contract v1 run, this activity
+    // renders exclusively via RunSurface (the legacy copy is filtered out of
+    // visibleMessages by its own projectedRunId), which has no Open action.
+    // Fixing this requires wiring onOpenPath through RunSurface — an App.tsx/
+    // RunSurface.tsx change, out of this branch's scope. Left failing rather
+    // than weakened.
     const openBtn = screen.getByRole("button", { name: /^Open /i });
     await user.click(openBtn);
     await waitFor(() => assert.ok(host.callsTo("/api/workspace/read").length >= 1));
