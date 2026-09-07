@@ -345,16 +345,31 @@ export function chatListTitle(sess: {
   return HOME_NAME_PLACEHOLDER;
 }
 
+/** Shared single-line excerpt formatting (Task 13): flattens whitespace and
+ *  length-caps as a safety net against handing an unbounded string to the
+ *  DOM/store — the visual truncation itself is CSS (`.home-s`'s ellipsis).
+ *  Exported so a caller previewing text that did not come from a stored
+ *  message (useHomeScreenData.ts's run-reply preview) formats identically
+ *  to chatSessionPreview below rather than a second, drifting rule. */
+export function truncatePreviewText(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 140 ? `${flat.slice(0, 140).trimEnd()}…` : flat;
+}
+
 /** Home screen's Chat-homes preview (Task 13): a single-line excerpt of a
  *  session's most recent non-empty message, or null when the session has
  *  no messages yet (walks backward past any empty-content entries rather
- *  than trusting the very last array slot blindly). Length-capped as a
- *  safety net against handing an unbounded string to the DOM/store — the
- *  visual truncation itself is CSS (`.home-s`'s ellipsis). */
+ *  than trusting the very last array slot blindly). Pure over the session
+ *  store on purpose — a Contract v1 run's reply never lands in `messages`
+ *  (promptSendHistory.ts's foldRunAnswersIntoHistory doc comment), so this
+ *  can return the operator's own last prompt; useHomeScreenData.ts's
+ *  homeChatHomes memo is the seam that prefers a run's vouched answer when
+ *  one exists, rather than this function taking on runProjection as a
+ *  second input. */
 export function chatSessionPreview(sess: { messages: StoredMessage[] }): string | null {
   for (let i = sess.messages.length - 1; i >= 0; i -= 1) {
-    const flat = sess.messages[i]!.content.replace(/\s+/g, " ").trim();
-    if (flat) return flat.length > 140 ? `${flat.slice(0, 140).trimEnd()}…` : flat;
+    const flat = truncatePreviewText(sess.messages[i]!.content);
+    if (flat) return flat;
   }
   return null;
 }

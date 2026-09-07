@@ -497,3 +497,23 @@ export function restoreRunProjection(raw: unknown): RunProjection {
   }
   return { runsById, runOrder, sessionCursors: value.cursors ?? {} };
 }
+
+/**
+ * Every run's vouched final answer, keyed by runId. This is the exact
+ * notion of "the reply" promptSendHistory.ts's foldRunAnswersIntoHistory
+ * already relies on to fold a v1 run's answer into follow-up history
+ * (useComposerSend.ts builds an identical runId -> answer map inline at
+ * send time) — factored out here so another caller (Home's chat-home
+ * preview) can reuse the same rule instead of inventing a second one for
+ * what counts as a real reply. A run with no terminal event yet, a
+ * terminal event that isn't `answered`, or an unvouched/empty answer
+ * simply has no entry — callers degrade by falling back to whatever they
+ * showed before a run existed.
+ */
+export function vouchedAnswersByRunId(projection: RunProjection): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const run of Object.values(projection.runsById)) {
+    if (run.answerVouched && run.finalAnswer?.trim()) out[run.runId] = run.finalAnswer;
+  }
+  return out;
+}

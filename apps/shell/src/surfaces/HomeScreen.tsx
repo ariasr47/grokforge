@@ -58,8 +58,9 @@ export interface HomeRecentWorkspace {
 export interface HomeChatHome {
   id: string;
   title: string;
-  /** Truncated preview of the most recent message, or null when the home
-   *  has no messages yet. */
+  /** Truncated preview of the most recent message — or, once a run has
+   *  vouched a reply to it, that reply instead (useHomeScreenData.ts's
+   *  chatHomePreview) — or null when the home has no messages yet. */
   preview: string | null;
   updatedAt: number;
 }
