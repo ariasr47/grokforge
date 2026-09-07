@@ -27,6 +27,28 @@ afterEach(() => {
   cleanup();
 });
 
+/**
+ * Assert the transcript itself carries `text`, not merely that the document
+ * does somewhere.
+ *
+ * A chat home with no committed name takes its label from the first user
+ * message (f5dbb64, "Chat named home"), so a message's own words also paint in
+ * the sidebar row, the panel header, the home-name trigger and the composer
+ * meta. A document-wide `findByText` therefore matches five elements — it
+ * throws on the ambiguity, and even the loosest version of it would pass on
+ * the chrome alone, without the transcript ever rendering.
+ */
+async function transcriptShows(text: string): Promise<void> {
+  await waitFor(() => {
+    const transcript = document.querySelector(".transcript");
+    assert.ok(transcript, "the transcript must render");
+    assert.ok(
+      (transcript.textContent ?? "").includes(text),
+      `the transcript must show ${JSON.stringify(text)}`,
+    );
+  });
+}
+
 function resetBrowserState(): void {
   localStorage.clear();
   localStorage.setItem(
@@ -123,7 +145,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByText(/already have history/));
+    await transcriptShows("already have history");
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
   });
 
@@ -145,7 +167,7 @@ describe("F7 — conversations-not-found vs. welcome (AC12b)", () => {
 
     render(<App />);
 
-    assert.ok(await screen.findByText(/already have history too/));
+    await transcriptShows("already have history too");
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
     assert.equal(screen.queryByText("Welcome to Forge") === null, true);
   });

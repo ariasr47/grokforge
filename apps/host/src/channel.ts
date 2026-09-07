@@ -40,7 +40,10 @@ export function dataDir(ch: Channel = resolveChannel()): string {
 export function defaultPort(ch: Channel = resolveChannel()): number {
   if (process.env.GROKFORGE_PORT) {
     const n = Number(process.env.GROKFORGE_PORT);
-    if (Number.isFinite(n) && n > 0) return n;
+    // 0 is a deliberate request for an OS-assigned ephemeral port. Test
+    // harnesses use it so two concurrent hosts can never draw the same port;
+    // the port actually bound is reported on stdout and by /api/health.
+    if (Number.isFinite(n) && n >= 0) return n;
   }
   return ch === "dev" ? 8788 : 8787;
 }

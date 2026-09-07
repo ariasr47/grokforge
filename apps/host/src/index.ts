@@ -40,6 +40,12 @@ import { readInstallerSha256 } from "./installerDigest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = defaultPort();
+// The port we asked for (`PORT`) and the port we actually got are the same
+// number for every real launch, but not when `GROKFORGE_PORT=0` asks the OS to
+// assign an ephemeral one. Everything that reports "where am I reachable" —
+// /api/health, the startup lines, request URL bases — must answer with the
+// bound port, so callers that did not choose the number can still find us.
+let boundPort = PORT;
 const CHANNEL = channelMeta();
 const session = new AgentSession();
 // Stable shell session ids own independent AgentSession/ACP contexts. The legacy singleton
@@ -134,7 +140,7 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+  const url = new URL(req.url || "/", `http://127.0.0.1:${boundPort}`);
   const method = req.method || "GET";
 
   // --- GATE Z request lockdown (SPEC §8 / INTERFACE_CONTRACT.md "Request lockdown") ---------
@@ -192,7 +198,7 @@ const server = http.createServer(async (req, res) => {
         version: APP_VERSION,
         channel: CHANNEL.channel,
         channelLabel: CHANNEL.label,
-        port: PORT,
+        port: boundPort,
         dataDir: CHANNEL.dataDir,
         log: logPath(),
         pid: process.pid,
@@ -1030,7 +1036,7 @@ wss.on("connection", (ws, req) => {
   // shell's WS-driven state reads never diverge from the HTTP read (a field present on HTTP and
   // missing on WS would flicker the not-found state on the first WS push after boot).
   const wsOrigin = typeof req.headers.origin === "string" ? req.headers.origin : null;
-  const wsUrl = new URL(req.url || "/ws", `http://127.0.0.1:${PORT}`);
+  const wsUrl = new URL(req.url || "/ws", `http://127.0.0.1:${boundPort}`);
   const initialSessionId = wsUrl.searchParams.get("sessionId");
   const initialOwner = initialSessionId ? sessionFor(initialSessionId, false) : session;
   void (async () => {
@@ -1162,7 +1168,7 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => { for (const off of subscriptions.values()) off(); wsBindings.delete(ws); });
 });
 
-server.on("error", (err: NodeJS.ErrnoException) => {
+function handleServerError(err: NodeJS.ErrnoException): never {
   if (err.code === "EADDRINUSE") {
     log("error", "port in use — another host owns this port", {
       port: PORT,
@@ -1175,17 +1181,30 @@ server.on("error", (err: NodeJS.ErrnoException) => {
   }
   log("error", "server error", { message: err.message, code: err.code });
   process.exit(1);
-});
+}
+
+server.on("error", handleServerError);
+// `ws` re-emits the HTTP server's errors on the WebSocketServer, and an
+// `error` event with no listener is a hard throw. Without this line a bind
+// failure died as a raw "Unhandled 'error' event" stack and the operator-facing
+// message above never printed.
+wss.on("error", handleServerError);
 
 server.listen(PORT, "127.0.0.1", () => {
-  log("info", `host listening on http://127.0.0.1:${PORT}`, {
+  const address = server.address();
+  if (address && typeof address === "object") boundPort = address.port;
+  log("info", `host listening on http://127.0.0.1:${boundPort}`, {
     pid: process.pid,
     owned: true,
   });
+  // First line out, fixed shape, no prose around the numbers: a supervisor that
+  // did not pick the port (GROKFORGE_PORT=0) reads it from here, and reads the
+  // pid so it can tell our host apart from someone else's on the same port.
+  console.log(`GROKFORGE_HOST_LISTENING port=${boundPort} pid=${process.pid}`);
   console.log(
-    `Forge host [${CHANNEL.label}] http://127.0.0.1:${PORT} data=${CHANNEL.dataDir} (pid ${process.pid})`,
+    `Forge host [${CHANNEL.label}] http://127.0.0.1:${boundPort} data=${CHANNEL.dataDir} (pid ${process.pid})`,
   );
-  console.log(`WebSocket ws://127.0.0.1:${PORT}/ws`);
+  console.log(`WebSocket ws://127.0.0.1:${boundPort}/ws`);
   console.log(`Log file ${logPath()}`);
 });
 
