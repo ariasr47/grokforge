@@ -8,12 +8,37 @@ import { App } from "./App";
 import { ToastProvider } from "../thread/Toast";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { reloadSessionsFromDisk } from "../lib/sessions";
+import type { ActivityRecord, RunEventEnvelope } from "../projections/runReducer";
 import {
   fixtureCorruptPdf,
   fixtureEmptyExtractPdf,
   fixtureEncryptedPdf,
   fixtureTextLayerPdf,
 } from "@grokforge/pdf-extract/fixtures";
+
+/**
+ * A Contract v1 run-scoped envelope addressed at the exact run/session the
+ * app just bound via bindNormalizedRun (see testFakeHost.ts's own
+ * `lastPromptRun` doc). Once a real send admits through POST /api/prompt,
+ * App.tsx's onServerEvent only reduces this shape — a bare unscoped
+ * `{type, ...}` frame is deliberately ignored post-bind.
+ */
+function envelope(
+  target: { runId: string; sessionId: string },
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId: target.sessionId,
+    runId: target.runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -82,7 +107,7 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: notes\.pdf ---/);
+      assert.match(value, /--- File: notes\.pdf ---/);
       assert.match(value, /Hello PDF/);
       assert.doesNotMatch(value, /PDF binary not extracted/);
     });
@@ -102,7 +127,7 @@ describe("Chat PDF attach journeys", () => {
       const prompts = host.callsTo("/api/prompt");
       assert.ok(prompts.length >= 1);
       const text = String(prompts[prompts.length - 1]!.body?.text ?? "");
-      assert.match(text, /--- Attached: notes\.pdf ---/);
+      assert.match(text, /--- File: notes\.pdf ---/);
       assert.match(text, /Hello PDF/);
     });
   });
@@ -127,7 +152,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: secret\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: secret\.pdf ---/);
     assert.equal(screen.queryByText(/^secret\.pdf:/) === null, true);
 
     attachViaPicker([pdfFile("scan.pdf", await fixtureEmptyExtractPdf())]);
@@ -138,7 +163,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: scan\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: scan\.pdf ---/);
 
     attachViaPicker([pdfFile("bad.pdf", fixtureCorruptPdf())]);
     await waitFor(() => {
@@ -148,7 +173,7 @@ describe("Chat PDF attach journeys", () => {
         ),
       );
     });
-    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- Attached: bad\.pdf ---/);
+    assert.doesNotMatch((composer as HTMLTextAreaElement).value, /--- File: bad\.pdf ---/);
     assert.equal(screen.queryByText(/OCR/i) === null, true);
   });
 
@@ -170,8 +195,8 @@ describe("Chat PDF attach journeys", () => {
 
     await waitFor(() => {
       const value = (composer as HTMLTextAreaElement).value;
-      assert.match(value, /--- Attached: ok\.pdf ---/);
-      assert.doesNotMatch(value, /--- Attached: bad\.pdf ---/);
+      assert.match(value, /--- File: ok\.pdf ---/);
+      assert.doesNotMatch(value, /--- File: bad\.pdf ---/);
     });
     await waitFor(() => {
       assert.ok(screen.getByText("Attached 1 file as text"));
@@ -201,6 +226,8 @@ describe("Chat PDF attach journeys", () => {
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
     const output = JSON.stringify({
       path: "enc.pdf",
       bytes: 0,
@@ -209,44 +236,36 @@ describe("Chat PDF attach journeys", () => {
       extract_failure_class: "encrypted",
       error: "Couldn't extract text from enc.pdf.",
     });
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
+    const pendingActivity: ActivityRecord = {
       activityId: "pdf-extract-act",
-      toolCallId: "pdf-extract-1",
+      invocationId: "pdf-extract-1",
+      name: "read_file",
       lifecycle: "pending",
       execution: null,
       status: "running",
-      name: "read_file",
       input: { path: "enc.pdf" },
-      summary: "enc.pdf",
-      command: null,
       output: null,
       error: null,
-      reasonCode: null,
-      reason: null,
-      shellDisplayName: null,
-      detailAvailable: false,
-    });
-    ws.emit({
-      schemaVersion: 2,
-      type: "tool_run",
-      activityId: "pdf-extract-act",
-      toolCallId: "pdf-extract-1",
+      diff: null,
+      path: null,
+      policy: {},
+      automaticEligibility: "not_eligible",
+      autoApplied: false,
+      command: null,
+      editId: null,
+      recovery: null,
+      summary: "enc.pdf",
+    };
+    const failedActivity: ActivityRecord = {
+      ...pendingActivity,
       lifecycle: "terminal",
       execution: "executed",
       status: "failed",
-      name: "read_file",
-      input: { path: "enc.pdf" },
-      summary: "enc.pdf",
-      command: null,
       output,
       error: "Couldn't extract text from enc.pdf.",
-      reasonCode: null,
-      reason: null,
-      shellDisplayName: null,
-      detailAvailable: true,
-    });
+    };
+    ws.emit(envelope(target, 1, { kind: "activity_update", activity: pendingActivity }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 2, { kind: "activity_update", activity: failedActivity }) as unknown as Record<string, unknown>);
 
     await waitFor(() => {
       assert.ok(document.querySelector(".ri-dot.tone-fail"), "row must be marked failed, not settled clean");

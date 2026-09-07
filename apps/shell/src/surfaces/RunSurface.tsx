@@ -122,6 +122,11 @@ export interface RunSurfaceProps {
   onChoose?: (label: string, meta?: string) => void;
   artifactOpen?: boolean;
   onOpenArtifact?: (runId: string) => void;
+  /** Same source as TranscriptBody.tsx's `<MessageList onOpenPath>` call
+   *  (App.tsx's `openToolPath`) — the "Open <path>" action on a Receipts
+   *  row. Optional so every other RunSurface consumer (component tests,
+   *  other surfaces) stays unaffected when it is left unwired. */
+  onOpenPath?: (path: string) => void;
   /** The session's own title — same text ThreadHeader/Beside show. Threaded
    *  to the in-thread `.beside` card's title; never a per-run title. */
   title?: string;
@@ -231,7 +236,7 @@ export function nextPromptOverflow(prev: boolean, measured: boolean, promptChang
   return prev || measured;
 }
 
-export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onChoose, artifactOpen = false, onOpenArtifact, title }: RunSurfaceProps) {
+export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "closed" }, offline = false, productMode, codeAgent = null, childAgents = null, browserWork = null, mcpServers = null, hooks = null, hostRosterEligible = true, ownershipLost = false, onRetryPrompt, onReconnect, onOpenSettings, onExportDiagnostics, onChoose, artifactOpen = false, onOpenArtifact, onOpenPath, title }: RunSurfaceProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDiff, setOpenDiff] = useState<string | null>(null);
@@ -514,6 +519,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
             tools={toolMessages}
             live={run.state !== "terminal"}
             groupKey={`run-tools:${run.runId}`}
+            onOpenPath={onOpenPath}
           />
           {Object.values(run.activities).map((a) => {
             const result = recoveryResult[a.activityId];

@@ -8,6 +8,31 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeHost, FakeWebSocket } from "./testFakeHost";
 import { flushSessions, listSessions, reloadSessionsFromDisk } from "../lib/sessions";
+import { restoreRunProjection, type RunEventEnvelope } from "../projections/runReducer";
+
+/**
+ * A Contract v1 run-scoped envelope addressed at the exact run/session the
+ * app just bound via bindNormalizedRun (see testFakeHost.ts's own
+ * `lastPromptRun` doc). Once a real send admits through POST /api/prompt,
+ * App.tsx's onServerEvent only reduces this shape — a bare unscoped
+ * `{type, ...}` frame is deliberately ignored post-bind.
+ */
+function envelope(
+  target: { runId: string; sessionId: string },
+  seq: number,
+  payload: RunEventEnvelope["payload"],
+): RunEventEnvelope {
+  return {
+    schemaVersion: 1,
+    type: payload.kind,
+    sessionId: target.sessionId,
+    runId: target.runId,
+    eventSeq: seq,
+    connectionGeneration: 1,
+    occurredAt: "",
+    payload,
+  };
+}
 
 function resetBrowserState(): void {
   localStorage.clear();
@@ -171,11 +196,13 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
 
     // Mid-stream: host busy, partial text already rendered.
     ws.emit({ type: "state", state: { ...host.state, busy: true } });
-    ws.emit({ type: "text_delta", text: "Once upon a time, in a " });
-    ws.emit({ type: "text_delta", text: "far kingdom" });
+    ws.emit(envelope(target, 1, { kind: "message_delta", segmentId: "s1", delta: "Once upon a time, in a " }) as unknown as Record<string, unknown>);
+    ws.emit(envelope(target, 2, { kind: "message_delta", segmentId: "s1", delta: "far kingdom" }) as unknown as Record<string, unknown>);
     await waitFor(() =>
       assert.ok(screen.getByText(/Once upon a time, in a far kingdom/)),
     );
@@ -227,12 +254,36 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
       );
     });
 
-    // Backed by a real session record, not React state that happened to
-    // survive because the component never unmounted.
+    // Backed by a real durable record, not React state that happened to
+    // survive because the component never unmounted — but investigated
+    // empirically (fix/fakehost-prompt-shape) against the wrong mechanism.
+    // A Contract v1 reply (message_delta/run_terminal) lives only in
+    // runProjection, never in `messages`: App.tsx's session-store autosave
+    // and switchMode's persist-before-flip step both read only
+    // `messages`/`messagesRef.current`, and useRunEventStream.ts's
+    // onServerEvent never calls setMessages for message_delta/run_terminal
+    // in its v1 branch — by design, not oversight (see
+    // promptSendHistory.ts's foldRunAnswersIntoHistory doc comment:
+    // "Run-backed answers live on the run, not in messages"). So
+    // listSessions() never sees this text and is the wrong assertion here.
+    // What actually makes a v1 reply durable before/without any reload is
+    // runProjection's own independent localStorage cache (App.tsx's "Run
+    // identity/cursors outlive a WebView reload" effect, key
+    // grokforge.runProjection.v1, written on every runProjection change and
+    // restored via restoreRunProjection at mount) — confirmed by an
+    // empirical probe (send, run_terminal, unmount, remount) that the text
+    // really does survive a real reload through this path. Assert against
+    // that real mechanism instead.
     const sessions = listSessions("chat:__sandbox__");
     assert.equal(sessions.length, 1);
+    const restoredProjection = restoreRunProjection(
+      JSON.parse(localStorage.getItem("grokforge.runProjection.v1") ?? "null"),
+    );
+    const restoredRun = restoredProjection.runsById[target.runId];
+    assert.ok(restoredRun, "the mid-stream run must be in the durable runProjection cache");
     assert.ok(
-      sessions[0]!.messages.some((m) => m.content.includes("Once upon a time")),
+      Object.values(restoredRun.message ?? {}).join("").includes("Once upon a time"),
+      "the partial reply must survive in runProjection's own localStorage cache, independent of listSessions()",
     );
   });
 
@@ -251,19 +302,37 @@ describe('AC9 clause 2 — partial text survives on a virgin profile (no "New ch
     await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
     await waitFor(() => assert.ok(FakeWebSocket.latest()));
     const ws = FakeWebSocket.latest()!;
-    ws.emit({ type: "text_delta", text: "Hi there" });
-    ws.emit({ type: "done", reason: "stop" });
+    await waitFor(() => assert.ok(host.lastPromptRun));
+    const target = host.lastPromptRun!;
+    ws.emit(envelope(target, 1, {
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "Hi there",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }) as unknown as Record<string, unknown>);
     await waitFor(() => assert.ok(screen.getByText(/Hi there/)));
 
-    // The autosave effect is debounced (SPEC §7 mocks the network boundary
-    // only — this debounce is real app behavior); wait for it to actually
-    // land in the session store before simulating the unload flush a real
-    // reload relies on.
+    // Same finding as App.ac9's sibling "keeps the partial reply..." test
+    // above, investigated empirically (fix/fakehost-prompt-shape): a v1
+    // run_terminal's vouched finalAnswer lives only in runProjection, by
+    // design (see promptSendHistory.ts's foldRunAnswersIntoHistory doc
+    // comment) — App.tsx's session-store autosave persists only `messages`
+    // state, which useRunEventStream.ts's onServerEvent never updates for
+    // run_terminal, so listSessions() never sees this reply. What actually
+    // makes it durable before a reload is runProjection's own independent
+    // localStorage cache (App.tsx's "Run identity/cursors outlive a WebView
+    // reload" effect, key grokforge.runProjection.v1); wait for that real
+    // mechanism instead of the session store.
     await waitFor(() => {
-      const sessions = listSessions("chat:__sandbox__");
-      assert.ok(
-        sessions.some((s) => s.messages.some((m) => m.content.includes("Hi there"))),
-        "autosave must persist the turn before any reload can preserve it",
+      const restored = restoreRunProjection(
+        JSON.parse(localStorage.getItem("grokforge.runProjection.v1") ?? "null"),
+      );
+      assert.equal(
+        restored.runsById[target.runId]?.finalAnswer,
+        "Hi there",
+        "runProjection's own localStorage cache must persist the vouched answer before any reload can preserve it",
       );
     });
 
