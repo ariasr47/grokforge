@@ -403,6 +403,19 @@ export type ProjectInstructionsPresenceView = {
   vouched: boolean;
 };
 
+function writePathKey(pathLike: string): string {
+  return String(pathLike ?? "").trim().replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function pathFromWritePermissionDetail(detail: string): string | undefined {
+  const text = String(detail ?? "").trim();
+  const write = text.match(/^(?:Write|Delete):\s*(.+)$/s);
+  if (write?.[1]) return writePathKey(write[1]);
+  const rename = text.match(/^Rename:\s*(.+?)\s*→/);
+  if (rename?.[1]) return writePathKey(rename[1]);
+  return undefined;
+}
+
 export class AgentSession {
   private client: StdioAcpClient | null = null;
   private sessionId: string | null = null;
@@ -438,7 +451,8 @@ export class AgentSession {
   private connectionGeneration = 0;
   private sessionWriteGrant = false;
   private sessionShellGrant = false;
-  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
+  private sessionDeniedWritePaths = new Set<string>();
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";path?:string;status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
   /** In-memory queued vendor turn-end while an ask was already open at RPC return. */
   private queuedTurnEnd = new Map<string, { terminalKind: TerminalKind; failure: FailureView }>();
   private planEngaged = false;
@@ -1754,6 +1768,7 @@ export class AgentSession {
     this.workspace = resolved;
     this.sessionWriteGrant = false;
     this.sessionShellGrant = false;
+    this.sessionDeniedWritePaths = new Set();
     this.projectInstructionsCache = { status: "absent", path: null, vouched: false };
     this.projectInstructionsProbeRoot = resolved;
     // Hydrate the durable workspace policy before the first state snapshot. A
@@ -2038,6 +2053,7 @@ export class AgentSession {
                 invocationId,
                 kind: "permission",
                 permissionKind: ev.kind,
+                path: ev.kind === "write" ? pathFromWritePermissionDetail(ev.detail) : undefined,
                 status: "pending",
                 expiresAt: 0,
                 replyDialect,
@@ -2072,6 +2088,7 @@ export class AgentSession {
                 generation: run.connectionGeneration,
                 invocationId,
                 kind: "diff",
+                path: typeof ev.path === "string" ? writePathKey(ev.path) : undefined,
                 status: "pending",
                 expiresAt: 0,
               });
@@ -2151,6 +2168,7 @@ export class AgentSession {
                   executionPhase: this.runCoordinator.get(this.activeRunId ?? "")?.executionPhase ?? "execute",
                   sessionWrite: this.sessionWriteGrant,
                   sessionShell: this.sessionShellGrant,
+                  deniedWritePaths: [...this.sessionDeniedWritePaths],
                 })
                 .catch((e2) => {
                   this.pendingFallback = null;
@@ -2750,6 +2768,7 @@ export class AgentSession {
         executionPhase,
         sessionWrite: this.sessionWriteGrant,
         sessionShell: this.sessionShellGrant,
+        deniedWritePaths: [...this.sessionDeniedWritePaths],
       });
       if (mode === "code") {
         if (handoffDecision.action === "accept") {
@@ -2989,6 +3008,14 @@ export class AgentSession {
       if (pending?.permissionKind === "write") this.sessionWriteGrant = true;
       if (pending?.permissionKind === "shell") this.sessionShellGrant = true;
     }
+    if (pending?.permissionKind === "write") {
+      const key = writePathKey(pending.path ?? "");
+      if (key) {
+        if (!this.sessionDeniedWritePaths) this.sessionDeniedWritePaths = new Set();
+        if (decision === "deny") this.sessionDeniedWritePaths.add(key);
+        else this.sessionDeniedWritePaths.delete(key);
+      }
+    }
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
     if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:pending?.permissionKind==="shell"?"Run shell":"Write file",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
@@ -3003,6 +3030,14 @@ export class AgentSession {
     if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
     const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="diff"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
     await this.client.respondEdit(id, action, this.sessionId ?? undefined, ownership);
+    if (pending?.path) {
+      const key = writePathKey(pending.path);
+      if (key) {
+        if (!this.sessionDeniedWritePaths) this.sessionDeniedWritePaths = new Set();
+        if (action === "reject") this.sessionDeniedWritePaths.add(key);
+        else this.sessionDeniedWritePaths.delete(key);
+      }
+    }
     if(pending) pending.status=action==="accept"?"accepted":"declined";
     if (pending) this.pendingDecisions.delete(id);
     if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"diff",status:action==="accept"?"accepted":"declined",title:"Edit",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }

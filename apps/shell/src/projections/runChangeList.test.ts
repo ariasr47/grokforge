@@ -923,6 +923,108 @@ test("delete-only run with null diff is ready, not absent", () => {
   assert.equal(projection.members[0].diffUnavailable, true);
 });
 
+test("Review Allow-for-this-session later write still appears in Changes (G1 fold.test.js)", () => {
+  // Live dogfood: tokenize.js had Write-file Allow + Changes Accept; fold.js
+  // had Allow for this session (permission exists); fold.test.js was
+  // session-granted — no permission, no diff decision, autoApplied false —
+  // and vanished from the inspector while landing on disk.
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "tok",
+        invocationId: "inv-tok",
+        path: "docs/dogfood/acp-code/g1-fold/tokenize.js",
+        editId: "edit-tok",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- /dev/null\n+++ b/tokenize.js\n+export",
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({
+        requestId: "diff-tok",
+        invocationId: "inv-tok",
+        kind: "diff",
+        status: "accepted",
+        detail: "docs/dogfood/acp-code/g1-fold/tokenize.js",
+      }),
+    }, 3),
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "fold",
+        invocationId: "inv-fold",
+        path: "docs/dogfood/acp-code/g1-fold/fold.js",
+        editId: "edit-fold",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- /dev/null\n+++ b/fold.js\n+export",
+      }),
+    }, 4),
+    event({
+      kind: "decision_request",
+      request: decision({
+        requestId: "perm-fold",
+        invocationId: "inv-fold",
+        kind: "permission",
+        status: "accepted",
+        title: "Write file",
+        detail: "Write: docs/dogfood/acp-code/g1-fold/fold.js",
+      }),
+    }, 5),
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "test",
+        invocationId: "inv-test",
+        path: "docs/dogfood/acp-code/g1-fold/fold.test.js",
+        editId: "edit-test",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- /dev/null\n+++ b/fold.test.js\n+test",
+      }),
+    }, 6),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.deepEqual(
+    projection.members.map((m) => m.path),
+    [
+      "docs/dogfood/acp-code/g1-fold/tokenize.js",
+      "docs/dogfood/acp-code/g1-fold/fold.js",
+      "docs/dogfood/acp-code/g1-fold/fold.test.js",
+    ],
+  );
+});
+
+test("vendor session plan.md write is still not a Changes member", () => {
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        name: "write",
+        path: "C:\\Users\\rodri\\.grok\\sessions\\sid\\plan.md",
+        editId: "e-plan",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        recovery: null,
+        diff: "--- /dev/null\n+++ b/plan.md\n+# Plan\n",
+      }),
+    }, 2),
+  ]);
+  assert.deepEqual(projectRunChangeList(run, { phase: "closed" }), { state: "absent" });
+});
+
 test("Review Allow once on vendor Write file becomes a File changes member", () => {
   const run = runFrom([
     event({
@@ -958,4 +1060,94 @@ test("Review Allow once on vendor Write file becomes a File changes member", () 
   assert.equal(projection.members.length, 1);
   assert.equal(projection.members[0].settlement, "accepted");
   assert.match(projection.members[0].path, /LOOP\.md$/);
+});
+
+test("Review session-grant later write shares the Accepted chip with the Allow-for-this-session row (G12)", () => {
+  // Live G12: first write clicked Allow for this session (Write file accepted);
+  // g12-span.test.js auto-landed with no per-file decision and painted Applied.
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "span",
+        invocationId: "inv-span",
+        path: "docs/dogfood/acp-code/g1-fold/g12-span.js",
+        editId: "edit-span",
+        kind: "content",
+        autoApplied: false,
+        automaticEligibility: "not_eligible",
+        policy: { effectiveMode: "review" },
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- /dev/null\n+++ b/g12-span.js\n+export",
+      }),
+    }, 2),
+    event({
+      kind: "decision_request",
+      request: decision({
+        requestId: "perm-span",
+        invocationId: "inv-span",
+        kind: "permission",
+        status: "accepted",
+        title: "Write file",
+        detail: "Write: docs/dogfood/acp-code/g1-fold/g12-span.js",
+      }),
+    }, 3),
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "span-test",
+        invocationId: "inv-span-test",
+        path: "docs/dogfood/acp-code/g1-fold/g12-span.test.js",
+        editId: "edit-span-test",
+        kind: "content",
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+        policy: { effectiveMode: "review" },
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- /dev/null\n+++ b/g12-span.test.js\n+test",
+      }),
+    }, 4),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.deepEqual(
+    projection.members.map((m) => [m.path.split("/").pop(), m.settlement]),
+    [
+      ["g12-span.js", "accepted"],
+      ["g12-span.test.js", "accepted"],
+    ],
+    "live Changes mixed Accepted + Applied after Allow for this session",
+  );
+});
+
+test("follow-up session-grant write on a later run is Accepted not Applied", () => {
+  // Live G12 follow-up: ACP sessionWrite auto-landed g12-span.test.js on a
+  // new run with no Write-file decision, so session Changes mixed Accepted
+  // (prior run) + Applied (this run) after collapse-by-path.
+  const run = runFrom([
+    event({
+      kind: "activity_update",
+      activity: activity({
+        activityId: "fu",
+        invocationId: "inv-fu",
+        path: "docs/dogfood/acp-code/g1-fold/g12-span.test.js",
+        editId: "edit-fu",
+        kind: "content",
+        autoApplied: true,
+        automaticEligibility: "text_edit",
+        policy: { effectiveMode: "review" },
+        recovery: { kind: "guarded_revert", available: true, status: "available" },
+        diff: "--- a/g12-span.test.js\n+++ b/g12-span.test.js\n+assert.equal(span(10, 0), -10)",
+      }),
+    }, 2),
+  ]);
+  const projection = projectRunChangeList(run, { phase: "closed" });
+  assert.equal(projection.state, "ready");
+  if (projection.state !== "ready") return;
+  assert.equal(
+    projection.members[0]!.settlement,
+    "accepted",
+    "follow-up session-grant row painted Applied beside the prior Accepted path",
+  );
 });

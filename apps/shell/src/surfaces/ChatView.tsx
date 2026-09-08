@@ -111,6 +111,7 @@ export interface ChatViewProps {
     installerShaVoucher: InstallerShaVoucher;
   } | null;
   normalizedRunVisible: boolean;
+  turnReady: boolean;
   hostOk: boolean;
   vendorCode: boolean;
   startGrokSignIn: () => void;
@@ -261,6 +262,7 @@ export function ChatView({
   switchMode,
   buildInfo,
   normalizedRunVisible,
+  turnReady,
   hostOk,
   vendorCode,
   startGrokSignIn,
@@ -452,6 +454,7 @@ export function ChatView({
           buildInfo={buildInfo}
           messages={messages}
           normalizedRunVisible={normalizedRunVisible}
+          turnReady={turnReady}
           hostOk={hostOk}
           vendorCode={vendorCode}
           startGrokSignIn={startGrokSignIn}

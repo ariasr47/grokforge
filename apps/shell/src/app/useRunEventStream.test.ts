@@ -282,4 +282,39 @@ describe("useRunEventStream", () => {
     assert.equal(result.current.runProjection.runsById["r1"]?.state, "terminal");
     assert.equal(result.current.runProjection.runsById["r1"]?.lastEventSeq, 3);
   });
+
+  it("disconnect restore closes catch-up even when projection lastEventSeq lags the snapshot", async () => {
+    const seedResult = renderHook(() => useHarness());
+    act(() => {
+      seedResult.result.current.onServerEvent(startedEvent(snap("r1")) as unknown as ServerEvent);
+    });
+    const seed = seedResult.result.current.runProjection;
+    const { result } = renderHook(() => useHarness({ initialRunProjection: seed }));
+
+    await withFetch(
+      (url) => {
+        if (url.includes("/api/runs/r1")) {
+          return {
+            status: 200,
+            body: {
+              run: snap("r1", { state: "terminal", terminalKind: "answered", lastEventSeq: 10 }),
+              events: [terminalEvent("r1", 3)],
+            },
+          };
+        }
+        return { status: 500, body: { error: "not mocked" } };
+      },
+      async () => {
+        await act(async () => {
+          await result.current.restoreOwnedRuns("disconnect_restore");
+        });
+      },
+    );
+
+    assert.equal(
+      result.current.catchUpByRunId["r1"]?.phase,
+      "closed",
+      "live Changes dock stayed Loading file changes… because catch-up never closed when applied 3 < snapshot 10",
+    );
+  });
 });

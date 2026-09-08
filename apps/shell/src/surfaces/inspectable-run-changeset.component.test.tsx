@@ -591,7 +591,9 @@ test("Review File changes path covers a second search-replace activity — no ex
     }),
   );
   const section = changesRegion();
-  assert.ok(within(section).getByRole("button", { name: "View diff" }));
+  // Two landed writes (permission-gated + session-granted search_replace)
+  // are two Changes rows. Activity must not grow a third View diff.
+  assert.equal(within(section).getAllByRole("button", { name: "View diff" }).length, 2);
   const activity = screen.getByLabelText("Activity");
   assert.equal(within(activity).queryByRole("button", { name: "View diff" }) === null, true);
 });
@@ -724,4 +726,27 @@ test("Applied automatically note only shows for trusted-applied members", () => 
   renderWithChanges(run({ activities: { a1: writeActivity() } }));
   const section = changesRegion();
   assert.ok(within(section).getByText(FILE_CHANGES_APPLIED_HELPER));
+});
+
+test("Review session-grant auto-apply does not paint Trusted workspace", () => {
+  renderWithChanges(
+    run({
+      policy: { effectiveMode: "review" },
+      activities: {
+        a1: reviewActivity({
+          autoApplied: true,
+          automaticEligibility: "text_edit",
+          policy: { effectiveMode: "review" },
+          recovery: { kind: "guarded_revert", available: true, status: "available" },
+          diff: "--- /dev/null\n+++ b/a.txt\n+A",
+        }),
+      },
+    }),
+  );
+  const section = changesRegion();
+  assert.equal(within(section).queryByText(/Trusted workspace/) === null, true);
+  assert.ok(within(section).getByText(/allowed this session/));
+  const activity = screen.getByLabelText("Activity");
+  assert.equal(within(activity).queryByText(/Trusted workspace/) === null, true);
+  assert.ok(within(activity).getByText(/allowed this session/));
 });

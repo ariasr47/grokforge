@@ -24,6 +24,7 @@ test("allow_session for write is remembered on the host after ACP reclaim", asyn
   s.sessionId = "acp";
   s.sessionWriteGrant = false;
   s.sessionShellGrant = false;
+  s.queuedTurnEnd = new Map();
   s.pendingDecisions = new Map([["request", {
     sessionId: "stable",
     runId: "run",
@@ -56,6 +57,7 @@ test("allow_session for shell is remembered on the host after ACP reclaim", asyn
   s.sessionId = "acp";
   s.sessionWriteGrant = false;
   s.sessionShellGrant = false;
+  s.queuedTurnEnd = new Map();
   s.pendingDecisions = new Map([["request", {
     sessionId: "stable",
     runId: "run",
@@ -126,6 +128,76 @@ test("terminal cancel settles leftover permission/diff and drops them from the m
   assert.equal(s.pendingDecisions.has("diff"), false);
   assert.equal(s.pendingDecisions.get("plan")?.status, "pending");
   assert.equal(appended.length, 2);
+});
+
+test("deny of a write is remembered so later sessionWrite cannot cover that path", async () => {
+  const s = Object.create(AgentSession.prototype) as any;
+  s.client = { respondPermission: async () => {} };
+  s.sessionId = "acp";
+  s.sessionWriteGrant = false;
+  s.sessionShellGrant = false;
+  s.sessionDeniedWritePaths = new Set();
+  s.queuedTurnEnd = new Map();
+  s.pendingDecisions = new Map([["request", {
+    sessionId: "stable",
+    runId: "run",
+    generation: 1,
+    invocationId: "inv",
+    kind: "permission",
+    permissionKind: "write",
+    path: "docs/dogfood/fold.js",
+    status: "pending",
+    expiresAt: 0,
+  }]]);
+  s.runCoordinator = {
+    get: () => ({ sessionId: "stable", runId: "run", state: "running", connectionGeneration: 1, policy }),
+    appendOwnedEvent: async () => {},
+  };
+  s.getRun = (runId: string, sessionId: string) =>
+    runId === "run" && sessionId === "stable" ? s.runCoordinator.get() : undefined;
+
+  await s.permission("request", "deny", {
+    sessionId: "stable",
+    runId: "run",
+    connectionGeneration: 1,
+  }, "inv");
+  assert.deepEqual([...s.sessionDeniedWritePaths], ["docs/dogfood/fold.js"]);
+  assert.equal(s.sessionWriteGrant, false);
+});
+
+test("allow of a previously denied write forgets that path", async () => {
+  const s = Object.create(AgentSession.prototype) as any;
+  s.client = { respondPermission: async () => {} };
+  s.sessionId = "acp";
+  s.sessionWriteGrant = false;
+  s.sessionShellGrant = false;
+  s.sessionDeniedWritePaths = new Set(["docs/dogfood/fold.js"]);
+  s.queuedTurnEnd = new Map();
+  s.pendingDecisions = new Map([["request", {
+    sessionId: "stable",
+    runId: "run",
+    generation: 1,
+    invocationId: "inv",
+    kind: "permission",
+    permissionKind: "write",
+    path: "docs/dogfood/fold.js",
+    status: "pending",
+    expiresAt: 0,
+  }]]);
+  s.runCoordinator = {
+    get: () => ({ sessionId: "stable", runId: "run", state: "running", connectionGeneration: 1, policy }),
+    appendOwnedEvent: async () => {},
+  };
+  s.getRun = (runId: string, sessionId: string) =>
+    runId === "run" && sessionId === "stable" ? s.runCoordinator.get() : undefined;
+
+  await s.permission("request", "allow_once", {
+    sessionId: "stable",
+    runId: "run",
+    connectionGeneration: 1,
+  }, "inv");
+  assert.equal(s.sessionDeniedWritePaths.size, 0);
+  assert.equal(s.sessionWriteGrant, false);
 });
 
 test("Trusted workspace can be saved while a run is waiting on a permission", async () => {

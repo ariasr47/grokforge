@@ -194,6 +194,25 @@ test("a raw command caption (generic tool name + real command) still reads as Ra
   assert.equal(r.what, "Set-Location apps/shell; node --test src/x.test.ts");
 });
 
+test("denied write is not Edited — not_executed write is muted with the real error", () => {
+  // Live G6: Deny on fold.js still listed Activity as Edited even though disk
+  // was unchanged and the turn said Write proposed (user denied).
+  const r = receiptVerb(
+    record({
+      name: "write_file",
+      path: "docs/dogfood/acp-code/g1-fold/fold.js",
+      execution: "not_executed",
+      status: "rejected",
+      error: "User denied write permission",
+      diff: "--- a/fold.js\n+++ b/fold.js\n+// G6-DENY\n",
+    }),
+  );
+  assert.notEqual(r.verb, "Edited");
+  assert.equal(r.verb, "Skipped");
+  assert.equal(r.tone, "muted");
+  assert.equal(r.tail, "User denied write permission");
+});
+
 test("rejected/not-run tool carries the real error as its tail, muted tone", () => {
   const r = receiptVerb(
     record({

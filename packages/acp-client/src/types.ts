@@ -165,6 +165,8 @@ export interface PromptOptions {
   /** Host-held Always-this-chat grants, restored after ACP reclaim. */
   sessionWrite?: boolean;
   sessionShell?: boolean;
+  /** Workspace-relative writes the user denied this session; sessionWrite must not cover them. */
+  deniedWritePaths?: readonly string[];
 }
 
 export interface AcpClient {

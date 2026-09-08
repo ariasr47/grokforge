@@ -1029,6 +1029,7 @@ export function App() {
     planEngagement: state?.planEngagement,
     planArmError,
     setPlanDecisionError,
+    commitRunProjection,
   });
   const livePhase = useMemo(() => {
     if (activeRun) return deriveLivePhaseFromRun(activeRun);
@@ -3355,6 +3356,7 @@ export function App() {
               switchMode={switchMode}
               buildInfo={buildInfo}
               normalizedRunVisible={normalizedRunVisible}
+              turnReady={turnReady}
               hostOk={hostOk}
               vendorCode={vendorCode}
               startGrokSignIn={startGrokSignIn}

@@ -117,14 +117,21 @@ export function composerPlaceholder(opts: {
  * measured single empty-line baseline (a long line wrapping without Enter).
  * Real layout only exists in a browser — scrollHeight/baseHeight both read 0
  * in jsdom, where the newline check alone still drives this deterministically.
+ *
+ * Cap the baseline at one visual line. Beside Changes the first paint can
+ * already be wrapped, so storing that wrapped scrollHeight as baseHeight
+ * would keep `.composer.one` on a two-line placeholder forever.
  */
+const COMPOSER_ONE_LINE_PX = 32;
 export function composerShouldGrow(
   draft: string,
   scrollHeight: number,
   baseHeight: number,
 ): boolean {
   if (draft.includes("\n")) return true;
-  return scrollHeight > baseHeight + 1;
+  const baseline =
+    baseHeight > 0 ? Math.min(baseHeight, COMPOSER_ONE_LINE_PX) : baseHeight;
+  return scrollHeight > baseline + 1;
 }
 
 const COMPOSER_MAX_HEIGHT = 200;

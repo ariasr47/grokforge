@@ -354,6 +354,28 @@ describe("live-turn-attention App wiring", () => {
     assert.equal(send.hasAttribute("disabled"), false);
   });
 
+  it("clean finish paints Your turn once Send is unlocked", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({
+      kind: "run_started",
+      run: liveSnapshot({ state: "running" }),
+    }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({
+      kind: "run_terminal",
+      terminalKind: "answered",
+      finalAnswer: "ACP-A3-OK",
+      answerVouched: true,
+      failure: null,
+      terminalAt: "",
+    }, 2) as unknown as Record<string, unknown>);
+    await waitFor(() => {
+      assert.ok(document.querySelector(".node--done"));
+    });
+    await waitFor(() => {
+      assert.ok(screen.getByText(TURN_COPY), "live @file quote left Your turn missing after agent-done");
+    });
+  });
+
   it("elapsed silence alone never paints Your turn", async () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({

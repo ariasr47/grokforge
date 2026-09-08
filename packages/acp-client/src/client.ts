@@ -258,6 +258,9 @@ export class StdioAcpClient implements AcpClient {
       executionPhase: opts?.executionPhase ?? "execute",
       sessionWrite: opts?.sessionWrite === true,
       sessionShell: opts?.sessionShell === true,
+      ...(opts?.deniedWritePaths && opts.deniedWritePaths.length
+        ? { deniedWritePaths: [...opts.deniedWritePaths] }
+        : {}),
     });
     // Vendor often returns only the RPC result (no done notification). Map it
     // onto the same done-class ingress grok-acp already emits. CAS rejects a

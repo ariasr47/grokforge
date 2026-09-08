@@ -4,7 +4,13 @@ import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../ui/Icon";
 import { countDiffLines, splitDiffHunks } from "../projections/diffUtil";
-import type { ChangeMemberSettlement, MutationKind, PendingDiff, RunChangeMember } from "../projections/runChangeList";
+import {
+  appliedAutomaticallyNote,
+  type ChangeMemberSettlement,
+  type MutationKind,
+  type PendingDiff,
+  type RunChangeMember,
+} from "../projections/runChangeList";
 import { chipLabel, type RunVerifyMember } from "../projections/runVerifyList";
 import { gitReviewRowChrome, type RunGitReviewMember } from "../projections/runGitReviewList";
 import type { ActivityRecord } from "../projections/runReducer";
@@ -208,6 +214,7 @@ function FileRow({
   selected,
   diffOpen,
   queuedDiffId,
+  recoveryFlash,
   onSelect,
   onAccept,
   onReject,
@@ -216,10 +223,13 @@ function FileRow({
   selected: boolean;
   diffOpen: boolean;
   queuedDiffId: string | null;
+  recoveryFlash?: "reverted" | "conflict";
   onSelect: (editId: string) => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const rowSettlement: ChangeMemberSettlement =
+    recoveryFlash === "reverted" ? "reverted" : recoveryFlash === "conflict" ? "conflict" : member.settlement;
   const { dir, name } = splitPath(member.path);
   const label = rowLabel(member);
   const isArrow = label !== member.path;
@@ -252,8 +262,8 @@ function FileRow({
         </>
       ) : (
         <span className="frow-status">
-          {member.settlement === "accepted" ? <Icon icon={Check} size={12} /> : null}
-          {SETTLEMENT_LABEL[member.settlement]}
+          {rowSettlement === "accepted" ? <Icon icon={Check} size={12} /> : null}
+          {SETTLEMENT_LABEL[rowSettlement]}
         </span>
       )}
       {!member.diffUnavailable ? (
@@ -337,6 +347,7 @@ function FilesTab({
               selected={member.editId === detailTarget?.editId}
               diffOpen={member.editId === selectedForDiff}
               queuedDiffId={queuedDiffId}
+              recoveryFlash={recoveryFlash?.[member.editId] ?? recoveryFlash?.[member.activityId]}
               onSelect={(id) => setSelectedForDiff((cur) => (cur === id ? null : id))}
               onAccept={onAccept}
               onReject={onReject}
@@ -358,7 +369,7 @@ function FilesTab({
         </p>
       ) : null}
       {detailTarget && detailTarget.settlement === "applied" && !conflict && !reverted ? (
-        <p className="changes-applied-note">{FILE_CHANGES_APPLIED_HELPER}</p>
+        <p className="changes-applied-note">{appliedAutomaticallyNote(detailTarget.policyEffectiveMode)}</p>
       ) : null}
       {detailTarget && detailTarget.recoveryAvailable && !conflict && !reverted && revertPendingEditId !== detailTarget.editId ? (
         <div className="changes-revert">

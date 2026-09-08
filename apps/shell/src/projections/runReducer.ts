@@ -200,6 +200,15 @@ export const POST_TERMINAL_EVENT_TYPES = ["child_agent_update", "decision_reques
 export function isPostTerminalEventType(type: string): boolean {
   return (POST_TERMINAL_EVENT_TYPES as readonly string[]).includes(type);
 }
+
+/** Host journals Revert after run_terminal. Dropping it re-offers Revert on reload. */
+export function isPostTerminalRecoveryUpdate(run: RunProjectionRun, event: RunEventEnvelope): boolean {
+  if (event.type !== "activity_update" || event.payload.kind !== "activity_update") return false;
+  const incoming = event.payload.activity;
+  if (!run.activities[incoming.activityId]) return false;
+  const status = incoming.recovery?.status;
+  return status === "reverted" || status === "conflict" || status === "failed" || status === "pending";
+}
 export interface RunProjection {
   runsById: Record<string, RunProjectionRun>; runOrder: string[]; sessionCursors: Record<string, number>;
 }
@@ -333,8 +342,8 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
   if (existing && (existing.sessionId !== event.sessionId || existing.connectionGeneration !== event.connectionGeneration)) return state;
   if (existing?.seenEventSeq.has(event.eventSeq)) return state;
   if (existing?.terminalEventSeq != null && event.eventSeq > existing.terminalEventSeq) {
-    // Host appends plan Accept after run_terminal. Dropping it leaves the dock pending.
-    if (!isPostTerminalEventType(event.type)) return state;
+    // Host appends plan Accept and Revert stamps after run_terminal.
+    if (!isPostTerminalEventType(event.type) && !isPostTerminalRecoveryUpdate(existing, event)) return state;
   }
   if (existing && event.eventSeq <= existing.lastEventSeq) return state;
   let run: RunProjectionRun;
@@ -375,7 +384,17 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
     }
     case "reasoning_delta":
       if (event.payload.delta) {
-        run.reasoning[event.payload.segmentId] = (run.reasoning[event.payload.segmentId] ?? "") + event.payload.delta;
+        const prev = run.reasoning[event.payload.segmentId] ?? "";
+        // After a tool, the next thinking burst is a new paragraph — live G5
+        // journaled "." then write_file then "Now" as "top.Now".
+        const glue =
+          prev &&
+          run.lastContentKind === "tool" &&
+          !/\s$/.test(prev) &&
+          !/^\s/.test(event.payload.delta)
+            ? "\n"
+            : "";
+        run.reasoning[event.payload.segmentId] = prev + glue + event.payload.delta;
         run.lastContentKind = "thought";
         run.postToolProviderWait = false;
       }
@@ -393,8 +412,8 @@ export function reduceRunEvent(state: RunProjection, event: RunEventEnvelope): R
     case "activity_update": {
       const incoming = event.payload.activity;
       run.activities[incoming.activityId] = normalizeActivity(incoming);
+      run.lastContentKind = "tool";
       if (incoming.lifecycle === "pending") {
-        run.lastContentKind = "tool";
         run.postToolProviderWait = false;
       }
       break;

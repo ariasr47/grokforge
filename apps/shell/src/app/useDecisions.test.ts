@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { act, renderHook } from "@testing-library/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useDecisions, type UseDecisionsParams } from "./useDecisions";
 import {
@@ -206,13 +206,16 @@ function useHarness(props: {
 }) {
   const [permissions, setPermissions] = useState(props.initialPermissions ?? []);
   const [planDecisionError, setPlanDecisionError] = useState<string | null>(null);
+  const [runProjection, setRunProjection] = useState(props.runProjection);
+  const runProjectionRef = useRef(runProjection);
+  runProjectionRef.current = runProjection;
   const hook = useDecisions({
     permissions,
     setPermissions,
     diffQueue: props.diffQueue ?? [],
     oauth: props.oauth ?? null,
-    runProjection: props.runProjection,
-    runProjectionRef: ref(props.runProjection),
+    runProjection,
+    runProjectionRef,
     sessionId: props.sessionId,
     stateRef: props.stateRef ?? ref(null),
     applyState: props.applyState ?? noop,
@@ -227,6 +230,10 @@ function useHarness(props: {
     planEngagement: props.planEngagement,
     planArmError: props.planArmError ?? null,
     setPlanDecisionError,
+    commitRunProjection: (next) => {
+      runProjectionRef.current = next;
+      setRunProjection(next);
+    },
   });
   return { ...hook, permissions, planDecisionError };
 }
@@ -367,7 +374,11 @@ describe("useDecisions", () => {
     const originalFetch = globalThis.fetch;
     const seen: Array<{ url: string; body: unknown }> = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null });
+      const url = String(input);
+      seen.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+      if (url.includes("/api/runs/")) {
+        return new Response(JSON.stringify({ run: snap(), events: [] }), { status: 200 });
+      }
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }) as typeof fetch;
 
@@ -383,9 +394,9 @@ describe("useDecisions", () => {
         await result.current.settlePlan("accept");
       });
 
-      assert.equal(seen.length, 1);
-      assert.ok(seen[0]!.url.endsWith("/api/plan"), seen[0]!.url);
-      assert.deepEqual(seen[0]!.body, {
+      const planPost = seen.find((s) => s.url.endsWith("/api/plan"));
+      assert.ok(planPost, "expected POST /api/plan");
+      assert.deepEqual(planPost!.body, {
         sessionId: SESSION,
         runId: RUN,
         requestId: "plan-1",
@@ -393,8 +404,114 @@ describe("useDecisions", () => {
         connectionGeneration: 7,
         action: "accept",
       });
+      assert.ok(
+        seen.some((s) => s.url.includes(`/api/runs/${RUN}`)),
+        "successful Accept still folds the journal so a missed WS frame cannot keep the dock",
+      );
       assert.equal(result.current.planSettling, false, "settling clears once the call resolves");
       assert.equal(result.current.planDecisionError, null);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("settlePlan after agent-done folds journal Accept so a 404 does not keep the dock pending", async () => {
+    // Live G4: host already appended post-terminal plan_record + decision
+    // accepted (seq 286–287) while the shell still showed pending. Try again
+    // POSTed 404 decision_not_found and painted PLAN_DECISION_FAILURE.
+    let state = initialRunProjection();
+    state = reduceRunEvent(state, startedEvent(snap({ state: "running" })));
+    state = reduceRunEvent(state, decisionEvent(planDecision(), 2));
+    state = reduceRunEvent(
+      state,
+      {
+        schemaVersion: 1,
+        type: "run_terminal",
+        sessionId: SESSION,
+        runId: RUN,
+        eventSeq: 3,
+        connectionGeneration: 7,
+        occurredAt: "",
+        payload: {
+          kind: "run_terminal",
+          terminalKind: "answered",
+          finalAnswer: "1. Edit README.md",
+          answerVouched: true,
+          failure: null,
+          terminalAt: "",
+        },
+      },
+    );
+    assert.equal(state.runsById[RUN]?.state, "terminal");
+    assert.equal(state.runsById[RUN]?.decisions["plan-1"]?.status, "pending");
+    assert.equal(state.runsById[RUN]?.lastEventSeq, 3);
+
+    const accepted = planDecision({ status: "accepted" });
+    const originalFetch = globalThis.fetch;
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.includes("/api/plan")) {
+        return new Response(
+          JSON.stringify({ error: "decision not found", code: "decision_not_found" }),
+          { status: 404 },
+        );
+      }
+      if (url.includes(`/api/runs/${RUN}`)) {
+        assert.match(url, /after=3/);
+        return new Response(
+          JSON.stringify({
+            run: snap({ state: "terminal", lastEventSeq: 5, terminalKind: "answered" }),
+            events: [
+              decisionEvent(accepted, 4),
+              {
+                schemaVersion: 1,
+                type: "plan_record",
+                sessionId: SESSION,
+                runId: RUN,
+                eventSeq: 5,
+                connectionGeneration: 7,
+                occurredAt: "",
+                payload: {
+                  kind: "plan_record",
+                  plan: {
+                    runId: RUN,
+                    sessionId: SESSION,
+                    connectionGeneration: 7,
+                    status: "accepted",
+                    body: "1. Edit README.md",
+                    proposedMembers: [],
+                    policy: {},
+                    executionPhase: "plan",
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const { result } = renderHook(() =>
+        useHarness({ runProjection: state, sessionId: SESSION }),
+      );
+      assert.ok(result.current.pendingPlanDecision);
+
+      await act(async () => {
+        await result.current.settlePlan("accept");
+      });
+
+      assert.ok(
+        seen.some((url) => url.includes(`/api/runs/${RUN}`)),
+        `expected journal catch-up after agent-done, got ${seen.join(" | ")}`,
+      );
+      assert.equal(result.current.planSettling, false);
+      assert.equal(result.current.planDecisionError, null);
+      assert.equal(result.current.pendingPlanDecision, null);
     } finally {
       globalThis.fetch = originalFetch;
     }

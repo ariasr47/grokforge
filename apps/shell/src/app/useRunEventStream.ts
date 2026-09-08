@@ -34,10 +34,10 @@ import {
   type PermissionReq,
 } from "../projections/runChangeList";
 import {
-  appliedThroughLastEventSeq,
   closeCatchUp,
   failCatchUp,
   openCatchUp,
+  settleCatchUpAfterRestore,
   shouldOpenCatchUp,
   type CatchUpMap,
   type RestoreIntent,
@@ -1153,9 +1153,10 @@ export function useRunEventStream({
       }
       if (openWindow) {
         const applied = nextRun?.lastEventSeq ?? 0;
-        if (appliedThroughLastEventSeq(applied, replay.run.lastEventSeq)) {
-          setCatchUpByRunId((m) => closeCatchUp(m, run.runId));
-        }
+        const settle = settleCatchUpAfterRestore(applied, replay.run.lastEventSeq);
+        setCatchUpByRunId((m) =>
+          settle === "close" ? closeCatchUp(m, run.runId) : failCatchUp(m, run.runId),
+        );
       }
       return { ok: true as const, run: replay.run };
     } catch {

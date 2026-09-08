@@ -299,9 +299,26 @@ describe("ChangesDock — hunk preview", () => {
 
 describe("ChangesDock — revert / applied note", () => {
   it("shows the applied-automatically note for a trusted applied member", () => {
-    render(<ChangesDock {...baseProps()} files={{ state: "ready", members: [member({ settlement: "applied" })] }} />);
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{ state: "ready", members: [member({ settlement: "applied", policyEffectiveMode: "trusted_workspace" })] }}
+      />,
+    );
     const dock = screen.getByRole("region", { name: "Changes" });
-    assert.ok(within(dock).getByText(/Applied automatically/));
+    assert.ok(within(dock).getByText("Applied automatically · Trusted workspace"));
+  });
+
+  it("Review session-grant applied note does not claim Trusted workspace", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{ state: "ready", members: [member({ settlement: "applied", policyEffectiveMode: "review" })] }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.equal(within(dock).queryByText(/Trusted workspace/) === null, true);
+    assert.ok(within(dock).getByText("Applied automatically · allowed this session"));
   });
 
   it("Restore file for a deleted member calls onRevert with that member", () => {
@@ -415,6 +432,30 @@ describe("ChangesDock — revert / applied note", () => {
     assert.match(status.textContent ?? "", /restored to its state immediately before this edit/);
     assert.equal(within(dock).queryByRole("button", { name: "Revert edit" }) === null, true);
     assert.equal(within(dock).queryByText(/Applied automatically/) === null, true);
+  });
+
+  it("recoveryFlash reverted paints Reverted not Accepted on the file row", () => {
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [
+            member({
+              editId: "e-g10",
+              path: "docs/dogfood/acp-code/g1-fold/g9-other.txt",
+              kind: "content",
+              settlement: "accepted",
+              recoveryAvailable: true,
+            }),
+          ],
+        }}
+        recoveryFlash={{ "e-g10": "reverted" }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.ok(within(dock).getByText("Reverted"), "live G10 revert left the chip Accepted");
+    assert.equal(within(dock).queryByText("Accepted") === null, true);
   });
 
   it("recoveryFlash falls back to the activityId key when the editId is not flashed", () => {

@@ -463,15 +463,16 @@ export function useEngineHealth({
         channelLabel: h.channelLabel ?? prev?.channelLabel,
         installerShaVoucher: { status: "live", value: h.installerSha256 ?? null },
       }));
-      // A healthy transport does not prove a run outcome. Poll only runs that
-      // remain nonterminal in the owned projection, and merge journal truth
-      // idempotently. Hours-long live runs remain live; missed terminals are
-      // recovered without requiring a reload or a second prompt.
-      const hasOwnedNonterminal = runProjectionRef.current.runOrder.some((id) => {
+      // A healthy transport does not prove a run outcome. Poll nonterminal
+      // runs, and terminal runs that still show a pending plan (Accept is
+      // appended after run_terminal; skipping those leaves the dock pending).
+      const needsJournalCatchUp = runProjectionRef.current.runOrder.some((id) => {
         const run = runProjectionRef.current.runsById[id];
-        return Boolean(run && run.state !== "terminal");
+        if (!run) return false;
+        if (run.state !== "terminal") return true;
+        return Object.values(run.decisions ?? {}).some((d) => d.kind === "plan" && d.status === "pending");
       });
-      if (hasOwnedNonterminal) void reconcileOwnedRuns();
+      if (needsJournalCatchUp) void reconcileOwnedRuns();
     }).catch(() => {
       healthFailStreakRef.current += 1;
       const streak = healthFailStreakRef.current;

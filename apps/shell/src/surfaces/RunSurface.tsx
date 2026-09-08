@@ -14,7 +14,12 @@ import { projectHooks } from "../projections/hooksProjection";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { writeClipboard } from "../lib/copyClipboard";
 import { isListAutoExecuted } from "../projections/trustedCommandProvenance";
-import { changeListCoversActivity, projectRunChangeList, type CatchUpSignal } from "../projections/runChangeList";
+import {
+  appliedAutomaticallyNote,
+  changeListCoversActivity,
+  projectRunChangeList,
+  type CatchUpSignal,
+} from "../projections/runChangeList";
 import { projectRunPlanSection } from "../projections/runPlanSection";
 import { PlanSection } from "../sections/PlanSection";
 import { projectProjectInstructionsTurn } from "../projections/projectInstructionsTurn";
@@ -91,7 +96,7 @@ function ActivityProvenance({ activity, hideCommand = false }: { activity: Activ
       {showPolicy ? (
         <p>
           Policy: {activity.policy?.effectiveMode ? String(activity.policy.effectiveMode) : "unspecified"}
-          {trustedSuffix ? " · Applied automatically · Trusted workspace" : ""}
+          {trustedSuffix ? ` · ${appliedAutomaticallyNote(activity.policy?.effectiveMode)}` : ""}
         </p>
       ) : null}
       {listAuto ? (

@@ -24,6 +24,8 @@ import {
 } from "./HomeScreen";
 import { RunSurface } from "./RunSurface";
 
+export const IDLE_TURN_CUE = "Your turn";
+
 export interface TranscriptBodyProps {
   showConversationsNotFound: boolean;
   skillsOpen: boolean;
@@ -50,6 +52,8 @@ export interface TranscriptBodyProps {
   } | null;
   messages: ChatMessage[];
   normalizedRunVisible: boolean;
+  /** Idle cue after a terminal owned run with no dock pending. */
+  turnReady?: boolean;
   hostOk: boolean;
   vendorCode: boolean;
   startGrokSignIn: () => void;
@@ -125,6 +129,7 @@ export function TranscriptBody({
   buildInfo,
   messages,
   normalizedRunVisible,
+  turnReady = false,
   hostOk,
   vendorCode,
   startGrokSignIn,
@@ -285,6 +290,9 @@ export function TranscriptBody({
             onOpenArtifact={openMessageArtifact}
             title={activeHome?.title ?? ""}
           />
+          {turnReady ? (
+            <p className="turn-cue" role="status">{IDLE_TURN_CUE}</p>
+          ) : null}
         </>
       )}
     </>

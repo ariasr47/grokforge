@@ -16,6 +16,47 @@ test("deduplicates replay by runId/eventSeq",()=>{const a=reduceRunEvent(initial
 test("wrong session returns same reference",()=>{const a=reduceRunEvent(initialRunProjection(),started()); assert.strictEqual(reduceRunEvent(a,event({kind:"run_state",state:"running",liveness:null},2,"other")),a);});
 test("stale generation returns same reference",()=>{const a=reduceRunEvent(initialRunProjection(),started()); const e=event({kind:"run_state",state:"running",liveness:null},2); e.connectionGeneration=2; assert.strictEqual(reduceRunEvent(a,e),a);});
 test("reasoning and answer segments remain distinct",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"reasoning_delta",segmentId:"x",delta:"think"},2)); a=reduceRunEvent(a,event({kind:"answer_delta",segmentId:"x",delta:"answer"},3)); assert.equal(a.runsById.r1.reasoning.x,"think"); assert.equal(a.runsById.r1.answer.x,"answer");});
+test("thought after a tool does not mash onto the previous sentence", () => {
+  // Live G5 journal: delta "." then write_file then delta "Now" → "top.Now".
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "reasoning_delta", segmentId: "r", delta: "Add the comment at the top." }, 2));
+  a = reduceRunEvent(
+    a,
+    event(
+      {
+        kind: "activity_update",
+        activity: {
+          activityId: "a1",
+          invocationId: "i1",
+          name: "write_file",
+          lifecycle: "pending",
+          execution: null,
+          status: "running",
+          input: {},
+          output: null,
+          error: null,
+          diff: null,
+          path: "README.md",
+          policy: {},
+          automaticEligibility: "not_eligible",
+          autoApplied: false,
+          command: null,
+          editId: null,
+          recovery: null,
+        },
+      },
+      3,
+    ),
+  );
+  a = reduceRunEvent(a, event({ kind: "reasoning_delta", segmentId: "r", delta: "Now append" }, 4));
+  assert.equal(a.runsById.r1.reasoning.r, "Add the comment at the top.\nNow append");
+});
+test("in-burst thought tokens are not given an invented separator", () => {
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "reasoning_delta", segmentId: "r", delta: "top." }, 2));
+  a = reduceRunEvent(a, event({ kind: "reasoning_delta", segmentId: "r", delta: "Now" }, 3));
+  assert.equal(a.runsById.r1.reasoning.r, "top.Now");
+});
 test("answered terminal requires vouch",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"answered",finalAnswer:"answer",answerVouched:false,failure:null,terminalAt:""},2)); assert.equal(a.runsById.r1.finalAnswer,null);});
 test("failed terminal retains null answer",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"failed",finalAnswer:null,answerVouched:false,failure:{code:"missing_final_answer",message:"Missing final answer",retryable:true,recoveryAction:"retry_prompt"},terminalAt:""},2)); assert.equal(a.runsById.r1.finalAnswer,null);});
 test("late events cannot mutate terminal",()=>{let a=reduceRunEvent(initialRunProjection(),started()); a=reduceRunEvent(a,event({kind:"run_terminal",terminalKind:"cancelled",finalAnswer:null,answerVouched:false,failure:null,terminalAt:""},2)); assert.strictEqual(reduceRunEvent(a,event({kind:"answer_delta",segmentId:"x",delta:"late"},3)),a);});
@@ -736,6 +777,48 @@ test("post-terminal answer_delta and activity_update are still dropped", () => {
       command: null, editId: null, recovery: null,
     },
   }, 4)), a);
+});
+
+test("post-terminal recovery reverted folds so catch-up does not re-offer Revert", () => {
+  const write = {
+    activityId: "a1",
+    invocationId: "i1",
+    name: "write_file",
+    lifecycle: "terminal" as const,
+    execution: "executed" as const,
+    status: "succeeded" as const,
+    input: {},
+    output: null,
+    error: null,
+    diff: "--- a/probe.txt\n+++ b/probe.txt\n+x",
+    path: "probe.txt",
+    policy: {},
+    automaticEligibility: "not_eligible",
+    autoApplied: false,
+    command: null,
+    editId: "e1",
+    recovery: { kind: "guarded_revert" as const, available: true, status: "available" as const },
+  };
+  let a = reduceRunEvent(initialRunProjection(), started());
+  a = reduceRunEvent(a, event({ kind: "activity_update", activity: write }, 2));
+  a = reduceRunEvent(a, event({
+    kind: "run_terminal",
+    terminalKind: "answered",
+    finalAnswer: "done",
+    answerVouched: true,
+    failure: null,
+    terminalAt: "",
+  }, 3));
+  assert.equal(a.runsById.r1.activities.a1?.recovery?.status, "available");
+  a = reduceRunEvent(a, event({
+    kind: "activity_update",
+    activity: { ...write, recovery: { kind: "guarded_revert", available: false, status: "reverted" } },
+  }, 4));
+  assert.equal(
+    a.runsById.r1.activities.a1?.recovery?.status,
+    "reverted",
+    "live reload re-offered Revert because the post-terminal recovery stamp was dropped",
+  );
 });
 
 test("foreign generation child_agent_update is dropped", () => {

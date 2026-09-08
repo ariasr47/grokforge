@@ -80,10 +80,16 @@ export interface Session {
   pendingEdits: Map<string, PendingEdit>;
   sessionWrite: boolean;
   sessionShell: boolean;
+  /** Workspace-relative paths the user denied this session; sessionWrite must not cover them. */
+  deniedWritePaths?: Set<string>;
   capability: ExecutionEnvironmentCapability;
   permissionMode?: "review" | "trusted_workspace" | "bypass_permissions";
   trustedCommandClasses?: string[];
   executionPhase?: "plan" | "execute";
+}
+
+export function writePathKey(pathLike: string): string {
+  return String(pathLike ?? "").trim().replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
 /** Cap agent context growth during long dogfood sessions (system + recent turns). */
@@ -205,6 +211,7 @@ export class GrokAcpServer {
             pendingEdits: new Map(),
             sessionWrite: false,
             sessionShell: false,
+            deniedWritePaths: new Set(),
             capability: this.capability,
             permissionMode: "review",
             trustedCommandClasses: [],
@@ -247,6 +254,12 @@ export class GrokAcpServer {
           session.executionPhase = params?.executionPhase === "plan" ? "plan" : "execute";
           if (params?.sessionWrite === true) session.sessionWrite = true;
           if (params?.sessionShell === true) session.sessionShell = true;
+          if (Array.isArray(params?.deniedWritePaths)) {
+            if (!session.deniedWritePaths) session.deniedWritePaths = new Set();
+            for (const p of params.deniedWritePaths) {
+              if (typeof p === "string" && p.trim()) session.deniedWritePaths.add(writePathKey(p));
+            }
+          }
           // Seed prior UI history once if agent only has system message
           const hist = params?.history;
           if (Array.isArray(hist) && session.messages.length <= 1) {
@@ -408,6 +421,30 @@ export class GrokAcpServer {
     return new Promise((resolve, reject) => {
       this.editWaiters.set(edit.id, { resolve, reject });
     });
+  }
+
+  private deniedWritePathSet(session: Session): Set<string> {
+    if (!session.deniedWritePaths) session.deniedWritePaths = new Set();
+    return session.deniedWritePaths;
+  }
+
+  private sessionWriteCovers(session: Session, pathLike: string): boolean {
+    if (!session.sessionWrite) return false;
+    const key = writePathKey(pathLike);
+    if (!key) return true;
+    return !session.deniedWritePaths?.has(key);
+  }
+
+  private rememberDeniedWrite(session: Session, pathLike: string): void {
+    const key = writePathKey(pathLike);
+    if (!key) return;
+    this.deniedWritePathSet(session).add(key);
+  }
+
+  private forgetDeniedWrite(session: Session, pathLike: string): void {
+    const key = writePathKey(pathLike);
+    if (!key) return;
+    session.deniedWritePaths?.delete(key);
   }
 
   private async runPrompt(
@@ -938,18 +975,20 @@ export class GrokAcpServer {
       }
 
       // write
-      if (!session.sessionWrite && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
+      const writePath = String(args.path ?? "");
+      if (!this.sessionWriteCovers(session, writePath) && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
         let decision: string;
         try {
           decision = await this.waitPermission(
             call.id,
             "write",
-            `Write: ${String(args.path ?? "")}`,
+            `Write: ${writePath}`,
             executionOwner,
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (message === "cancelled") {
+            this.rememberDeniedWrite(session, writePath);
             const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
             emitTerminal(msg, false, {
               execution: "not_executed",
@@ -964,6 +1003,7 @@ export class GrokAcpServer {
         }
         if (decision === "allow_session") session.sessionWrite = true;
         if (decision === "deny" || decision === "cancelled") {
+          this.rememberDeniedWrite(session, writePath);
           const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
           emitTerminal(msg, false, {
             execution: "not_executed",
@@ -974,6 +1014,7 @@ export class GrokAcpServer {
           });
           return msg;
         }
+        this.forgetDeniedWrite(session, writePath);
       }
 
       const editId = randomUUID();
@@ -987,7 +1028,7 @@ export class GrokAcpServer {
       session.pendingEdits.set(editId, edit);
       let action: "accept" | "reject";
       try {
-        action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || session.sessionWrite
+        action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || this.sessionWriteCovers(session, writePath)
           ? "accept"
           : await this.waitEdit(edit, executionOwner, call.id);
       } catch (err) {
@@ -1013,20 +1054,25 @@ export class GrokAcpServer {
         session.pendingEdits.delete(editId);
         this.notify("file_edit", {
           id: edit.id,
+          editId: edit.id,
           path: edit.path,
           diff: edit.diff,
           status: "accepted",
           kind: "content",
+          toolCallId: call.id,
+          invocationId: call.id,
         }, executionOwner);
         const out = JSON.stringify({
           ok: true,
           path: edit.path,
           status: "accepted",
         });
-        const automaticallyApplied = session.permissionMode === "bypass_permissions" || authorization.decision === "auto";
-        emitTerminal(out, true, { automaticEligibility: authorization.automaticEligibility, autoApplied: automaticallyApplied, editId: edit.id, diff: edit.diff, path: edit.path, kind: "content", recovery: { kind: "guarded_revert", available: true, status: "available" } });
+        const stamp = this.autoApplyStamp(session, authorization);
+        emitTerminal(out, true, { automaticEligibility: stamp.automaticEligibility, autoApplied: stamp.autoApplied, editId: edit.id, diff: edit.diff, path: edit.path, kind: "content", recovery: { kind: "guarded_revert", available: true, status: "available" } });
+        this.forgetDeniedWrite(session, writePath);
         this.completedToolCalls.set(ownerKey,{args:normalizedArgs,result:out}); return out;
       }
+      this.rememberDeniedWrite(session, writePath);
       session.pendingEdits.delete(editId);
       this.notify("file_edit", {
         id: edit.id,
@@ -1048,6 +1094,20 @@ export class GrokAcpServer {
       emitTerminal(out, false);
       return out;
     }
+  }
+
+  private autoApplyStamp(
+    session: Session,
+    authorization: { decision: string; automaticEligibility: string },
+  ): { autoApplied: boolean; automaticEligibility: string } {
+    const bypass = session.permissionMode === "bypass_permissions";
+    const autoApplied =
+      bypass || authorization.decision === "auto" || session.sessionWrite === true;
+    const automaticEligibility =
+      autoApplied && !bypass && authorization.automaticEligibility === "not_eligible"
+        ? "text_edit"
+        : authorization.automaticEligibility;
+    return { autoApplied, automaticEligibility };
   }
 
   private mutationGateError(err: unknown): { reasonCode: string; reason: string } | null {
@@ -1116,20 +1176,22 @@ export class GrokAcpServer {
         return msg;
       }
 
-      if (!session.sessionWrite && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
+      const mutationPath = name === "delete_file" ? String(args.path ?? "") : String(args.fromPath ?? "");
+      if (!this.sessionWriteCovers(session, mutationPath) && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
         let decision: string;
         try {
           decision = await this.waitPermission(
             call.id,
             "write",
             name === "delete_file"
-              ? `Delete: ${String(args.path ?? "")}`
-              : `Rename: ${String(args.fromPath ?? "")} → ${String(args.toPath ?? "")}`,
+              ? `Delete: ${mutationPath}`
+              : `Rename: ${mutationPath} → ${String(args.toPath ?? "")}`,
             executionOwner,
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (message === "cancelled") {
+            this.rememberDeniedWrite(session, mutationPath);
             const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
             emitTerminal(msg, false, {
               execution: "not_executed",
@@ -1144,6 +1206,7 @@ export class GrokAcpServer {
         }
         if (decision === "allow_session") session.sessionWrite = true;
         if (decision === "deny" || decision === "cancelled") {
+          this.rememberDeniedWrite(session, mutationPath);
           const msg = JSON.stringify({ error: "User denied write permission", execution: "not_executed" });
           emitTerminal(msg, false, {
             execution: "not_executed",
@@ -1154,12 +1217,13 @@ export class GrokAcpServer {
           });
           return msg;
         }
+        this.forgetDeniedWrite(session, mutationPath);
       }
 
       session.pendingEdits.set(edit.id, edit);
       let action: "accept" | "reject";
       try {
-        action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || session.sessionWrite
+        action = session.permissionMode === "bypass_permissions" || authorization.decision === "auto" || this.sessionWriteCovers(session, mutationPath)
           ? "accept"
           : await this.waitEdit(edit, executionOwner, call.id);
       } catch (err) {
@@ -1238,10 +1302,10 @@ export class GrokAcpServer {
           invocationId: call.id,
         }, executionOwner);
         const out = JSON.stringify({ ok: true, path: acceptedPath, status: "accepted" });
-        const automaticallyApplied = session.permissionMode === "bypass_permissions" || authorization.decision === "auto";
+        const stamp = this.autoApplyStamp(session, authorization);
         emitTerminal(out, true, {
-          automaticEligibility: authorization.automaticEligibility,
-          autoApplied: automaticallyApplied,
+          automaticEligibility: stamp.automaticEligibility,
+          autoApplied: stamp.autoApplied,
           editId: edit.id,
           diff: edit.diff,
           path: acceptedPath,
@@ -1250,10 +1314,12 @@ export class GrokAcpServer {
           toPath: edit.toPath ?? null,
           recovery: { kind: "guarded_revert", available: true, status: "available" },
         });
+        this.forgetDeniedWrite(session, mutationPath);
         this.completedToolCalls.set(ownerKey, { args: normalizedArgs, result: out });
         return out;
       }
 
+      this.rememberDeniedWrite(session, mutationPath);
       session.pendingEdits.delete(edit.id);
       this.notify("file_edit", {
         id: edit.id,

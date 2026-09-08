@@ -10,7 +10,7 @@ import {
 } from "../dock/ChangesDock";
 import { projectRunVerifyList } from "../projections/runVerifyList";
 import { projectRunGitReviewList, draftCommitMessageFromGitReview } from "../projections/runGitReviewList";
-import { projectRunChangeList, type PendingDiff } from "../projections/runChangeList";
+import { collapseChangeMembersByPath, projectRunChangeList, type PendingDiff } from "../projections/runChangeList";
 import { catchUpForRun, type CatchUpMap } from "../projections/catchUpWindows";
 import type { ActivityRecord, RunProjection } from "../projections/runReducer";
 import type { useToast } from "../thread/Toast";
@@ -132,7 +132,7 @@ export function useChangesProjections({
       if (projection.state !== "ready") continue;
       for (const member of projection.members) members.push({ ...member, runId: run.runId });
     }
-    return { state: "ready", members };
+    return { state: "ready", members: collapseChangeMembersByPath(members) };
   }, [sessionRuns, catchUpByRunId, productMode]);
   const changesDockVerify: ChangesDockVerifyState = useMemo(() => {
     if (productMode === "chat" || sessionRuns.length === 0) return { state: "ready", members: [], runLive: false };

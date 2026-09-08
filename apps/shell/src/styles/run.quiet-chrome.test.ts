@@ -79,6 +79,32 @@ describe("settled-turn chrome is quiet", () => {
     assert.match(tr[1]!, /scroll-padding-bottom:\s*24px/);
   });
 
+  it("cmeta Grok identity cannot shrink to zero or paint over the keyboard hint", () => {
+    // Live beside Changes: .code-agent-chip w=0, overflow visible, so "Grok"
+    // painted on "⏎ send" while grok-4-fast-non-reasoning kept 162px.
+    const facts = chrome.match(/\.cmeta-facts\s*\{([^}]+)\}/);
+    assert.ok(facts?.[1], "missing .cmeta-facts");
+    assert.match(facts[1]!, /min-width:\s*0/);
+    assert.match(facts[1]!, /overflow:\s*hidden/);
+    const hint = chrome.match(/\.cmeta \.r\s*\{([^}]+)\}/);
+    assert.ok(hint?.[1], "missing .cmeta .r");
+    assert.match(hint[1]!, /flex:\s*none/);
+    const identity = chrome.match(/\.composer-identity\s*\{([^}]+)\}/);
+    assert.ok(identity?.[1], "missing .composer-identity");
+    assert.match(identity[1]!, /overflow:\s*hidden/);
+    assert.match(identity[1]!, /flex-shrink:\s*0/);
+    const chip = chrome.match(
+      /\.composer-identity \.code-agent-chip\s*\{([^}]+)\}/,
+    );
+    assert.ok(chip?.[1], "missing .composer-identity .code-agent-chip");
+    assert.match(chip[1]!, /flex-shrink:\s*0/);
+    const model = chrome.match(
+      /\.composer-identity \.composer-meta\s*\{([^}]+)\}/,
+    );
+    assert.ok(model?.[1], "missing .composer-identity .composer-meta");
+    assert.match(model[1]!, /min-width:\s*0/);
+  });
+
   it("toasts float at a fixed viewport offset, not pinned to a sticky composer height", () => {
     // Task 8: the action dock is a normal flex child now (not sticky above
     // the composer), so toasts no longer reserve --composer-height's worth

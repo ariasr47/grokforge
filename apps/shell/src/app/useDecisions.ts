@@ -7,7 +7,7 @@ import { projectPlanArm, type PlanArmProjection } from "../projections/planArm";
 import { isLivePlanning, planReadyIsEmpty } from "../projections/runPlanSection";
 import { isStalePermissionDecision } from "../projections/stalePermissionDecision";
 import type { PendingDiff, PermissionReq } from "../projections/runChangeList";
-import type { DecisionRequest, RunProjection, RunProjectionRun } from "../projections/runReducer";
+import { mergeRunSnapshot, reduceRunEvents, type DecisionRequest, type RunProjection, type RunProjectionRun } from "../projections/runReducer";
 import type { useToast } from "../thread/Toast";
 
 /**
@@ -108,6 +108,11 @@ export interface UseDecisionsParams {
    * Nothing moved here ever reads the current value.
    */
   setPlanDecisionError: Dispatch<SetStateAction<string | null>>;
+  /**
+   * App.tsx's `commitRunProjection` — settlePlan catch-up after agent-done
+   * folds post-terminal plan Accept into the same projection the dock reads.
+   */
+  commitRunProjection?: (next: RunProjection) => void;
 }
 
 export interface UseDecisionsResult {
@@ -169,6 +174,7 @@ export function useDecisions({
   planEngagement,
   planArmError,
   setPlanDecisionError,
+  commitRunProjection,
 }: UseDecisionsParams): UseDecisionsResult {
   const permissionInFlightRef = useRef<string | null>(null);
   const recoveryInFlightRef = useRef<string | null>(null);
@@ -310,6 +316,7 @@ export function useDecisions({
       if (!pendingPlanDecision) return;
       setPlanSettling(true);
       setPlanDecisionError(null);
+      let postedOk = false;
       try {
         await api.runPlan({
           sessionId: pendingPlanDecision.run.sessionId,
@@ -319,13 +326,44 @@ export function useDecisions({
           connectionGeneration: pendingPlanDecision.run.connectionGeneration,
           action,
         });
-      } catch (e) {
-        setPlanDecisionError(PLAN_DECISION_FAILURE);
-      } finally {
-        setPlanSettling(false);
+        postedOk = true;
+      } catch {
+        postedOk = false;
       }
+      // Agent-done finalizes the plan run *before* Accept. Settlement is
+      // appended after run_terminal; health reconcile skips terminal runs,
+      // so the dock stays pending unless this click folds the journal.
+      try {
+        const replay = await api.runState(
+          pendingPlanDecision.run.runId,
+          pendingPlanDecision.run.sessionId,
+          pendingPlanDecision.run.lastEventSeq,
+        );
+        if (replay?.run && Array.isArray(replay.events)) {
+          commitRunProjection?.(
+            reduceRunEvents(
+              mergeRunSnapshot(runProjectionRef.current, replay.run),
+              replay.events,
+            ),
+          );
+        }
+      } catch {
+        /* journal catch-up is best-effort; POST outcome still governs the error */
+      }
+      const latest = runProjectionRef.current.runsById[pendingPlanDecision.run.runId];
+      const stillPending = Boolean(
+        latest &&
+          Object.values(latest.decisions).some(
+            (d) =>
+              d.requestId === pendingPlanDecision.decision.requestId &&
+              d.kind === "plan" &&
+              d.status === "pending",
+          ),
+      );
+      if (!postedOk && stillPending) setPlanDecisionError(PLAN_DECISION_FAILURE);
+      setPlanSettling(false);
     },
-    [pendingPlanDecision],
+    [commitRunProjection, pendingPlanDecision],
   );
 
   const recoverFromDock = useCallback(async () => {

@@ -119,6 +119,18 @@ export function receiptVerb(record: ActivityRecord): Receipt {
       tone: "muted",
     };
   }
+  // A denied/not-run write never landed — "Edited" would claim disk changed.
+  if (
+    (record.execution === "not_executed" || record.status === "rejected") &&
+    /write|edit|patch|create|replace/i.test(name)
+  ) {
+    return {
+      verb: "Skipped",
+      what: fallbackWhat(record, caption),
+      tail: record.error ? truncateTail(record.error) : "",
+      tone: "muted",
+    };
+  }
 
   if (isPendingDecision(record)) {
     return {

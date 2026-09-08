@@ -259,6 +259,108 @@ describe("useChangesProjections", () => {
     assert.equal(result.current.changesActivityOutputById.size, 6);
   });
 
+  it("follow-up run on the same path keeps one Changes row (latest wins) — G2", () => {
+    let state = initialRunProjection();
+    state = reduceRunEvent(state, startedEvent(snap("r1")));
+    state = reduceRunEvent(state, activityEvent("r1", fileActivity("keep"), 2));
+    state = reduceRunEvent(state, activityEvent("r1", fileActivity("shared"), 3));
+    state = reduceRunEvent(state, startedEvent(snap("r2")));
+    state = reduceRunEvent(
+      state,
+      activityEvent(
+        "r2",
+        activity({
+          activityId: "file-shared-2",
+          invocationId: "file-shared-2",
+          path: "shared.txt",
+          editId: "edit-shared-2",
+          diff: "--- a/shared.txt\n+++ b/shared.txt\n+later",
+        }),
+        2,
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useHarness({
+        runProjection: state,
+        runProjectionRef: ref(state),
+        productMode: "code",
+        sessionId: SESSION,
+        initialDiffQueue: [],
+        changesOpen: false,
+        view: "chat",
+        onError: noop,
+        toast: fakeToast().api,
+      }),
+    );
+
+    const { changesDockFiles } = result.current;
+    assert.equal(changesDockFiles.state, "ready");
+    if (changesDockFiles.state !== "ready") return;
+    assert.deepEqual(
+      changesDockFiles.members.map((m) => m.path),
+      ["keep.txt", "shared.txt"],
+    );
+    const shared = changesDockFiles.members.find((m) => m.path === "shared.txt");
+    assert.equal(shared?.runId, "r2");
+    assert.match(shared?.diff ?? "", /later/);
+  });
+
+  it("same path with mixed slashes still collapses to one Changes row", () => {
+    let state = initialRunProjection();
+    state = reduceRunEvent(state, startedEvent(snap("r1")));
+    state = reduceRunEvent(
+      state,
+      activityEvent(
+        "r1",
+        activity({
+          activityId: "a-slash",
+          invocationId: "a-slash",
+          path: "docs/dogfood/acp-code/g1-fold/tokenize.js",
+          editId: "e-slash-1",
+          diff: "+first",
+        }),
+        2,
+      ),
+    );
+    state = reduceRunEvent(state, startedEvent(snap("r2")));
+    state = reduceRunEvent(
+      state,
+      activityEvent(
+        "r2",
+        activity({
+          activityId: "b-slash",
+          invocationId: "b-slash",
+          path: "docs\\dogfood\\acp-code\\g1-fold\\tokenize.js",
+          editId: "e-slash-2",
+          diff: "+second",
+        }),
+        2,
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useHarness({
+        runProjection: state,
+        runProjectionRef: ref(state),
+        productMode: "code",
+        sessionId: SESSION,
+        initialDiffQueue: [],
+        changesOpen: false,
+        view: "chat",
+        onError: noop,
+        toast: fakeToast().api,
+      }),
+    );
+
+    const { changesDockFiles } = result.current;
+    assert.equal(changesDockFiles.state, "ready");
+    if (changesDockFiles.state !== "ready") return;
+    assert.equal(changesDockFiles.members.length, 1);
+    assert.match(changesDockFiles.members[0].diff ?? "", /second/);
+    assert.equal(changesDockFiles.members[0].runId, "r2");
+  });
+
   it("runLive is true while any run is still live, false once every run is terminal", () => {
     let state = initialRunProjection();
     state = reduceRunEvent(state, startedEvent(snap("r1")));

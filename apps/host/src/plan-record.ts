@@ -1,6 +1,7 @@
 import type { PlanProposedMember, PlanRecord, PlanRecordStatus, PolicySnapshot, TerminalKind } from "./run-types.js";
 
-const FILE_TOKEN = /\b[\w./\\-]+\.[A-Za-z][A-Za-z0-9]{0,7}\b/g;
+const FILE_TOKEN =
+  /\b[\w./\\-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|txt|css|html|htm|py|rs|go|sh|bash|yml|yaml|toml|svg|vue|svelte|kt|java|cs|cpp|h|hpp|rb|php|sql|xml|lock|map)\b/g;
 const PREFIX = /^(?:Would change|Proposed):\s*(.+)$/i;
 const NOTHING_TO_CHANGE = /\b(?:nothing to change|no changes?(?: proposed| needed| required)?|no files? to (?:change|edit)|unchanged)\b/i;
 const WILL_CHANGE = /\b(?:will|going to|plan to)\s+(?:edit|change|create|update|modify|delete|rewrite|add)\b/i;
@@ -16,15 +17,74 @@ function normalizePath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+const MUTATION_VERB =
+  /\b(?:write_file|apply_patch|write|edit|create|update|modify|delete|rewrite|insert)\b/i;
+const NON_MUTATION_MENTION =
+  /(?:never touch|do not edit|don't edit|don't touch|without editing|no edits? (?:were )?made to|leave)\s+`?([\w./\\-]+\.[A-Za-z][A-Za-z0-9]{0,7})/gi;
+
+/** File tokens on a test/read/do-not-edit step are mentions, not WOULD CHANGE. */
+function lineProposesFileMutation(source: string): boolean {
+  const text = source.trim();
+  if (!text) return false;
+  if (/\b(?:node --test|npm test|npx tsc)\b/i.test(text) && !/\b(?:write_file|apply_patch)\b/i.test(text)) return false;
+  if (/\buntouched\b/i.test(text) && !/\b(?:write_file|apply_patch)\b/i.test(text)) return false;
+  if (/\bno edits?\b/i.test(text)) return false;
+  if (MUTATION_VERB.test(text)) return true;
+  if (/\bgit (?:status|diff|log|show)\b/i.test(text) && !/\b(?:write_file|apply_patch|commit)\b/i.test(text)) return false;
+  if (/\b(?:read_file|\bread\b|\binspect\b)\b/i.test(text)) return false;
+  return true;
+}
+
+function mentionedNotMutated(source: string): Set<string> {
+  const skip = new Set<string>();
+  for (const m of source.matchAll(NON_MUTATION_MENTION)) {
+    if (m[1]) skip.add(normalizePath(m[1]));
+  }
+  return skip;
+}
+
+function samePlanPath(a: string, b: string): boolean {
+  const left = normalizePath(a).replace(/^\.\//, "");
+  const right = normalizePath(b).replace(/^\.\//, "");
+  if (left === right) return true;
+  const leftBase = basename(left);
+  const rightBase = basename(right);
+  return (
+    left === rightBase ||
+    right === leftBase ||
+    left.endsWith("/" + right) ||
+    left.endsWith("/" + rightBase) ||
+    right.endsWith("/" + left) ||
+    right.endsWith("/" + leftBase)
+  );
+}
+
 export function derivePlanProposedMembers(body: string | null): PlanProposedMember[] {
   if (!body) return [];
   const members: PlanProposedMember[] = [];
   const seen = new Set<string>();
   const add = (path: string | null, summary: string) => {
-    const key = path ?? summary;
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    members.push({ path, summary });
+    if (!path) {
+      const key = summary;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      members.push({ path, summary });
+      return;
+    }
+    const n = normalizePath(path).replace(/^\.\//, "");
+    const idx = members.findIndex((m) => m.path != null && samePlanPath(m.path, n));
+    if (idx >= 0) {
+      const existing = members[idx]!.path!;
+      if (n.length > existing.length) {
+        members[idx] = { path: n, summary };
+        seen.delete(existing);
+        seen.add(n);
+      }
+      return;
+    }
+    if (seen.has(n)) return;
+    seen.add(n);
+    members.push({ path: n, summary });
   };
 
   for (const raw of body.split(/\r?\n/)) {
@@ -35,8 +95,11 @@ export function derivePlanProposedMembers(body: string | null): PlanProposedMemb
     const bullet = source.replace(/^[-*]\s+/, "");
     const files = source.match(FILE_TOKEN) ?? [];
     if (files.length) {
+      if (!prefix && !lineProposesFileMutation(source)) continue;
+      const skip = mentionedNotMutated(source);
       for (const file of files) {
         const path = normalizePath(file);
+        if (skip.has(path) || skip.has(basename(path))) continue;
         add(path, bullet || basename(path));
       }
       continue;
@@ -45,9 +108,15 @@ export function derivePlanProposedMembers(body: string | null): PlanProposedMemb
   }
 
   if (members.length === 0) {
-    for (const file of body.match(FILE_TOKEN) ?? []) {
-      const path = normalizePath(file);
-      add(path, basename(path));
+    for (const raw of body.split(/\r?\n/)) {
+      const source = raw.trim();
+      if (!source || !lineProposesFileMutation(source)) continue;
+      const skip = mentionedNotMutated(source);
+      for (const file of source.match(FILE_TOKEN) ?? []) {
+        const path = normalizePath(file);
+        if (skip.has(path) || skip.has(basename(path))) continue;
+        add(path, basename(path));
+      }
     }
   }
   return members;

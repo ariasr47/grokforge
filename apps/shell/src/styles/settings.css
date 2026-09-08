@@ -114,6 +114,11 @@ html[data-density="compact"] .transcript {
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
+.turn-cue {
+  margin: 8px 16px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
 .oauth-dock {
   margin: 8px 12px;
   padding: 12px 14px;

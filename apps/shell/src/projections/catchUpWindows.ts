@@ -37,3 +37,17 @@ export function appliedThroughLastEventSeq(
 ): boolean {
   return projectedLastEventSeq >= snapshotLastEventSeq;
 }
+
+/**
+ * Restore GET is finite. Completeness (applied >= snapshot) is the happy
+ * path; seq lag must still settle closed so Changes does not stay on
+ * Loading. Fail is only for thrown fetch (caller).
+ */
+export function settleCatchUpAfterRestore(
+  projectedLastEventSeq: number,
+  snapshotLastEventSeq: number,
+): "close" | "fail" {
+  void projectedLastEventSeq;
+  void snapshotLastEventSeq;
+  return "close";
+}

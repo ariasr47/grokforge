@@ -7,6 +7,7 @@ import {
   EMPTY_DRAFT_SEND,
   atMenuKeyAction,
   composerBlockReasonVisible,
+  composerShouldGrow,
   draftIsSendReady,
 } from "./ComposerPane";
 import { SETTLE_CARD_BELOW } from "../lib/copyDock.js";
@@ -81,6 +82,15 @@ describe("ComposerPane growth: one row idle, two rows once the draft grows", () 
       screen.getByLabelText("Message to agent").closest(".composer")?.classList.contains("one"),
       true,
     );
+  });
+
+  it("a wrapped empty field grows even if the first paint stored the wrapped height as baseline", () => {
+    // Live G5 beside Changes: Code placeholder wrapped inside .composer.one
+    // because baseHeightRef captured the already-wrapped scrollHeight (44===44).
+    assert.equal(composerShouldGrow("", 44, 44), true);
+    assert.equal(composerShouldGrow("", 22, 22), false);
+    assert.equal(composerShouldGrow("short", 22, 22), false);
+    assert.equal(composerShouldGrow("short", 44, 22), true);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { ActivityRecord, DecisionRequest, MutationKind, RunProjectionRun } from "./runReducer";
+import { activityIsReadLike, activityIsVendorSessionPlan } from "./activityWriteLike";
 export type { MutationKind };
 
 // DEAD-2: home for PendingDiff — DiffPanel.tsx (the component this queue was
@@ -165,6 +166,8 @@ export type RunChangeMember = {
   settlement: ChangeMemberSettlement;
   recoveryAvailable: boolean;
   diffUnavailable: boolean;
+  /** Host-vouched policy.effectiveMode. Used for Applied-automatically copy. */
+  policyEffectiveMode?: string | null;
 };
 
 export type CatchUpSignal =
@@ -244,7 +247,26 @@ function isChangeListMember(
       d.invocationId === activity.invocationId &&
       (d.status === "pending" || d.status === "accepted"),
   );
-  return trusted || reviewDiff || reviewWrite;
+  // Allow-for-this-session later writes skip permission + waitEdit, so they
+  // land on disk with no decision and (historically) autoApplied false.
+  // They still belong in Changes. Shell/read leftovers and TUI session
+  // plan.md must not — do not treat "has an editId" as enough.
+  const sessionGrantedLanded =
+    isLandedFileMutation(activity) &&
+    !activityIsVendorSessionPlan(activity) &&
+    activity.lifecycle === "terminal" &&
+    activity.execution === "executed" &&
+    activity.status === "succeeded";
+  return trusted || reviewDiff || reviewWrite || sessionGrantedLanded;
+}
+
+function isLandedFileMutation(activity: ActivityRecord): boolean {
+  if (activityIsReadLike(activity)) return false;
+  if (activity.kind === "content" || activity.kind === "delete" || activity.kind === "rename") {
+    return true;
+  }
+  const n = `${activity.name || ""} ${activity.title || ""}`.replace(/[_-]+/g, " ").trim().toLowerCase();
+  return /^(write|edit|search replace|str replace|replace)\b/.test(n);
 }
 
 function displayPathFor(
@@ -290,6 +312,24 @@ function settlementFor(
   if (writePerm?.status === "declined") {
     return { settlement: "rejected", recoveryAvailable: false, requestId: null };
   }
+  // Review session-grant auto-apply (same ACP session, possibly a later run)
+  // is the user's Allow for this session — not Trusted Applied.
+  if (activity.autoApplied === true && activity.policy?.effectiveMode === "review") {
+    return { settlement: "accepted", recoveryAvailable, requestId: null };
+  }
+  // Allow for this session: later writes skip the dock and would otherwise
+  // paint Applied beside the Accepted row the user already allowed.
+  const sessionWriteAccepted = Object.values(decisions).some(
+    (d) => d.kind === "permission" && d.title === "Write file" && d.status === "accepted",
+  );
+  if (
+    sessionWriteAccepted &&
+    activity.lifecycle === "terminal" &&
+    activity.execution === "executed" &&
+    activity.status === "succeeded"
+  ) {
+    return { settlement: "accepted", recoveryAvailable, requestId: null };
+  }
   return { settlement: "applied", recoveryAvailable, requestId: null };
 }
 
@@ -322,6 +362,8 @@ export function projectRunChangeList(
       settlement,
       recoveryAvailable,
       diffUnavailable: diff == null,
+      policyEffectiveMode:
+        typeof activity.policy?.effectiveMode === "string" ? activity.policy.effectiveMode : null,
     };
     if (!byEdit.has(editId)) order.push(editId);
     byEdit.set(editId, member);
@@ -329,6 +371,35 @@ export function projectRunChangeList(
   const members = order.map((id) => byEdit.get(id)!);
   if (members.length === 0) return { state: "absent" };
   return { state: "ready", members: members as [RunChangeMember, ...RunChangeMember[]] };
+}
+
+/** Session Changes is one panel for the whole thread. Follow-up edits of the
+ *  same workspace path replace the earlier row (latest wins). First-seen
+ *  path order is kept so the list does not jump. */
+export function changeMemberPathKey(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+}
+
+export const APPLIED_TRUSTED_WORKSPACE = "Applied automatically · Trusted workspace";
+export const APPLIED_SESSION_GRANT = "Applied automatically · allowed this session";
+export const APPLIED_GENERIC = "Applied automatically";
+
+/** Honest Applied-automatically copy. Review session-grant is not Trusted workspace. */
+export function appliedAutomaticallyNote(policyEffectiveMode: unknown): string {
+  if (policyEffectiveMode === "trusted_workspace") return APPLIED_TRUSTED_WORKSPACE;
+  if (policyEffectiveMode === "review") return APPLIED_SESSION_GRANT;
+  return APPLIED_GENERIC;
+}
+
+export function collapseChangeMembersByPath<T extends { path: string }>(members: T[]): T[] {
+  const latest = new Map<string, T>();
+  const order: string[] = [];
+  for (const member of members) {
+    const key = changeMemberPathKey(member.path);
+    if (!latest.has(key)) order.push(key);
+    latest.set(key, member);
+  }
+  return order.map((key) => latest.get(key)!);
 }
 
 export function pendingDiffsFromRun(run: RunProjectionRun): PendingDiff[] {
