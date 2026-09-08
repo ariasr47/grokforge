@@ -9,6 +9,7 @@ import {
   CODE_AGENT_CHECKING,
   CODE_AGENT_FALLBACK_CLI,
   CODE_AGENT_HARD_FAIL,
+  CODE_AGENT_HOUSE,
   CODE_AGENT_OFFLINE,
   CODE_AGENT_VENDOR,
 } from "../projections/codeAgentComposer";
@@ -20,6 +21,11 @@ const WORKSPACE = "C:\\repo";
 const SESSION_ID = "code-agent-session";
 const RUN_ID = "code-agent-run";
 
+const houseFact: CodeAgentFact = {
+  resolveStatus: "ready",
+  identity: "house",
+  fallbackReason: null,
+};
 const vendorFact: CodeAgentFact = {
   resolveStatus: "ready",
   identity: "vendor",
@@ -130,6 +136,34 @@ afterEach(() => {
 });
 
 describe("spawn-grok-agent — composer voucher + Send gates", () => {
+  it("Code house + no host key: Grok chip, Send is Sign-in gated", async () => {
+    const host = createFakeHost({
+      mode: "code",
+      workspace: WORKSPACE,
+      workspaceName: "repo",
+      busy: false,
+      connected: false,
+      hasApiKey: false,
+      authMode: "signed_out",
+      codeAgent: houseFact,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    render(<App />);
+    await screen.findByLabelText("Message to agent");
+    await waitFor(() => {
+      assert.ok(screen.getByText(CODE_AGENT_HOUSE));
+    });
+    assert.ok(document.querySelector("[data-code-agent='house']"));
+    assert.equal(screen.queryByText(CODE_AGENT_VENDOR) === null, true);
+    assert.equal(screen.queryByText(CODE_AGENT_FALLBACK_CLI) === null, true);
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByLabelText("Message to agent"), "ship it");
+    const send = screen.getByRole("button", { name: "Send" });
+    assert.equal(send.hasAttribute("disabled"), true);
+    assert.match(send.getAttribute("title") || "", /sign in/i);
+  });
+
   it("Code vendor + pre-acquire connected:false + no host key: Grok Code chip, Send not Sign-in/Engine offline", async () => {
     const host = createFakeHost({
       mode: "code",

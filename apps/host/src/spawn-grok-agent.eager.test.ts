@@ -96,14 +96,14 @@ await import(${JSON.stringify(pathToFileURL(fakeAgent).href)});
 }
 
 describe("eager Code codeAgent without spawn", () => {
-  it("PATH miss stamps fallback/cli_missing, connected false, no child", async () => {
+  it("PATH miss stamps house, connected false, no child", async () => {
     await withSession(false, async (s, ctx) => {
       const state = await s.openWorkspace(ctx.workspace);
       assert.equal(state.mode, "code");
       assert.deepEqual(state.codeAgent, {
         resolveStatus: "ready",
-        identity: "fallback",
-        fallbackReason: "cli_missing",
+        identity: "house",
+        fallbackReason: null,
       });
       assert.equal(state.connected, false);
       assert.equal(state.sessionId, null);
@@ -111,13 +111,13 @@ describe("eager Code codeAgent without spawn", () => {
     });
   });
 
-  it("PATH hit stamps vendor, connected false, no spawn", async () => {
+  it("PATH grok.exe still stamps house, connected false, no vendor spawn", async () => {
     await withSession(true, async (s, ctx) => {
       const state = await s.openWorkspace(ctx.workspace);
       assert.equal(state.mode, "code");
       assert.deepEqual(state.codeAgent, {
         resolveStatus: "ready",
-        identity: "vendor",
+        identity: "house",
         fallbackReason: null,
       });
       assert.equal(state.connected, false);

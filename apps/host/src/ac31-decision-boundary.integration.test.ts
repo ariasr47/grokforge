@@ -9,6 +9,7 @@ function harness(kind:"permission"|"diff", state:"running"|"terminal"="running",
   s.client=kind==="permission"?{respondPermission:async()=>{calls++}}:{respondEdit:async()=>{calls++}};
   s.sessionId="acp"; s.pendingDecisions=new Map([["request",{sessionId:"stable",runId:"run",generation,invocationId:"inv",kind,status:"pending",expiresAt}]]);
   s.runCoordinator={get:()=>({sessionId:"stable",runId:"run",state,connectionGeneration:1,policy}),appendOwnedEvent:async()=>{}};
+  s.queuedTurnEnd=new Map();
   s.getRun=(runId:string,sessionId:string)=>runId==="run"&&sessionId==="stable"?s.runCoordinator.get():undefined;
   return {s,get calls(){return calls}};
 }

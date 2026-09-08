@@ -14,8 +14,8 @@
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
 | **Published** | **v0.6.6** Windows unsigned NSIS. Code still the *vendor* engine in that binary. |
-| **Source (HEAD)** | `cc293d9` (8 Sep). Code is **house grok-acp**. Gate (shell / write / plan / ask). Changes dock. Home. |
-| **Not published** | 0.6.7 installer. SHA-in-app (S1 AC5). Signed cert. Mac. |
+| **Source (HEAD)** | 0.6.7-unreleased (version stamped; tag pending `release`). Code is **house grok-acp**. Gate. Changes. Home. |
+| **Not published** | 0.6.7 GitHub installer + SHA. SHA-in-app (S1 AC5). Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. |
@@ -227,7 +227,7 @@ The operating loop reads this table when live dogfood has not yet shown somethin
 | **Gate — keys** | ⏎ / S / esc exist in the Gate. Not proven in a live session. | `Gate.test.tsx` |
 | **Complex Code** | Real multi-file work on `apps/` / `packages/`, not `docs/dogfood/*.md`. Ceiling so far: one comment, one CSS pass, 3-file fixtures. | Dogfood explainer; this conversation |
 | **Bypass honesty** | Bypass is not a saved workspace radio. Standing. | `FORGE_DAILY_GOAL.md` Settings look |
-| **0.6.7 tag** | Unblocks S1 AC5 + S4. Not a loop slice unless the operator says `release`. | `RESUME.md` 1 Sep; HEAD `cc293d9` |
+| **0.6.7 tag** | Version stamped; notes drafted; vendor-spawn tests parked. Unblocks S1 AC5 + S4. Needs operator `release`. | `docs/releases/v0.6.7.md` |
 | **Mermaid** | Chat diagrams. Later than 0.7. | EPICS C2 |
 | **Invent the next job** | If none of the above is the live FAIL, invent a harder Forge-builds-Forge job. | Ever-goal |
 

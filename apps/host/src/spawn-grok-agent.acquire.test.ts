@@ -112,63 +112,16 @@ async function readVendorSpawn(dataDir: string): Promise<any | null> {
   }
 }
 
-describe("Code acquire vendor / fallback / hard_fail", () => {
-  it("happy vendor uses unique tuple, default permissionMode, provenance vendor", async () => {
-    const ctx = await setupHome({ pathHit: "spawnable", fixture: "ok" });
-    try {
-      await ctx.session.openWorkspace(ctx.workspace);
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      const state = ctx.session.getState();
-      assert.equal(state.connected, true);
-      assert.equal(state.codeAgent?.identity, "vendor");
-      assert.equal(state.codeAgent?.fallbackReason, null);
-      assert.equal(run.codeAgentProvenance?.identity, "vendor");
-      assert.equal(run.codeAgentProvenance?.fallbackReason, null);
-      const spawn = await readVendorSpawn(ctx.dataDir);
-      assert.ok(spawn, "vendor child must record spawn");
-      assert.equal(spawn.hasXai, false);
-      const argv: string[] = (spawn.argv ?? []).map((a: unknown) => String(a));
-      // grok.exe (copy of node) records argv[0]=grok.exe. A Windows grok.cmd
-      // shim records node + agent.js. Either proves vendor, not grok-acp.
-      assert.ok(
-        argv.some((a) => /(?:^|[\\/])grok(\.exe|\.cmd)?$/i.test(a)) ||
-          argv.some((a) => /(?:^|[\\/])agent\.js$/i.test(a)),
-        `expected vendor grok/agent in argv, got ${JSON.stringify(argv)}`,
-      );
-      assert.ok(
-        argv.some((a) => a === "agent" || /(^|[\\/])agent(\.js)?$/i.test(a)),
-        `expected agent in argv, got ${JSON.stringify(argv)}`,
-      );
-      assert.ok(argv.includes("stdio"), `expected stdio in argv, got ${JSON.stringify(argv)}`);
-      assert.ok(argv.includes("--cwd"), `expected --cwd in argv, got ${JSON.stringify(argv)}`);
-      assert.ok(argv.includes(ctx.workspace), `expected workspace cwd in argv, got ${JSON.stringify(argv)}`);
-      assert.ok(argv.includes("--rules"), `expected --rules in argv, got ${JSON.stringify(argv)}`);
-      assert.ok(
-        argv.some((a) => /workingDirectory/.test(a)),
-        `expected workingDirectory rule in argv, got ${JSON.stringify(argv)}`,
-      );
-      assert.equal(spawn.cwd, ctx.workspace);
-      assert.equal(spawn.initialize?.permissionMode, "default");
-      assert.notEqual(spawn.initialize?.permissionMode, "always-approve");
-    } finally {
-      await ctx.session.shutdown().catch(() => undefined);
-      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
-    }
-  });
-
-  it("CLI miss selects grok-acp on same run id with cli_missing provenance", async () => {
+describe("Code acquire house grok-acp / hard_fail", () => {
+  it("happy path is house grok-acp, not vendor stdio", async () => {
     const ctx = await setupHome({ pathHit: "miss" });
     try {
       await ctx.session.openWorkspace(ctx.workspace);
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "cli_missing");
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      assert.equal(ctx.session.getState().codeAgent?.identity, "fallback");
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "cli_missing");
-      assert.equal(run.codeAgentProvenance?.identity, "fallback");
-      assert.equal(run.codeAgentProvenance?.fallbackReason, "cli_missing");
-      assert.equal(run.runId, ctx.session.getActiveRunId());
-      const replay = await ctx.session.replayRun(run.runId, "acquire01");
-      assert.equal(replay.events.filter((e) => e.type === "run_terminal").length, 0);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
+      const state = ctx.session.getState();
+      assert.equal(state.connected, true);
+      assert.equal(state.codeAgent?.identity, "house");
+      assert.equal(state.codeAgent?.fallbackReason, null);
       assert.equal(await readVendorSpawn(ctx.dataDir), null);
     } finally {
       await ctx.session.shutdown().catch(() => undefined);
@@ -176,72 +129,33 @@ describe("Code acquire vendor / fallback / hard_fail", () => {
     }
   });
 
-  it("pre-live initialize fail quarantines to grok-acp on same run with spawn_failed", async () => {
-    const ctx = await setupHome({ pathHit: "spawnable", fixture: "fail-initialize" });
+  it("PATH grok.exe does not divert Code from house grok-acp", async () => {
+    const ctx = await setupHome({ pathHit: "spawnable", fixture: "ok" });
     try {
       await ctx.session.openWorkspace(ctx.workspace);
-      assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      assert.equal(ctx.session.getState().codeAgent?.identity, "fallback");
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "spawn_failed");
-      assert.equal(run.codeAgentProvenance?.identity, "fallback");
-      assert.equal(run.codeAgentProvenance?.fallbackReason, "spawn_failed");
-      assert.equal(run.runId, ctx.session.getActiveRunId());
-      const replay = await ctx.session.replayRun(run.runId, "acquire01");
-      assert.equal(replay.events.filter((e) => e.type === "run_terminal").length, 0);
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
+      assert.equal(ctx.session.getState().codeAgent?.identity, "house");
+      assert.equal(await readVendorSpawn(ctx.dataDir), null);
     } finally {
       await ctx.session.shutdown().catch(() => undefined);
       await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
-  it("pre-live session/new fail quarantines to grok-acp on same run with spawn_failed", async () => {
-    const ctx = await setupHome({ pathHit: "spawnable", fixture: "fail-session-new" });
-    try {
-      await ctx.session.openWorkspace(ctx.workspace);
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "spawn_failed");
-      assert.equal(run.codeAgentProvenance?.identity, "fallback");
-      assert.equal(run.runId, ctx.session.getActiveRunId());
-    } finally {
-      await ctx.session.shutdown().catch(() => undefined);
-      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
-    }
-  });
-
-  it("process-create fail quarantines to grok-acp with spawn_failed", async () => {
+  it("empty grok.exe on PATH is still house, not spawn_failed fallback", async () => {
     const ctx = await setupHome({ pathHit: "empty-exe" });
     try {
       await ctx.session.openWorkspace(ctx.workspace);
-      assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      assert.equal(ctx.session.getState().codeAgent?.identity, "fallback");
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "spawn_failed");
-      assert.equal(run.codeAgentProvenance?.fallbackReason, "spawn_failed");
+      await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
+      assert.equal(ctx.session.getState().codeAgent?.identity, "house");
+      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, null);
     } finally {
       await ctx.session.shutdown().catch(() => undefined);
       await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
-  it("acquire vendor hit overwrites eager cli_missing", async () => {
-    const ctx = await setupHome({ pathHit: "miss" });
-    try {
-      await ctx.session.openWorkspace(ctx.workspace);
-      assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "cli_missing");
-      await installSpawnableGrok(ctx.vendorBin, ctx.workspace);
-      process.env.PATH = `${ctx.vendorBin}${path.delimiter}${process.env.PATH ?? ""}`;
-      process.env.Path = process.env.PATH;
-      const run = await ctx.session.prompt("hi", "auto", { clientSessionId: "acquire01" });
-      assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
-      assert.equal(run.codeAgentProvenance?.identity, "vendor");
-    } finally {
-      await ctx.session.shutdown().catch(() => undefined);
-      await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
-    }
-  });
-
-  it("vendor fail + grok-acp missing → hard_fail not fallback", async () => {
+  it("grok-acp missing → hard_fail not fallback", async () => {
     const ctx = await setupHome({ pathHit: "empty-exe", grokAcp: "missing" });
     try {
       await ctx.session.openWorkspace(ctx.workspace);

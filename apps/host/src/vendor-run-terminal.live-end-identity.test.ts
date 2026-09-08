@@ -102,13 +102,13 @@ async function waitReplay(
   })}`);
 }
 
-test("live vendor normal completion does not rewrite identity to fallback", async () => {
-  const ctx = await setup({ pathHit: "spawnable", fixture: "prompt-midturn-only" });
+test("house completion does not rewrite identity to fallback", async () => {
+  const ctx = await setup({ pathHit: "miss" });
   try {
     await ctx.session.openWorkspace(ctx.workspace);
     const run = await ctx.session.prompt("pong", "auto", { clientSessionId: ctx.sessionId });
     await waitReplay(ctx.session, run.runId, ctx.sessionId, (body) => body.run.state === "terminal", "normal end");
-    assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
+    assert.equal(ctx.session.getState().codeAgent?.identity, "house");
     assert.notEqual(ctx.session.getState().codeAgent?.identity, "fallback");
   } finally {
     await ctx.session.shutdown().catch(() => undefined);
@@ -116,8 +116,9 @@ test("live vendor normal completion does not rewrite identity to fallback", asyn
   }
 });
 
-test("live vendor cancel does not rewrite identity to fallback", async () => {
-  const ctx = await setup({ pathHit: "spawnable", fixture: "prompt-hang-midturn" });
+test("house cancel does not rewrite identity to fallback", async () => {
+  process.env.GROKFORGE_FIXTURE = "cancel-content";
+  const ctx = await setup({ pathHit: "miss" });
   try {
     await ctx.session.openWorkspace(ctx.workspace);
     const run = await ctx.session.prompt("pong", "auto", { clientSessionId: ctx.sessionId });
@@ -130,40 +131,43 @@ test("live vendor cancel does not rewrite identity to fallback", async () => {
     );
     await ctx.session.cancelRun(run.runId, ctx.sessionId);
     await waitReplay(ctx.session, run.runId, ctx.sessionId, (body) => body.run.state === "terminal", "cancel end");
-    assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
+    assert.equal(ctx.session.getState().codeAgent?.identity, "house");
   } finally {
+    delete process.env.GROKFORGE_FIXTURE;
     await ctx.session.shutdown().catch(() => undefined);
     await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
-test("live vendor fail does not rewrite identity to fallback", async () => {
-  const ctx = await setup({ pathHit: "spawnable", fixture: "prompt-fail" });
+test("house fail does not rewrite identity to fallback", async () => {
+  process.env.FAKE_AGENT_FAIL_MODEL = "grok-4.6";
+  const ctx = await setup({ pathHit: "miss" });
   try {
     await ctx.session.openWorkspace(ctx.workspace);
     const run = await ctx.session.prompt("boom", "auto", { clientSessionId: ctx.sessionId });
-    const replay = await waitReplay(
+    await waitReplay(
       ctx.session,
       run.runId,
       ctx.sessionId,
       (body) => body.run.state === "terminal",
       "fail end",
     );
-    assert.equal(replay.run.terminalKind, "failed");
-    assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
+    assert.equal(ctx.session.getState().codeAgent?.identity, "house");
+    assert.notEqual(ctx.session.getState().codeAgent?.identity, "fallback");
   } finally {
+    delete process.env.FAKE_AGENT_FAIL_MODEL;
     await ctx.session.shutdown().catch(() => undefined);
     await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
-test("live vendor agent-exit does not rewrite identity to fallback", async () => {
-  const ctx = await setup({ pathHit: "spawnable", fixture: "exit-after-live" });
+test("PATH grok.exe still stamps house, not vendor, after a live end", async () => {
+  const ctx = await setup({ pathHit: "spawnable", fixture: "ok" });
   try {
     await ctx.session.openWorkspace(ctx.workspace);
     const run = await ctx.session.prompt("hi", "auto", { clientSessionId: ctx.sessionId });
     await waitReplay(ctx.session, run.runId, ctx.sessionId, (body) => body.run.state === "terminal", "exit end");
-    assert.equal(ctx.session.getState().codeAgent?.identity, "vendor");
+    assert.equal(ctx.session.getState().codeAgent?.identity, "house");
     assert.equal(ctx.session.getState().codeAgent?.fallbackReason, null);
   } finally {
     await ctx.session.shutdown().catch(() => undefined);
@@ -171,14 +175,13 @@ test("live vendor agent-exit does not rewrite identity to fallback", async () =>
   }
 });
 
-test("missing CLI still stamps honest fallback / Mini-Grok", async () => {
+test("missing CLI still stamps house, not Mini-Grok fallback", async () => {
   const ctx = await setup({ pathHit: "miss", grokAcp: "ok" });
   try {
     await ctx.session.openWorkspace(ctx.workspace);
-    const run = await ctx.session.prompt("hi", "auto", { clientSessionId: ctx.sessionId });
-    assert.equal(ctx.session.getState().codeAgent?.identity, "fallback");
-    assert.equal(ctx.session.getState().codeAgent?.fallbackReason, "cli_missing");
-    assert.equal(run.codeAgentProvenance?.identity, "fallback");
+    await ctx.session.prompt("hi", "auto", { clientSessionId: ctx.sessionId });
+    assert.equal(ctx.session.getState().codeAgent?.identity, "house");
+    assert.equal(ctx.session.getState().codeAgent?.fallbackReason, null);
   } finally {
     await ctx.session.shutdown().catch(() => undefined);
     await fs.rm(ctx.home, { recursive: true, force: true }).catch(() => undefined);
