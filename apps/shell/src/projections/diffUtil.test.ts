@@ -61,6 +61,46 @@ describe("countDiffLines", () => {
   it("is zero for a diff with no changed lines", () => {
     assert.deepEqual(countDiffLines("--- a\n+++ b\n@@ -1 +1 @@\n line1\n"), { added: 0, removed: 0 });
   });
+
+  it("a write_file whole-file rewrite with one inserted line counts as +1 −0, not +N −N", () => {
+    // Live 2026-09-08: git was +1; Changes showed +301 −300 because grok-acp
+    // write_file emitted every line as deleted then added.
+    const diff = [
+      "--- a/f.ts",
+      "+++ b/f.ts",
+      "@@ -1,5 +1,6 @@",
+      "-a",
+      "-b",
+      "-c",
+      "-d",
+      "-e",
+      "+a",
+      "+b",
+      "+X",
+      "+c",
+      "+d",
+      "+e",
+    ].join("\n");
+    assert.deepEqual(countDiffLines(diff), { added: 1, removed: 0 });
+  });
+
+  it("a true rewrite with no shared lines keeps the raw +/− counts", () => {
+    const diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n-a\n-b\n+x\n+y\n";
+    assert.deepEqual(countDiffLines(diff), { added: 2, removed: 2 });
+  });
+
+  it("compacts a 300-line write_file rewrite with one insert to +1 −0", () => {
+    const before = Array.from({ length: 300 }, (_, i) => `line-${i}`);
+    const after = [...before.slice(0, 248), "assert keep", ...before.slice(248)];
+    const diff = [
+      "--- a/Gate.test.tsx",
+      "+++ b/Gate.test.tsx",
+      "@@ -1,300 +1,301 @@",
+      ...before.map((l) => `-${l}`),
+      ...after.map((l) => `+${l}`),
+    ].join("\n");
+    assert.deepEqual(countDiffLines(diff), { added: 1, removed: 0 });
+  });
 });
 
 describe("splitDiffHunks", () => {
@@ -121,5 +161,31 @@ describe("splitDiffHunks", () => {
   it("returns no hunks for an empty diff", () => {
     assert.deepEqual(splitDiffHunks(""), []);
     assert.deepEqual(splitDiffHunks("--- a\n+++ b\n"), []);
+  });
+
+  it("a write_file whole-file rewrite with one inserted line reviews as one add plus context", () => {
+    const diff = [
+      "--- a/f.ts",
+      "+++ b/f.ts",
+      "@@ -1,5 +1,6 @@",
+      "-a",
+      "-b",
+      "-c",
+      "-d",
+      "-e",
+      "+a",
+      "+b",
+      "+X",
+      "+c",
+      "+d",
+      "+e",
+    ].join("\n");
+    const hunks = splitDiffHunks(diff);
+    assert.equal(hunks.length, 1);
+    const kinds = hunks[0]!.lines.map((l) => l.kind);
+    assert.equal(kinds.filter((k) => k === "add").length, 1);
+    assert.equal(kinds.filter((k) => k === "del").length, 0);
+    assert.ok(kinds.filter((k) => k === "context").length >= 2);
+    assert.equal(hunks[0]!.lines.find((l) => l.kind === "add")?.text, "+X");
   });
 });

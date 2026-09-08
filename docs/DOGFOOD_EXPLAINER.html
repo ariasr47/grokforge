@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050508" />
+  <meta name="color-scheme" content="dark" />
+  <title>Forge dogfood — what using the app forced us to fix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-2: rgba(255, 255, 255, 0.07);
+      --stroke: rgba(255, 255, 255, 0.08);
+      --stroke-live: rgba(92, 225, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --cyan: #5ce1ff;
+      --violet: #a78bfa;
+      --warn: #f0b45a;
+      --deny: #ff7a90;
+      --plus: #7dffc3;
+      --r: 16px;
+      --font: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+      --era-1: #a78bfa;
+      --era-2: #f0b45a;
+      --era-3: #5ce1ff;
+      --era-4: #7dffc3;
+      --era-5: #c4b5fd;
+      --header-h: 52px;
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; scroll-padding-top: 72px; }
+    html, body { margin: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(900px 480px at 8% -12%, rgba(92, 225, 255, 0.07), transparent 55%),
+        radial-gradient(700px 420px at 100% 0%, rgba(167, 139, 250, 0.08), transparent 50%),
+        var(--void);
+      line-height: 1.5;
+      font-size: 16px;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+    }
+    code, .mono { font-family: var(--mono); font-size: 0.86em; }
+
+    .skip {
+      position: absolute;
+      left: 12px;
+      top: -48px;
+      z-index: 40;
+      padding: 8px 12px;
+      background: #0b1118;
+      border: 1px solid var(--cyan);
+      border-radius: 8px;
+      color: var(--cyan);
+    }
+    .skip:focus { top: 10px; }
+
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px 16px;
+      align-items: center;
+      min-height: var(--header-h);
+      padding: 8px 18px;
+      border-bottom: 1px solid var(--stroke);
+      background: color-mix(in srgb, var(--void) 78%, transparent);
+      backdrop-filter: blur(18px) saturate(1.2);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    .brand svg { width: 22px; height: 22px; display: block; }
+    .brand em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--cyan), var(--violet));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .here {
+      min-width: 0;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .here b { color: var(--text); font-weight: 500; }
+    .top nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 2px;
+      justify-content: flex-end;
+    }
+    .top nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+    .top nav a:hover { color: var(--text); text-decoration: none; }
+    .top nav a[aria-current="true"] {
+      color: var(--cyan);
+      background: rgba(92, 225, 255, 0.08);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 168px minmax(0, 920px);
+      gap: 28px;
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 96px;
+      align-items: start;
+    }
+
+    .spine {
+      position: sticky;
+      top: 76px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .spine a {
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 8px 0;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .spine a:hover { color: var(--text); text-decoration: none; }
+    .spine a[aria-current="true"] { color: var(--text); }
+    .spine .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 3px;
+      border-radius: 99px;
+      border: 1px solid currentColor;
+      background: transparent;
+    }
+    .spine a[aria-current="true"] .dot {
+      background: var(--cyan);
+      border-color: var(--cyan);
+      box-shadow: 0 0 12px rgba(92, 225, 255, 0.45);
+    }
+    .spine .lab { font-weight: 500; }
+    .spine .hint {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 400;
+    }
+
+    main { min-width: 0; }
+    section {
+      margin: 0 0 72px;
+      scroll-margin-top: 76px;
+    }
+    h1 {
+      font-size: clamp(1.7rem, 4vw, 2.4rem);
+      font-weight: 600;
+      letter-spacing: -0.035em;
+      line-height: 1.15;
+      margin: 0 0 12px;
+      text-wrap: balance;
+    }
+    h2 {
+      font-size: clamp(1.25rem, 2.4vw, 1.55rem);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      margin: 0 0 8px;
+      text-wrap: pretty;
+    }
+    h3 {
+      font-size: 1.02rem;
+      font-weight: 600;
+      margin: 0 0 6px;
+    }
+    p { margin: 0 0 12px; max-width: 62ch; }
+    .muted { color: var(--muted); }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--panel);
+    }
+    .chip.fyi { color: var(--muted); }
+    .chip.done {
+      color: var(--plus);
+      border-color: rgba(125, 255, 195, 0.35);
+      background: rgba(125, 255, 195, 0.08);
+    }
+    .chip.wait {
+      color: var(--warn);
+      border-color: rgba(240, 180, 90, 0.4);
+      background: rgba(240, 180, 90, 0.08);
+    }
+    .chip.hold {
+      color: var(--deny);
+      border-color: rgba(255, 122, 144, 0.35);
+      background: rgba(255, 122, 144, 0.08);
+    }
+
+    .now {
+      border: 1px solid var(--stroke-live);
+      border-radius: var(--r);
+      background: linear-gradient(180deg, rgba(92, 225, 255, 0.06), transparent 42%), var(--panel);
+      padding: 18px 18px 16px;
+      box-shadow: 0 0 40px rgba(92, 225, 255, 0.08);
+    }
+    .now-kicker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .now ol {
+      margin: 0 0 14px;
+      padding: 0;
+      list-style: none;
+    }
+    .now ol li {
+      position: relative;
+      padding: 5px 0 5px 18px;
+      max-width: 68ch;
+    }
+    .now ol li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 13px;
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: var(--cyan);
+      opacity: 0.7;
+    }
+    .next {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: baseline;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(92, 225, 255, 0.08);
+      border: 1px dashed var(--stroke-live);
+    }
+    .next b {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--cyan);
+    }
+
+    .how {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 16px 0 0;
+    }
+    .how div {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .how b {
+      display: block;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .take {
+      margin: 0 0 16px;
+      padding: 10px 12px 10px 14px;
+      border-left: 3px solid var(--cyan);
+      color: var(--muted);
+      max-width: 68ch;
+    }
+    .take strong { color: var(--text); font-weight: 600; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 16px 0 0;
+    }
+    .stats div {
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+    }
+    .stats b {
+      display: block;
+      font-size: 1.35rem;
+      letter-spacing: -0.04em;
+      font-weight: 600;
+    }
+    .stats span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .eras {
+      display: grid;
+      gap: 0;
+      margin: 8px 0 18px;
+      border: 1px solid var(--stroke);
+      border-radius: var(--r);
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .eras a {
+      display: grid;
+      grid-template-columns: 8px 52px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      color: inherit;
+      text-decoration: none;
+      border-top: 1px solid var(--stroke);
+    }
+    .eras a:first-child { border-top: 0; }
+    .eras a:hover {
+      background: var(--panel-2);
+      text-decoration: none;
+    }
+    .eras .bar { align-self: stretch; width: 8px; border-radius: 99px; }
+    .eras .when {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .eras .what { font-weight: 500; }
+    .eras .sub {
+      display: block;
+      font-weight: 400;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .eras .n {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .loop {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 8px 0 16px;
+    }
+    .loop article {
+      position: relative;
+      padding: 14px 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+      min-height: 132px;
+    }
+    .loop article::after {
+      content: "→";
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--cyan);
+      font-family: var(--mono);
+      z-index: 1;
+    }
+    .loop article:last-child::after { content: none; }
+    .loop i {
+      display: block;
+      font-family: var(--mono);
+      font-style: normal;
+      font-size: 11px;
+      color: var(--cyan);
+      margin-bottom: 6px;
+    }
+    .loop h3 { font-size: 14px; }
+    .loop p { margin: 0; font-size: 13px; color: var(--muted); max-width: none; }
+
+    .engine {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+      align-items: stretch;
+      margin: 8px 0 16px;
+    }
+    .engine .box {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+    }
+    .engine .box.old { border-color: rgba(240, 180, 90, 0.35); }
+    .engine .box.new { border-color: rgba(92, 225, 255, 0.4); }
+    .engine .who {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .engine ul {
+      margin: 8px 0 0;
+      padding-left: 1.1rem;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .engine .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-size: 12px;
+      gap: 4px;
+    }
+    .engine .arrow span {
+      width: 36px;
+      height: 2px;
+      background: var(--cyan);
+      border-radius: 99px;
+    }
+
+    .anatomy {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 8px 0 16px;
+    }
+    .mock {
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: #08090d;
+      padding: 12px;
+      min-height: 280px;
+    }
+    .mock .cap {
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+    .mock.broke .cap { color: var(--deny); }
+    .mock.ok .cap { color: var(--plus); }
+    .you-card, .thought, .changes, .tools, .answer, .cue {
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .you-card { background: rgba(92, 225, 255, 0.06); border-color: rgba(92, 225, 255, 0.22); }
+    .you-card .role {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .thought { color: var(--muted); }
+    .mock.broke .thought {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }
+    .changes { border-color: rgba(125, 255, 195, 0.25); }
+    .plus { color: var(--plus); font-family: var(--mono); }
+    .minus { color: var(--deny); font-family: var(--mono); }
+    .answer { color: var(--muted); }
+    .mock.broke .answer { font-size: 12px; }
+    .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .cue {
+      width: max-content;
+      margin-left: auto;
+      margin-right: auto;
+      background: var(--panel-2);
+    }
+    .mock.broke .cue {
+      width: 100%;
+      text-align: center;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .toast {
+      margin-left: auto;
+      width: max-content;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: #1a1d24;
+      border: 1px solid var(--stroke);
+      font-size: 11px;
+    }
+
+    .jobs { display: grid; gap: 12px; }
+    .job {
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: var(--panel);
+    }
+    .job header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .job header h3 { margin: 0; }
+    .diff {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      margin: 8px 0 0;
+    }
+    .diff .row {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 8px;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+    .diff .row.rm { background: rgba(255, 122, 144, 0.08); color: #ffc1cb; }
+    .diff .row.add { background: rgba(125, 255, 195, 0.08); color: #c8ffe6; }
+
+    .shots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    figure.shot {
+      margin: 0;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: #08090d;
+      overflow: hidden;
+    }
+    figure.shot.early { border-color: rgba(255, 122, 144, 0.28); }
+    figure.shot.later { border-color: rgba(92, 225, 255, 0.28); }
+    figure.shot a { display: block; text-decoration: none; color: inherit; }
+    figure.shot img {
+      display: block;
+      width: 100%;
+      height: 210px;
+      object-fit: cover;
+      object-position: top center;
+      background: #08090d;
+    }
+    figure.shot figcaption {
+      padding: 10px 12px 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    figure.shot figcaption b {
+      display: block;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .look {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--warn);
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+    .col {
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--panel);
+    }
+    .col h3 { font-size: 13px; color: var(--muted); font-weight: 500; }
+    .ticket {
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #08090d;
+      border: 1px solid var(--stroke);
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .ticket b { display: block; font-weight: 600; }
+    .ticket span { color: var(--muted); font-size: 12px; }
+
+    .refuse {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 0;
+    }
+    .stamp {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px dashed rgba(255, 122, 144, 0.4);
+      color: #ffc1cb;
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 122, 144, 0.7);
+    }
+
+    details {
+      margin: 12px 0 0;
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      padding: 8px 12px;
+      background: var(--panel);
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      padding: 6px 0;
+    }
+    details ul { margin: 8px 0 8px 1.1rem; color: var(--muted); max-width: 68ch; }
+    details li { margin: 0 0 6px; }
+
+    footer.end {
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--stroke);
+      padding-top: 16px;
+    }
+    footer.end p { max-width: none; }
+
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; width: min(100% - 24px, 920px); }
+      .spine { display: none; }
+      .how, .stats, .loop, .anatomy, .shots, .board, .engine { grid-template-columns: 1fr; }
+      .loop article::after { content: none; }
+      .engine .arrow { flex-direction: row; padding: 4px 0; }
+      .top { grid-template-columns: 1fr auto; }
+      .here { grid-column: 1 / -1; }
+    }
+    @media (max-width: 640px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      figure.shot img { height: 160px; }
+      .eras a { grid-template-columns: 8px 1fr; }
+      .eras .when, .eras .n { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#now">Skip to the 10-second card</a>
+
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="m" x1="14" y1="10" x2="52" y2="54">
+            <stop offset="0%" stop-color="#5ce1ff"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <path fill="url(#m)" d="M32 8C42 8 52 18 52 30C52 44 40 54 32 56C24 54 12 44 12 30C12 18 22 8 32 8Z"/>
+      </svg>
+      Forge <em>dogfood</em>
+    </div>
+    <div class="here" id="here">Now reading: <b>The 10-second card</b></div>
+    <nav aria-label="On this page">
+      <a href="#now" data-sec="now">Now</a>
+      <a href="#map" data-sec="map">Map</a>
+      <a href="#loop" data-sec="loop">Loop</a>
+      <a href="#engine" data-sec="engine">Engine</a>
+      <a href="#jobs" data-sec="jobs">Fixes</a>
+      <a href="#shots" data-sec="shots">Shots</a>
+      <a href="#open" data-sec="open">Open</a>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="spine" aria-label="Jump">
+      <a href="#now" data-sec="now"><span class="dot"></span><span><span class="lab">Now</span><span class="hint">10 seconds</span></span></a>
+      <a href="#map" data-sec="map"><span class="dot"></span><span><span class="lab">Map</span><span class="hint">five eras</span></span></a>
+      <a href="#loop" data-sec="loop"><span class="dot"></span><span><span class="lab">Loop</span><span class="hint">how we worked</span></span></a>
+      <a href="#engine" data-sec="engine"><span class="dot"></span><span><span class="lab">Engine</span><span class="hint">the one flip</span></span></a>
+      <a href="#jobs" data-sec="jobs"><span class="dot"></span><span><span class="lab">Fixes</span><span class="hint">by daily job</span></span></a>
+      <a href="#shots" data-sec="shots"><span class="dot"></span><span><span class="lab">Shots</span><span class="hint">real screen</span></span></a>
+      <a href="#open" data-sec="open"><span class="dot"></span><span><span class="lab">Still open</span><span class="hint">honest leftovers</span></span></a>
+    </aside>
+
+    <main>
+      <section id="now">
+        <article class="now">
+          <div class="now-kicker">
+            <span class="chip fyi">FYI</span>
+            <span class="chip">15 Aug → 8 Sep 2026</span>
+            <span class="chip wait">app still v0.6.6</span>
+          </div>
+          <h1>We used Forge to build Forge. Whatever broke, we fixed.</h1>
+          <ol>
+            <li>The goal was daily use — not a feature list.</li>
+            <li>Code now runs our own agent. It does not launch the Grok terminal.</li>
+            <li>Chat daily jobs (email, translate, attach, export) pass on desktop, twice.</li>
+            <li>A coding day works: Review write, Plan then do, tests, git, Deny, Retry, Revert.</li>
+            <li>Latest source is 8 Sep. The Windows installer was not cut for that work.</li>
+            <li>Unsigned install warning, Mac, and a brother walkthrough are still waiting.</li>
+          </ol>
+          <div class="next">
+            <b>Next</b>
+            <span>Resume the live loop, or park it. That is the only decision.</span>
+          </div>
+        </article>
+
+        <div class="how">
+          <div><b>1. The glass card first</b>You already have the whole story.</div>
+          <div><b>2. Click the map</b>Jump to one era. You do not need the others.</div>
+          <div><b>3. Folded lists are extra</b>Skip any <span class="mono">Show more</span> block.</div>
+        </div>
+
+        <div class="stats" aria-label="Scale of the work">
+          <div><b>90</b><span>commits after 29 Aug</span></div>
+          <div><b>22</b><span>features from live pain</span></div>
+          <div><b>43</b><span>measured later slices</span></div>
+          <div><b>0</b><span>installer after 0.6.6</span></div>
+        </div>
+      </section>
+
+      <section id="map">
+        <p class="take"><strong>Takeaway.</strong> Five eras, one goal. Each era replaced the last way of working — you can pick one and ignore the rest.</p>
+        <h2>The story in five blocks</h2>
+        <p class="muted">Click a row. Dates stay on the row so you never have to remember “when was that.”</p>
+        <div class="eras">
+          <a href="#era-council">
+            <span class="bar" style="background:var(--era-1)"></span>
+            <span class="when">15–28 Aug</span>
+            <span class="what">One feature at a time<span class="sub">Live pain became a spec, then a ship.</span></span>
+            <span class="n">22 shipped</span>
+          </a>
+          <a href="#era-vendor">
+            <span class="bar" style="background:var(--era-2)"></span>
+            <span class="when">29–30 Aug</span>
+            <span class="what">Code, all day, in the real app<span class="sub">Council off. Fix the next thing that blocked a turn.</span></span>
+            <span class="n">~200 diary lines</span>
+          </a>
+          <a href="#era-chat">
+            <span class="bar" style="background:var(--era-3)"></span>
+            <span class="when">~30 Aug</span>
+            <span class="what">Chat vs Claude / ChatGPT<span class="sub">Ten named jobs, twice on desktop. Then stop.</span></span>
+            <span class="n">C1–C10 + Q1</span>
+          </a>
+          <a href="#engine">
+            <span class="bar" style="background:var(--era-4)"></span>
+            <span class="when">31 Aug</span>
+            <span class="what">Swap the Code brain<span class="sub">Stop wrapping the Grok terminal. Own the coding loop.</span></span>
+            <span class="n">commit 1341742</span>
+          </a>
+          <a href="#era-loop">
+            <span class="bar" style="background:var(--era-5)"></span>
+            <span class="when">31 Aug–8 Sep</span>
+            <span class="what">Keep going, no finish line<span class="sub">Invent the next real job. Elect one fail. Prove it.</span></span>
+            <span class="n">43 slices</span>
+          </a>
+        </div>
+      </section>
+
+      <section id="loop">
+        <p class="take"><strong>Takeaway.</strong> Same four steps every time. We did not brainstorm a backlog in chat.</p>
+        <h2>The working loop</h2>
+        <div class="loop">
+          <article>
+            <i>1</i>
+            <h3>Do a real job</h3>
+            <p>Write a file. Run tests. Plan. Deny. Chat a follow-up. In the running app.</p>
+          </article>
+          <article>
+            <i>2</i>
+            <h3>Elect one fail</h3>
+            <p>Blocked job first. Then a lie. Then shouty chrome. Never five fixes at once.</p>
+          </article>
+          <article>
+            <i>3</i>
+            <h3>Smallest fix</h3>
+            <p>If chrome can silently regress, add a test that would have failed before.</p>
+          </article>
+          <article>
+            <i>4</i>
+            <h3>Recapture</h3>
+            <p>Same job again. Screenshot + json + a one-line log. Then invent a harder job.</p>
+          </article>
+        </div>
+        <p class="muted">We banned rewriting the same probe file over and over. We banned a second host on port 8788. We banned inventing a skills marketplace to “look complete.”</p>
+      </section>
+
+      <section id="engine">
+        <p class="take"><strong>Takeaway.</strong> The one product flip: Code stopped being a skin on the Grok terminal.</p>
+        <h2>Before and after the brain swap</h2>
+        <div class="engine">
+          <div class="box old">
+            <div class="who">Until 31 Aug · guest</div>
+            <h3>Grok terminal in a window</h3>
+            <ul>
+              <li>Code launched <code>grok agent stdio</code></li>
+              <li>Skills / MCP / children were the vendor’s</li>
+              <li>Our agent was the Chat backup</li>
+              <li>A live turn could die at 120 seconds</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true"><span></span>31 Aug<span></span></div>
+          <div class="box new">
+            <div class="who">Now · house</div>
+            <h3>Forge owns the coding loop</h3>
+            <ul>
+              <li>Code runs grok-acp only</li>
+              <li>The badge says Grok — not “CLI missing”</li>
+              <li>Review, diffs, Plan stay ours</li>
+              <li>Chat was already on this agent</li>
+            </ul>
+          </div>
+        </div>
+        <p>We still show vendor Skills and MCP when they exist. We do not build a second Grok marketplace inside Forge.</p>
+      </section>
+
+      <section id="jobs">
+        <p class="take"><strong>Takeaway.</strong> Grouped by the job you were trying to do — not by date. Read one card and stop.</p>
+        <h2>What we had to fix</h2>
+
+        <div class="anatomy">
+          <div class="mock broke">
+            <div class="cap">Early Code turn · 29 Aug</div>
+            <div class="you-card">
+              <div class="role">You</div>
+              Create PROBE.md with PROBE-OK
+              <div class="chip-row"><span class="chip">THOUGHT</span><span class="chip">Selection: inherited</span></div>
+            </div>
+            <div class="thought">The user wants me to create a file… The file was written… I should stop…</div>
+            <div class="answer">Creating `PROBE.md`. Created `PROBE.md`.</div>
+            <div class="toast">Allowed write ×</div>
+            <div class="cue">Your turn — type the next message below</div>
+          </div>
+          <div class="mock ok">
+            <div class="cap">Same job, later</div>
+            <div class="you-card">
+              <div class="role">You</div>
+              Create CARD.md with CARD-OK
+              <div class="role">Grok · grok-4.6 · review</div>
+            </div>
+            <div class="thought">▸ Thought</div>
+            <div class="changes">
+              File changes · CARD.md · Accepted
+              <div class="plus">+CARD-OK</div>
+            </div>
+            <div class="tools">write CARD.md · Completed</div>
+            <div class="answer">Created CARD.md. No other files were edited.</div>
+            <div class="cue">Your turn</div>
+          </div>
+        </div>
+        <p class="muted">Left is a real early session (shouty thought, duplicate “created”, toast on the composer). Right is the quiet shape we aimed at.</p>
+
+        <div class="jobs">
+          <article class="job" id="era-council">
+            <header>
+              <span class="chip" style="color:var(--era-1);border-color:rgba(167,139,250,.4)">15–28 Aug</span>
+              <h3>Live pain became features</h3>
+            </header>
+            <p class="muted">We were not guessing. Each item started from a stuck session or a screenshot.</p>
+            <div class="diff">
+              <div class="row rm"><span>−</span><span>Windows ran Unix commands and failed</span></div>
+              <div class="row add"><span>+</span><span>Tool runs pick the right shell and stay inspectable</span></div>
+              <div class="row rm"><span>−</span><span>Turns died, thought looked like the answer, edits hid in the rail</span></div>
+              <div class="row add"><span>+</span><span>Plan → File changes → Verify → Git review, live follow, named Chat home, PDF text</span></div>
+            </div>
+            <details>
+              <summary>The 22 names, if you need them</summary>
+              <ul>
+                <li>Trust in tools, durable runs, Chat | Code</li>
+                <li>Trusted allowlist, inspect edits, test panel, Plan, repo recipe</li>
+                <li>Live follow, git review, named projects, PDF extract, Trusted delete/rename</li>
+                <li>Live streams, spawn Grok agent, Skills, children, browser, syntax</li>
+                <li>Vendor MCP + hooks, artifacts beside the bubble, run actually finishes, mixed Skills catalog</li>
+              </ul>
+            </details>
+          </article>
+
+          <article class="job" id="era-vendor">
+            <header>
+              <span class="chip wait">29–30 Aug</span>
+              <h3>A coding turn in the real window</h3>
+            </header>
+            <div class="diff">
+              <div class="row rm"><span>−</span><span>Review label, but writes landed with no Allow dock (terminal config said always-approve)</span></div>
+              <div class="row add"><span>+</span><span>Forge policy wins: Review asks, Trusted auto-applies, Bypass is explicit</span></div>
+              <div class="row rm"><span>−</span><span>Live turn killed at 120s · File changes missing · “Diff unavailable”</span></div>
+              <div class="row add"><span>+</span><span>No handshake timeout on the prompt · relative path · real before/after hunk</span></div>
+              <div class="row rm"><span>−</span><span>Failed shell said Completed · first command missed the folder</span></div>
+              <div class="row add"><span>+</span><span>Non-zero exit is Failed · first shell is Set-Location then the command</span></div>
+            </div>
+          </article>
+
+          <article class="job" id="era-chat">
+            <header>
+              <span class="chip done">Chat bar · done</span>
+              <h3>Everyday Chat without sending people to Code</h3>
+            </header>
+            <p>Ten jobs, desktop twice, then a quality pass. Copy on the answer. Attach shows the filename, not a dump. Named home survives reload. Long answers Open beside the bubble. Stop / Retry / Export work. Chat never paints Plan.</p>
+          </article>
+
+          <article class="job">
+            <header>
+              <span class="chip done">honesty</span>
+              <h3>Deny, Retry, Revert, Plan — say what actually happened</h3>
+            </header>
+            <div class="diff">
+              <div class="row rm"><span>−</span><span>Deny still painted Answered · Activity said Edited for a write that never landed</span></div>
+              <div class="row add"><span>+</span><span>Denied + Retry · Activity says Skipped · disk unchanged</span></div>
+              <div class="row rm"><span>−</span><span>Retry after Deny auto-applied the denied path (session grant leaked)</span></div>
+              <div class="row add"><span>+</span><span>Denied paths stay Review even after Allow for this session on another file</span></div>
+              <div class="row rm"><span>−</span><span>Accept plan stuck on “Settle the card below” after the agent was already done</span></div>
+              <div class="row add"><span>+</span><span>Accept folds the journal · Plan lists only real file mutations, not test runs or Math.min</span></div>
+              <div class="row rm"><span>−</span><span>Revert restored the file but the chip still said Accepted</span></div>
+              <div class="row add"><span>+</span><span>Chip becomes Reverted · File changes owns that chrome</span></div>
+            </div>
+          </article>
+
+          <article class="job">
+            <header>
+              <span class="chip">chrome</span>
+              <h3>Stop shouting. Keep You / Thought / Changes / composer from covering each other</h3>
+            </header>
+            <p class="muted">This was most of the 29–30 Aug diary and a lot of the later loop. Same class, many pixels.</p>
+            <div class="diff">
+              <div class="row rm"><span>−</span><span>YOUR TURN — TYPE THE NEXT MESSAGE BELOW · THOUGHT · plasma Send on empty</span></div>
+              <div class="row add"><span>+</span><span>Your turn chip · Thought folds · disabled Send is quiet</span></div>
+              <div class="row rm"><span>−</span><span>Open folder was the hero on an already-open project · New session was a well</span></div>
+              <div class="row add"><span>+</span><span>Folder is an icon · New session is text · @file highlights then Enter inserts</span></div>
+              <div class="row rm"><span>−</span><span>Ctrl+K listed nothing · / hid no Skills · Loading MCP on an empty finished turn</span></div>
+              <div class="row add"><span>+</span><span>Palette lists commands · Skills is a real list · empty settled runs stay empty</span></div>
+            </div>
+          </article>
+
+          <article class="job" id="era-loop">
+            <header>
+              <span class="chip" style="color:var(--era-5);border-color:rgba(196,181,253,.4)">31 Aug–8 Sep</span>
+              <h3>Harder jobs through the same window</h3>
+            </header>
+            <p>After the named journeys went green, the rule became: invent the next coding-day job (nested tests, Plan then do, follow-up edit, git via shell) and fix the first fail. Latest commit on master: <code>cc293d9</code> (8 Sep).</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="shots">
+        <p class="take"><strong>Takeaway.</strong> These are real captures from the loop. Red frame = early pain. Cyan frame = after a fix. Click any shot to open full size.</p>
+        <h2>Evidence on disk</h2>
+        <div class="shots">
+          <figure class="shot early">
+            <a href="dogfood/edit-turn.png">
+              <img src="dogfood/edit-turn.png" alt="Early Review write: plasma Open folder, shouty THOUGHT, Allowed write toast on the composer" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Review write, 29 Aug</b>
+              The dock finally asked. Look bottom-right: an Allowed write toast sits on the composer. Look left: Open folder is still the loudest button on an open project.
+              <div class="look">Look at: toast · Open folder glow · THOUGHT</div>
+            </figcaption>
+          </figure>
+          <figure class="shot early">
+            <a href="dogfood/forge-file-changes.png">
+              <img src="dogfood/forge-file-changes.png" alt="File changes lists an absolute Windows path and Diff unavailable" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>File changes exists — the diff does not</b>
+              Path is the full <code>C:\Dev\…</code> string. The card says Diff unavailable. The answer glues “stop.Wrote”.
+              <div class="look">Look at: Diff unavailable · absolute path</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-write-diff.png">
+              <img src="dogfood/forge-write-diff.png" alt="File changes with Hide diff and a plus line DIFF-OK" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Same class, one slice later</b>
+              File changes shows a relative path and <span class="plus">+DIFF-OK</span>. Hide diff is on the card. The write is inspectable.
+              <div class="look">Look at: +DIFF-OK · Hide diff</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-you-card-meta.png">
+              <img src="dogfood/forge-you-card-meta.png" alt="You card holds Grok Code, model, and policy; File changes has CARD-OK" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Identity lives in the You card</b>
+              Grok · model · policy sit with the prompt, so they are not tucked under the strip. Thought is a fold. File changes has the hunk.
+              <div class="look">Look at: You meta · Thought fold · +CARD-OK</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-skills-palette.png">
+              <img src="dogfood/forge-skills-palette.png" alt="Typing slash opens a Skills list with compact, always-approve, context" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Slash lists real Skills</b>
+              Early on, one bad catalog member wiped all 103 commands. After the fix, <code>/</code> shows compact, context, plugins.
+              <div class="look">Look at: Skills list above the composer</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-plan-review.png">
+              <img src="dogfood/forge-plan-review.png" alt="Plan-armed turn with enter/exit plan mode tool rows and a numbered plan in the answer" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Plan is a phase, not a sticker</b>
+              Enter plan mode / exit plan mode show in the tool list. The answer holds a numbered plan. Later slices made Accept actually record, and hid session plan.md from File changes.
+              <div class="look">Look at: enter/exit plan mode rows · 1. 2. 3.</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-your-turn-chip.png">
+              <img src="dogfood/forge-your-turn-chip.png" alt="Settled turn with Thought fold, one shell row, Answered chip, Your turn chip above composer" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Idle is a chip, not a banner</b>
+              Thought folded. One command row. Answered is small. Your turn sits above the composer. Send is dim until there is a draft. Shell reads PowerShell.
+              <div class="look">Look at: Your turn chip · dim Send · PowerShell</div>
+            </figcaption>
+          </figure>
+          <figure class="shot later">
+            <a href="dogfood/forge-palette4.png">
+              <img src="dogfood/forge-palette4.png" alt="Command palette listing Open folder, Switch to Chat, Cancel run, Retry" width="1600" height="900" loading="lazy" decoding="async" />
+            </a>
+            <figcaption>
+              <b>Ctrl+K used to list nothing</b>
+              The overlay never mounted the list. After the fix: Open folder, mode switch, cancel, retry — a real command list.
+              <div class="look">Look at: the command rows</div>
+            </figcaption>
+          </figure>
+        </div>
+        <p class="muted" style="margin-top:14px">Hundreds more live under <code>docs/dogfood/</code>. Do not treat the KEEP overwrite series as product history — that was the loop spinning on one file.</p>
+      </section>
+
+      <section id="open">
+        <p class="take"><strong>Takeaway.</strong> The loop is paused only if you say so. These leftovers are still true on disk.</p>
+        <h2>Still open</h2>
+        <div class="board">
+          <div class="col">
+            <h3>Waiting on you / a tag</h3>
+            <div class="ticket"><b>0.6.7 installer</b><span>Source is on master. No GitHub release.</span></div>
+            <div class="ticket"><b>Installer SHA in the app</b><span>Honest first-run. Needs the next published build.</span></div>
+            <div class="ticket"><b>Resume or park the loop</b><span>Operating file: FORGE_PREFERRED_GOAL.md</span></div>
+          </div>
+          <div class="col">
+            <h3>Blocked</h3>
+            <div class="ticket"><b>Signed installer</b><span>Needs a code-signing cert.</span></div>
+            <div class="ticket"><b>Mac</b><span>Parked. Windows first.</span></div>
+            <div class="ticket"><b>Vendor worktree / TUI handoff</b><span>Needs fields xAI does not give us yet.</span></div>
+          </div>
+          <div class="col">
+            <h3>Held on purpose</h3>
+            <div class="ticket"><b>Brother week</b><span>Chat-only walkthrough. Operator hold.</span></div>
+            <div class="ticket"><b>Mermaid</b><span>Ready, later than the installer remainder.</span></div>
+            <div class="ticket"><b>Suite flakes</b><span>Occasional file-kill, port race, watchdog churn.</span></div>
+          </div>
+        </div>
+
+        <h3 style="margin-top:22px">We would not build</h3>
+        <div class="refuse">
+          <span class="stamp">Forge skills engine</span>
+          <span class="stamp">Forge MCP marketplace</span>
+          <span class="stamp">Chat on the Grok terminal</span>
+          <span class="stamp">Pixel clone of Claude Code</span>
+          <span class="stamp">Computer use</span>
+          <span class="stamp">Auto plan-vs-build classifier</span>
+          <span class="stamp">Cloud agent fleets</span>
+        </div>
+
+        <details>
+          <summary>Where the receipts live</summary>
+          <ul>
+            <li><code>docs/FORGE_PREFERRED_GOAL.md</code> — current loop log</li>
+            <li><code>docs/ACP_CODE_GOAL.md</code> — engine flip + named journeys</li>
+            <li><code>docs/CHAT_DAILY_GOAL.md</code> — Chat bar, marked complete</li>
+            <li><code>docs/FORGE_DAILY_GOAL.md</code> — 29–30 Aug Code diary</li>
+            <li><code>docs/releases/v0.6.6.md</code> — last published installer</li>
+            <li>Git: <code>1341742</code> house agent · <code>cc293d9</code> 8 Sep honesty/catch-up</li>
+          </ul>
+        </details>
+
+        <div class="next" style="margin-top:22px">
+          <b>Next</b>
+          <span>Resume the live loop, or park it. That is the only decision.</span>
+        </div>
+      </section>
+
+      <footer class="end">
+        <p>Briefing for a short working memory: one chip, one next action, eras you can skip. Visual language is Voidglass. Shots are from <code>docs/dogfood/</code>, 29 Aug–8 Sep 2026. This page does not claim a 0.6.7 release.</p>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var here = document.getElementById("here");
+      var labels = {
+        now: "The 10-second card",
+        map: "The story in five blocks",
+        loop: "The working loop",
+        engine: "The brain swap",
+        jobs: "What we had to fix",
+        shots: "Evidence on disk",
+        open: "Still open"
+      };
+      var links = document.querySelectorAll("[data-sec]");
+      var order = ["now", "map", "loop", "engine", "jobs", "shots", "open"];
+      var visible = {};
+
+      function setCurrent(id) {
+        if (!labels[id]) return;
+        here.innerHTML = "Now reading: <b>" + labels[id] + "</b>";
+        links.forEach(function (a) {
+          a.setAttribute("aria-current", a.getAttribute("data-sec") === id ? "true" : "false");
+        });
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          visible[e.target.id] = e.isIntersecting;
+        });
+        var current = order[0];
+        for (var i = 0; i < order.length; i++) {
+          if (visible[order[i]]) { current = order[i]; break; }
+        }
+        setCurrent(current);
+      }, { rootMargin: "-20% 0px -55% 0px", threshold: 0.01 });
+
+      order.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) io.observe(el);
+      });
+      setCurrent("now");
+    })();
+  </script>
+</body>
+</html>

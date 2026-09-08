@@ -313,6 +313,22 @@ describe("live-turn-attention App wiring", () => {
     assert.equal(screen.queryByText("No response") === null, true);
   });
 
+  it("pending diff lock names Changes, not a missing action-dock card", async () => {
+    const { ws } = await mountApp("code");
+    ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "activity_update", activity: writeActivity() }, 2) as unknown as Record<string, unknown>);
+    ws.emit(envelope({ kind: "decision_request", request: diffDecision() }, 3) as unknown as Record<string, unknown>);
+    const changesDock = await screen.findByRole("region", { name: CHANGES_DOCK_LABEL });
+    assert.ok(within(changesDock).getByRole("button", { name: "Accept" }));
+    assert.equal(screen.queryByRole("region", { name: "Grok wants to run a command" }) === null, true);
+    const composer = screen.getByLabelText("Message to agent") as HTMLTextAreaElement;
+    assert.equal(composer.placeholder, "Settle this in Changes.");
+    assert.notEqual(composer.placeholder, "Settle the card below");
+    assert.notEqual(composer.placeholder, "Settle this in the card below.");
+    assert.ok(screen.getByText("Settle this in Changes."));
+    assert.equal(screen.queryByText("Settle this in the card below.") === null, true);
+  });
+
   it("terminal leftover permission drops the card and unlocks Send", async () => {
     const { ws } = await mountApp("code");
     ws.emit(envelope({ kind: "run_started", run: liveSnapshot() }, 1) as unknown as Record<string, unknown>);

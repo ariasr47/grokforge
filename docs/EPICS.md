@@ -1,7 +1,8 @@
 # Forge — epics (groomed)
 
 **Date:** 2026-08-27  
-**Status:** Grooming board. S1 in-flight (`honest-unsigned-first-run`). G1, G2, and C1 shipped 2026-08-27 (uncommitted).
+**Living ladder:** `docs/PRODUCT_ROADMAP.md` (refreshed 2026-09-08 — Code on grok-acp; Gate hunts in §9).  
+**Status:** Grooming board. S1 in-flight (`honest-unsigned-first-run`, AC5 waits on next installer). G1, G2, and C1 shipped 2026-08-27.
 
 Legend: **DONE** · **READY** · **BLOCKED** · **DEFERRED** (operator hold) · **PARKED** (later era) · **ANTI** (do not)
 

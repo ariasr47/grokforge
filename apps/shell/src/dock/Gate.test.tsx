@@ -246,6 +246,7 @@ test("plan tier: settling disables Accept and shows the settling status", () => 
   );
   assert.ok(screen.getByRole("status"));
   assert.equal(screen.getByRole("button", { name: PLAN_ACCEPT }).hasAttribute("disabled"), true);
+  assert.equal(screen.getByRole("button", { name: PLAN_KEEP }).hasAttribute("disabled"), true);
 });
 
 test("plan tier: a decision failure shows the error and a Try again in place of the actions", () => {

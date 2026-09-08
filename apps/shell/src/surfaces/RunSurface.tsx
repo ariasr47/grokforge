@@ -34,7 +34,7 @@ import { MarkdownBody } from "../thread/markdown";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { elevateArtifact, type ElevateKind } from "../projections/artifactEligibility";
-import { SETTLE_IN_DOCK } from "../lib/copyDock";
+import { SETTLE_IN_CHANGES, SETTLE_IN_DOCK } from "../lib/copyDock";
 import { Receipts } from "../thread/Receipts";
 import type { ChatMessage } from "../thread/messageBlocks";
 import { formatToolInput, formatToolOutput } from "../projections/toolFormat";
@@ -589,7 +589,9 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
             <strong>{d.title}</strong>
             <p>{d.detail}</p>
             {d.status === "pending" ? (
-              <p className="run-decision-dock-hint">{SETTLE_IN_DOCK}</p>
+              <p className="run-decision-dock-hint">
+                {d.kind === "diff" ? SETTLE_IN_CHANGES : SETTLE_IN_DOCK}
+              </p>
             ) : null}
           </div>
         ))}

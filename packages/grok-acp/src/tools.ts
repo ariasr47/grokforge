@@ -195,6 +195,130 @@ export interface PendingEdit {
   diff: string | null;
 }
 
+type EditOp = { kind: "eq" | "del" | "add"; text: string };
+
+const DIFF_CONTEXT = 3;
+const LCS_MAX_CELLS = 2_000_000;
+
+function lcsEdit(before: string[], after: string[]): EditOp[] {
+  const n = before.length;
+  const m = after.length;
+  if (n === 0) return after.map((text) => ({ kind: "add" as const, text }));
+  if (m === 0) return before.map((text) => ({ kind: "del" as const, text }));
+  if (n * m > LCS_MAX_CELLS) {
+    return [
+      ...before.map((text) => ({ kind: "del" as const, text })),
+      ...after.map((text) => ({ kind: "add" as const, text })),
+    ];
+  }
+  const dp: number[][] = new Array(n + 1);
+  for (let i = 0; i <= n; i++) dp[i] = new Array<number>(m + 1).fill(0);
+  for (let i = 1; i <= n; i++) {
+    const bi = before[i - 1];
+    const row = dp[i]!;
+    const prev = dp[i - 1]!;
+    for (let j = 1; j <= m; j++) {
+      row[j] = bi === after[j - 1] ? prev[j - 1]! + 1 : Math.max(prev[j]!, row[j - 1]!);
+    }
+  }
+  const ops: EditOp[] = [];
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    if (before[i - 1] === after[j - 1]) {
+      ops.push({ kind: "eq", text: before[i - 1]! });
+      i -= 1;
+      j -= 1;
+    } else if (dp[i - 1]![j]! >= dp[i]![j - 1]!) {
+      ops.push({ kind: "del", text: before[i - 1]! });
+      i -= 1;
+    } else {
+      ops.push({ kind: "add", text: after[j - 1]! });
+      j -= 1;
+    }
+  }
+  while (i > 0) {
+    ops.push({ kind: "del", text: before[i - 1]! });
+    i -= 1;
+  }
+  while (j > 0) {
+    ops.push({ kind: "add", text: after[j - 1]! });
+    j -= 1;
+  }
+  ops.reverse();
+  return ops;
+}
+
+function shortestEdit(before: string[], after: string[]): EditOp[] {
+  let start = 0;
+  const n = before.length;
+  const m = after.length;
+  while (start < n && start < m && before[start] === after[start]) start += 1;
+  let endBefore = n;
+  let endAfter = m;
+  while (
+    endBefore > start &&
+    endAfter > start &&
+    before[endBefore - 1] === after[endAfter - 1]
+  ) {
+    endBefore -= 1;
+    endAfter -= 1;
+  }
+  const prefix: EditOp[] = before.slice(0, start).map((text) => ({ kind: "eq" as const, text }));
+  const suffix: EditOp[] = before.slice(endBefore).map((text) => ({ kind: "eq" as const, text }));
+  const mid = lcsEdit(before.slice(start, endBefore), after.slice(start, endAfter));
+  return [...prefix, ...mid, ...suffix];
+}
+
+function emitHunks(ops: EditOp[], context: number): string[] {
+  type Numbered = EditOp & { oldLine: number; newLine: number };
+  const numbered: Numbered[] = [];
+  let oldLine = 1;
+  let newLine = 1;
+  for (const op of ops) {
+    numbered.push({ ...op, oldLine, newLine });
+    if (op.kind === "eq") {
+      oldLine += 1;
+      newLine += 1;
+    } else if (op.kind === "del") {
+      oldLine += 1;
+    } else {
+      newLine += 1;
+    }
+  }
+  const changeIdx: number[] = [];
+  for (let i = 0; i < numbered.length; i++) {
+    if (numbered[i]!.kind !== "eq") changeIdx.push(i);
+  }
+  if (changeIdx.length === 0) return [];
+  const ranges: Array<[number, number]> = [];
+  for (const idx of changeIdx) {
+    const start = Math.max(0, idx - context);
+    const end = Math.min(numbered.length - 1, idx + context);
+    const last = ranges[ranges.length - 1];
+    if (last && start <= last[1] + 1) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      ranges.push([start, end]);
+    }
+  }
+  const out: string[] = [];
+  for (const [s, e] of ranges) {
+    const slice = numbered.slice(s, e + 1);
+    const oldCount = slice.filter((x) => x.kind !== "add").length;
+    const newCount = slice.filter((x) => x.kind !== "del").length;
+    const oldStart = oldCount === 0 ? 0 : slice.find((x) => x.kind !== "add")!.oldLine;
+    const newStart = newCount === 0 ? 0 : slice.find((x) => x.kind !== "del")!.newLine;
+    out.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`);
+    for (const x of slice) {
+      if (x.kind === "eq") out.push(` ${x.text}`);
+      else if (x.kind === "del") out.push(`-${x.text}`);
+      else out.push(`+${x.text}`);
+    }
+  }
+  return out;
+}
+
 function simpleUnifiedDiff(
   filePath: string,
   before: string,
@@ -202,14 +326,11 @@ function simpleUnifiedDiff(
 ): string {
   const a = before.split(/\r?\n/);
   const b = after.split(/\r?\n/);
-  const lines = [
-    `--- a/${filePath}`,
-    `+++ b/${filePath}`,
-    `@@ -1,${a.length} +1,${b.length} @@`,
-  ];
-  for (const line of a) lines.push(`-${line}`);
-  for (const line of b) lines.push(`+${line}`);
-  return lines.join("\n");
+  const headers = [`--- a/${filePath}`, `+++ b/${filePath}`];
+  const hunks = emitHunks(shortestEdit(a, b), DIFF_CONTEXT);
+  if (hunks.length === 0) return `${headers.join("\n")}\n`;
+  const body = [...headers, ...hunks].join("\n");
+  return body.endsWith("\n") ? body : `${body}\n`;
 }
 
 /** Minimal unified-diff apply for single-file patches produced by simpleUnifiedDiff or simple hunks. */

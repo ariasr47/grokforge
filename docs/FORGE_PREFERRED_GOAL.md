@@ -1,11 +1,14 @@
 # Forge preferred platform — continuous measured improvement
 
+> **Superseded as the operating `/goal` on 2026-09-08** by `docs/FORGE_EVER_GOAL.md`.  
+> This file stays as the 31 Aug–8 Sep slice log. Do not paste §0 below into a new session.
+
 **Surface:** the whole Forge app (Code, Chat, desktop chrome, composer, docks, motion).  
 **Engine:** in-house **grok-acp** on both tabs. Do not spawn `grok.exe agent stdio`.  
 **Log:** append one observe / elect / change / prove line per slice in §9.  
-**Launch:** paste the `/goal` block in §0.
+**Launch:** paste the `/goal` block in `docs/FORGE_EVER_GOAL.md` §0.
 
-This **supersedes the STOP bar** in `docs/ACP_CODE_GOAL.md` and `docs/CHAT_DAILY_GOAL.md`. Those files stay as evidence of past bars. They are not the destination. Pause is first-class and **only** the operator can stop the loop.
+This **superseded the STOP bar** in `docs/ACP_CODE_GOAL.md` and `docs/CHAT_DAILY_GOAL.md`. Those files stay as evidence of past bars. Pause is first-class and **only** the operator can stop the loop.
 
 We are not a TUI skin, not a VS Code clone, not a second Grok Build marketplace.
 

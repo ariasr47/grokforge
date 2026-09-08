@@ -1,6 +1,37 @@
 /** Dock / gate chrome copy. Host grants last until the folder changes. */
 export const SETTLE_CARD_BELOW = "Settle the card below";
 export const SETTLE_IN_DOCK = "Settle this in the card below.";
+/** Pending diff: ActionDock is empty; Accept/Reject live in Changes. */
+export const SETTLE_IN_CHANGES = "Settle this in Changes.";
+
+/** Operator-facing lock copy: name Changes when it owns Accept; dock-below only when the action dock owns the card. */
+export function settlePendingCopy(opts: {
+  actionDockOwns: boolean;
+  changesOwns: boolean;
+}): string | null {
+  if (opts.actionDockOwns) return SETTLE_CARD_BELOW;
+  if (opts.changesOwns) return SETTLE_IN_CHANGES;
+  return null;
+}
+
+/** Compose lock copy from the live queues. Pending diffs are Changes-owned even though hasDockOwnedPending counts them. */
+export function settleLockCopy(opts: {
+  oauth: boolean;
+  permissionCount: number;
+  planPending: boolean;
+  dockOwnedPending: boolean;
+  changeCount: number;
+}): string | null {
+  const actionDockOwns =
+    opts.oauth ||
+    opts.permissionCount > 0 ||
+    opts.planPending ||
+    (opts.dockOwnedPending && opts.changeCount === 0);
+  return settlePendingCopy({
+    actionDockOwns,
+    changesOwns: opts.changeCount > 0,
+  });
+}
 
 // Shell tier (amber) — Grok wants to run a shell command.
 export const GATE_SHELL_TITLE = "Grok wants to run a command";

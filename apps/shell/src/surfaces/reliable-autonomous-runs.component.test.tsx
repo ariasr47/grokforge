@@ -272,7 +272,7 @@ test("recovery_confirmation decisions settle in the dock now — no inline Recov
     assert.ok(screen.getByText("Recovery needed"));
     assert.ok(screen.getByText("Restore edit-1 to its state before the last write?"));
     assert.equal(screen.queryByRole("button", { name: "Recover" }) === null, true, "recovery settle stays in the action dock");
-    assert.ok(screen.getByText(SETTLE_IN_DOCK), "keeps the same dock hint permission/diff cards show while pending");
+    assert.ok(screen.getByText(SETTLE_IN_DOCK), "recovery still settles in the action dock, not Changes");
     assert.equal(calls, 0, "settle stays in the action dock, not RunSurface");
   } finally { api.editRecovery = original; }
 });

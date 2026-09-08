@@ -202,7 +202,8 @@ export function TranscriptBody({
           }
           packagedWindowsHonesty={isPackagedWindowsInstallerSession()}
         />
-      ) : messages.length === 0 && !normalizedRunVisible && hostOk && !skillsOpen && atSuggestions.length === 0 ? (
+      ) : messages.length === 0 && !normalizedRunVisible && hostOk && !skillsOpen && atSuggestions.length === 0
+        && !(productMode === "code" && Boolean(state?.workspace)) ? (
         !state?.hasApiKey && !vendorCode ? (
           <EmptyStates
             kind="signed-out"
@@ -210,11 +211,11 @@ export function TranscriptBody({
             onSignIn={startGrokSignIn}
           />
         ) : (
-          // Task 13 — Home screen. Replaces the old "ready"/
-          // "no-workspace" EmptyStates kinds: mode-agnostic (see
-          // homeNeedsYou/homeRecentWorkspaces/homeChatHomes above),
-          // so it renders the same regardless of productMode or
-          // whether a Code workspace happens to be open.
+          // Home is the empty landing for Chat, and for Code with no
+          // folder. A bound Code workspace with an empty session is the
+          // Code canvas (composer + Your turn), not Good morning —
+          // 2026-09-08 dogfood: Home covered New session and AGENTS.md
+          // never loaded.
           <HomeScreen
             // No OS user name is available anywhere on `state`,
             // the desktop bridge, or api.ts (checked) — greet

@@ -333,9 +333,9 @@ describe("AC12f — whole-store granularity (GATE Q N-6)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
     assert.equal(screen.queryByText("Forge didn't find your earlier conversations.") === null, true);
     assert.equal(screen.queryByText("Welcome to Forge") === null, true);
-    // Task 13 — "Code continuum" (the old ready-kind EmptyStates heading) is
-    // gone; the Home screen renders instead, regardless of product mode.
-    assert.ok(screen.getByPlaceholderText("Search sessions…"));
+    // Bound Code + empty session is the Code canvas, not Home (2026-09-08).
+    assert.equal(screen.queryByPlaceholderText("Search sessions…") === null, true);
+    assert.equal(screen.queryByRole("heading", { name: /^Good (morning|afternoon|evening)\.$/ }) === null, true);
     assert.equal(screen.getAllByText("New session").length >= 1, true);
     assert.equal(screen.queryByText("New chat") === null, true);
   });

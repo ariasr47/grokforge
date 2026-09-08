@@ -14,7 +14,7 @@ export function unifiedDiffLines(diff: string): string[] {
 
 /** File changes already names the path — drop redundant --- / +++ headers. */
 export function fileChangesDiffLines(diff: string): string[] {
-  const lines = unifiedDiffLines(diff).filter(
+  const lines = unifiedDiffLines(compactUnifiedDiff(diff)).filter(
     (line) => !line.startsWith("---") && !line.startsWith("+++"),
   );
   const hunks = lines.filter((line) => line.startsWith("@@"));
@@ -30,8 +30,7 @@ export function fileChangesDiffLines(diff: string): string[] {
   return lines;
 }
 
-/** Added/removed line counts across a whole unified diff — the `±` stat. */
-export function countDiffLines(diff: string): { added: number; removed: number } {
+function countDiffLinesRaw(diff: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
   for (const line of unifiedDiffLines(diff)) {
@@ -39,6 +38,13 @@ export function countDiffLines(diff: string): { added: number; removed: number }
     else if (line.startsWith("-") && !line.startsWith("---")) removed += 1;
   }
   return { added, removed };
+}
+
+/** Added/removed line counts across a whole unified diff — the `±` stat.
+ *  Whole-file `write_file` rewrites (every line deleted then added, no
+ *  context) are compacted first so a 1-line insert is +1 −0, not +N −N. */
+export function countDiffLines(diff: string): { added: number; removed: number } {
+  return countDiffLinesRaw(compactUnifiedDiff(diff));
 }
 
 export type DiffHunkLineKind = "add" | "del" | "context";
@@ -68,7 +74,7 @@ const HUNK_HEADER_RE = /^(@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@)[ \t]*(.*)$/;
  *  no `@@` header (tiny one-hunk writes — see `fileChangesDiffLines`) fold into one
  *  synthetic hunk numbered from 1 so a preview still has something to show. */
 export function splitDiffHunks(diff: string): DiffHunk[] {
-  const rawLines = unifiedDiffLines(diff);
+  const rawLines = unifiedDiffLines(compactUnifiedDiff(diff));
   const hunks: DiffHunk[] = [];
   let current: DiffHunk | null = null;
   let oldLine = 1;
@@ -150,4 +156,126 @@ export function splitUnifiedDiff(diff: string): {
     }
   }
   return { before, after, header };
+}
+
+const COMPACT_CONTEXT = 3;
+const COMPACT_MAX_CELLS = 1_500_000;
+
+type EditOp = { kind: "eq" | "del" | "add"; text: string };
+
+function hasHunkContext(diff: string): boolean {
+  return unifiedDiffLines(diff).some((line) => line.startsWith(" "));
+}
+
+function shortestEdit(before: string[], after: string[]): EditOp[] {
+  const n = before.length;
+  const m = after.length;
+  const dp: number[][] = new Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    dp[i] = new Array<number>(m + 1).fill(0);
+  }
+  for (let i = 1; i <= n; i++) {
+    const bi = before[i - 1];
+    const row = dp[i]!;
+    const prev = dp[i - 1]!;
+    for (let j = 1; j <= m; j++) {
+      row[j] = bi === after[j - 1] ? prev[j - 1]! + 1 : Math.max(prev[j]!, row[j - 1]!);
+    }
+  }
+  const ops: EditOp[] = [];
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    if (before[i - 1] === after[j - 1]) {
+      ops.push({ kind: "eq", text: before[i - 1]! });
+      i -= 1;
+      j -= 1;
+    } else if (dp[i - 1]![j]! >= dp[i]![j - 1]!) {
+      ops.push({ kind: "del", text: before[i - 1]! });
+      i -= 1;
+    } else {
+      ops.push({ kind: "add", text: after[j - 1]! });
+      j -= 1;
+    }
+  }
+  while (i > 0) {
+    ops.push({ kind: "del", text: before[i - 1]! });
+    i -= 1;
+  }
+  while (j > 0) {
+    ops.push({ kind: "add", text: after[j - 1]! });
+    j -= 1;
+  }
+  ops.reverse();
+  return ops;
+}
+
+function emitHunks(ops: EditOp[], context: number): string[] {
+  type Numbered = EditOp & { oldLine: number; newLine: number };
+  const numbered: Numbered[] = [];
+  let oldLine = 1;
+  let newLine = 1;
+  for (const op of ops) {
+    numbered.push({ ...op, oldLine, newLine });
+    if (op.kind === "eq") {
+      oldLine += 1;
+      newLine += 1;
+    } else if (op.kind === "del") {
+      oldLine += 1;
+    } else {
+      newLine += 1;
+    }
+  }
+  const changeIdx: number[] = [];
+  for (let i = 0; i < numbered.length; i++) {
+    if (numbered[i]!.kind !== "eq") changeIdx.push(i);
+  }
+  if (changeIdx.length === 0) return [];
+  const ranges: Array<[number, number]> = [];
+  for (const idx of changeIdx) {
+    const start = Math.max(0, idx - context);
+    const end = Math.min(numbered.length - 1, idx + context);
+    const last = ranges[ranges.length - 1];
+    if (last && start <= last[1] + 1) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      ranges.push([start, end]);
+    }
+  }
+  const out: string[] = [];
+  for (const [s, e] of ranges) {
+    const slice = numbered.slice(s, e + 1);
+    const oldCount = slice.filter((x) => x.kind !== "add").length;
+    const newCount = slice.filter((x) => x.kind !== "del").length;
+    const oldStart = oldCount === 0 ? 0 : slice.find((x) => x.kind !== "add")!.oldLine;
+    const newStart = newCount === 0 ? 0 : slice.find((x) => x.kind !== "del")!.newLine;
+    out.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`);
+    for (const x of slice) {
+      if (x.kind === "eq") out.push(` ${x.text}`);
+      else if (x.kind === "del") out.push(`-${x.text}`);
+      else out.push(`+${x.text}`);
+    }
+  }
+  return out;
+}
+
+/** Collapse a whole-file rewrite (every line deleted then added, no context)
+ *  into a reviewable unified diff. Identity when the diff already has context
+ *  lines, is a true rewrite, or is too large to LCS. */
+export function compactUnifiedDiff(diff: string, context = COMPACT_CONTEXT): string {
+  if (!diff) return diff;
+  if (hasHunkContext(diff)) return diff;
+  const { before, after, header } = splitUnifiedDiff(diff);
+  if (before.length === 0 && after.length === 0) return diff;
+  if (before.length * after.length > COMPACT_MAX_CELLS) return diff;
+  const raw = countDiffLinesRaw(diff);
+  if (raw.added + raw.removed === 0) return diff;
+  const ops = shortestEdit(before, after);
+  const changed = ops.reduce((n, op) => n + (op.kind === "eq" ? 0 : 1), 0);
+  if (changed >= raw.added + raw.removed) return diff;
+  const fileHeaders = header.filter((h) => h.startsWith("---") || h.startsWith("+++"));
+  const hunks = emitHunks(ops, context);
+  if (hunks.length === 0) return diff;
+  const body = [...fileHeaders, ...hunks].join("\n");
+  return body.endsWith("\n") ? body : `${body}\n`;
 }

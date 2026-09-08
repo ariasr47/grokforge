@@ -25,7 +25,7 @@ import { TranscriptBody } from "./TranscriptBody";
 import { ArtifactPanel } from "../dock/ArtifactPanel";
 import { ActionDock } from "../dock/ActionDock";
 import { ComposerPane, composerBlockReasonVisible } from "../composer/ComposerPane";
-import { SETTLE_CARD_BELOW } from "../lib/copyDock";
+import { settleLockCopy } from "../lib/copyDock";
 import { SkillsPalette } from "../composer/SkillsPalette";
 import { SkillArmedChip } from "../sections/SkillArmedChip";
 import { ChatPackInventory } from "../sections/ChatPackInventory";
@@ -604,15 +604,13 @@ export function ChatView({
         onDraftChange={onComposerChange}
         onComposerKeyDown={onComposerKeyDown}
         sendDisabledReason={sendDisabledReason}
-        lockedReason={
-          oauth ||
-          permissions.length > 0 ||
-          diffQueue.length > 0 ||
-          pendingPlanDecision ||
-          sessionHasDockOwnedPending
-            ? SETTLE_CARD_BELOW
-            : null
-        }
+        lockedReason={settleLockCopy({
+          oauth: Boolean(oauth),
+          permissionCount: permissions.length,
+          planPending: Boolean(pendingPlanDecision),
+          dockOwnedPending: sessionHasDockOwnedPending,
+          changeCount: diffQueue.length,
+        })}
         productMode={productMode}
         connected={connected}
         onAttachFiles={(files) => void attachFilesToComposer(files)}

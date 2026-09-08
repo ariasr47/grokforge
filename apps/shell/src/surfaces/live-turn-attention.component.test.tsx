@@ -135,6 +135,22 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
   }
 });
 
+test("pending diff points the operator at Changes, not a missing action-dock card", () => {
+  render(
+    <RunSurface
+      run={run({
+        activities: { a1: reviewActivity() },
+        decisions: { req1: diffDecision({ requestId: "req1" }) },
+      })}
+    />,
+  );
+  const group = screen.getByRole("group", { name: "Edit file" });
+  assert.ok(within(group).getByText("r1.txt"));
+  assert.ok(within(group).getByText("Settle this in Changes."));
+  assert.equal(within(group).queryByText("Settle this in the card below.") === null, true);
+  assert.equal(within(group).queryByRole("button", { name: "Accept" }) === null, true);
+});
+
 test("pending diff fills the Changes dock's Accept/Reject until settlement", () => {
   // DiffPanel moved from ActionDock to the Changes dock in Task 9 — same
   // production projection (projectRunChangeList), just a different panel.

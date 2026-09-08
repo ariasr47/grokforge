@@ -125,6 +125,41 @@ describe("ChangesDock — Files tab rows", () => {
     assert.ok(within(dock).getByText("src/"));
   });
 
+  it("a write_file whole-file rewrite with one insert shows git-scale ± and hunks, not +N −N", () => {
+    const before = ["a", "b", "c", "d", "e"];
+    const after = ["a", "b", "X", "c", "d", "e"];
+    const diff = [
+      "--- a/apps/shell/src/dock/Gate.test.tsx",
+      "+++ b/apps/shell/src/dock/Gate.test.tsx",
+      "@@ -1,5 +1,6 @@",
+      ...before.map((l) => `-${l}`),
+      ...after.map((l) => `+${l}`),
+    ].join("\n");
+    render(
+      <ChangesDock
+        {...baseProps()}
+        files={{
+          state: "ready",
+          members: [
+            member({
+              path: "apps/shell/src/dock/Gate.test.tsx",
+              diff,
+              settlement: "pending",
+            }),
+          ],
+        }}
+      />,
+    );
+    const dock = screen.getByRole("region", { name: "Changes" });
+    assert.ok(within(dock).getAllByText("+1").length >= 1);
+    assert.ok(within(dock).getAllByText("−0").length >= 1);
+    assert.equal(within(dock).queryByText("+6") === null, true);
+    assert.equal(within(dock).queryByText("−5") === null, true);
+    fireEvent.click(within(dock).getByRole("button", { name: "View diff" }));
+    assert.ok(within(dock).getByText("+X"));
+    assert.equal(within(dock).queryByText("-a") === null, true);
+  });
+
   it("shows Deleted / Renamed kind badges only for those kinds, and the rename arrow once accepted", () => {
     render(
       <ChangesDock

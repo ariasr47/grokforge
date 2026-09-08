@@ -127,6 +127,30 @@ describe("Task 6 — TranscriptBody ladder precedence", () => {
     assert.equal(screen.queryByPlaceholderText("Search sessions…") === null, true);
   });
 
+  it("a bound Code workspace with an empty session is the Code canvas, not Home", async () => {
+    resetBrowserState();
+    const host = createFakeHost({
+      mode: "code",
+      hasApiKey: true,
+      workspace: "C:\\Dev\\grokforge",
+      workspaceName: "grokforge",
+      priorConversations: false,
+    });
+    globalThis.fetch = host.fetchImpl;
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+    render(<App />);
+
+    assert.ok(await screen.findByRole("radio", { name: "Code" }));
+    await eventually(() => {
+      assert.equal(
+        screen.queryByRole("heading", { name: /^Good (morning|afternoon|evening)\.$/ }) === null,
+        true,
+      );
+    });
+    assert.equal(screen.queryByPlaceholderText("Search sessions…") === null, true);
+  });
+
   it("the Home screen renders, not the signed-out gate, once a credential is present", async () => {
     resetBrowserState();
     const host = createFakeHost({

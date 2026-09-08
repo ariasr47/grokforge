@@ -55,7 +55,7 @@ import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "reac
 import { tinykeys } from "tinykeys";
 import { checkForAppUpdate, type UpdateStatus } from "../lib/desktopUpdate";
 import { registerSummonShortcut } from "../lib/desktopNotify";
-import { planLiveActivityReveal, SETTLE_CARD_BELOW } from "../lib/copyDock";
+import { planLiveActivityReveal, SETTLE_CARD_BELOW, settleLockCopy } from "../lib/copyDock";
 import type { ChatMessage } from "../surfaces/MessageList";
 import { ChangesDock } from "../dock/ChangesDock";
 import { ReviewSurface } from "../surfaces/ReviewSurface";
@@ -1515,16 +1515,17 @@ export function App() {
     if (productMode === "code" && (!state?.planEngagement || state.planEngagement.vouched === false)) {
       return PLAN_ARM_BLOCKED_UNVOUCHED;
     }
-    // = the old `oauth || permissions.length > 0 || diffQueue.length > 0 ||
-    // pendingPlanDecision || sessionHasDockOwnedPending`, algebraically
-    // unchanged: anyDecisionPending (useDecisions, Task 11) is exactly the
-    // first four terms; sessionHasDockOwnedPending (unmoved, App.tsx-local)
-    // is OR'd back in here. Deps array below deliberately left untouched —
-    // every raw value it names still fully determines anyDecisionPending's
-    // own value, so no entry needed adding, and the Global Constraints
-    // forbid "cleaning up" a dependency array as a side effect of a move.
+    // anyDecisionPending (oauth | permissions | diffQueue | plan) plus
+    // sessionHasDockOwnedPending (permission|diff|plan|recovery). Copy follows
+    // which surface owns the settle: Changes Accept vs the action dock.
     if (anyDecisionPending || sessionHasDockOwnedPending) {
-      return SETTLE_CARD_BELOW;
+      return settleLockCopy({
+        oauth: Boolean(oauth),
+        permissionCount: permissions.length,
+        planPending: pendingPlanDecision != null,
+        dockOwnedPending: sessionHasDockOwnedPending,
+        changeCount: diffQueue.length,
+      }) ?? SETTLE_CARD_BELOW;
     }
     if (sessionHasNonTerminalRun || busy) return "A run is in progress";
     if (!state?.permissionPolicy || state.permissionPolicy.status !== "confirmed") return "Permission policy is not confirmed";
