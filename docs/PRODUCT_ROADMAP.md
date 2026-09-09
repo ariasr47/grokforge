@@ -13,9 +13,9 @@
 | | |
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
-| **Published** | **v0.6.6** Windows unsigned NSIS. Code still the *vendor* engine in that binary. |
-| **Source (HEAD)** | 0.6.7-unreleased (version stamped; tag pending `release`). Code is **house grok-acp**. Gate. Changes. Home. |
-| **Not published** | 0.6.7 GitHub installer + SHA. SHA-in-app (S1 AC5). Signed cert. Mac. |
+| **Published** | **v0.6.7** Windows unsigned NSIS. Code is **house grok-acp**. Gate. Changes. Home. |
+| **Source (HEAD)** | same cut. SHA-in-app (S1 AC5) still needs GATE Q on this installer. |
+| **Not published** | Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. |
@@ -28,21 +28,18 @@
 
 Two layers. Do not mix them.
 
-### Published box (v0.6.6)
+### Published box (v0.6.7)
 
-- Windows current-user installer, unknown publisher, SHA in release notes.
-- Chat \| Code. Chat = grok-acp. Code = `grok agent stdio` when CLI resolves, grok-acp fallback.
-- Live thought / mid-turn / tools / vouched answer. Plan → File changes → Verify → Git review.
-- Vendor Skills / children / browser chrome when the guest advertises them.
+- Windows current-user installer, unknown publisher, SHA in `docs/releases/v0.6.7.md`.
+- Chat \| Code. Both grok-acp. A `grok` CLI on PATH does not divert Code to vendor stdio.
+- Identity chrome is **Grok**. Gate (shell / write / plan / ask). Changes. Home.
+- Live thought / mid-turn / tools / vouched answer. Review is the default.
 - Named Chat home + pack. PDF text extract. Appearance-aware fences.
 
-### Source on `master` (ahead of the box)
+### Still unproven on the box
 
-- **Code engine is grok-acp.** Operator ruling 2026-08-30 (`docs/ACP_CODE_GOAL.md`). Do not spawn `grok.exe agent stdio` for Code.
-- Identity chrome is **Grok**, not Mini-Grok consolation, not a CLI badge.
-- **Gate** (`apps/shell/src/dock/Gate.tsx`): shell (“Grok wants to run a command”), write (“Grok wants to write a file”), plan (Accept / Keep planning), ask (“Grok has a question”). Keys ⏎ / S / esc.
-- **Changes dock**, Home (what needs you), one-row composer, context ring, motion, domain-split shell.
-- Dogfood proved: Allow once, Allow for this session, Deny+Retry, Accept plan then do, Revert. It did **not** prove: Keep planning as the chosen path, Trust this folder, Edit command, ask-tier questions, a queued second card, Bypass as a saved mode, a real multi-file feature built *in* Forge.
+- Trust this folder, Edit command, ask-tier, queued Gates, keyboard settle, a real multi-file feature built *in* Forge.
+- SHA-in-app (S1 AC5) until GATE Q walks this installer.
 
 ### Still not true
 
@@ -148,9 +145,8 @@ Semver stays `0.y.z` until 1.0. Names below are *eras*.
 
 | Era | Name | One-liner | Exit |
 |-----|------|-----------|------|
-| **Met** | **0.6** Dogfood Grok desktop | Operator has a Windows desktop | v0.6.6 published |
-| **Now (source)** | **0.6.7-unreleased** House Code | grok-acp Code + Gate + Home + Changes | Tag + installer (not cut) |
-| **Next major** | **0.7** Shareable | A second human installs and finishes Chat | Honest publisher story; first-run does not strand; update path proved |
+| **Met** | **0.6** Dogfood Grok desktop | Operator has a Windows desktop | v0.6.7 published |
+| **Now** | **0.7** Shareable | A second human installs and finishes Chat | Honest publisher story; first-run does not strand; update path proved |
 | **After that** | **1.0** Daily Grok desktop | P1 does not open the TUI; P2 stays in Chat; Mac exists | Gate loved; Artifacts (shipped in source); Mac; brand frozen |
 | **After 1.0** | **2.0** ACP platform | Same chrome, other agents + team policy | Codex/Claude ACP; still no IDE |
 
@@ -227,7 +223,7 @@ The operating loop reads this table when live dogfood has not yet shown somethin
 | **Gate — keys** | ⏎ / S / esc exist in the Gate. Not proven in a live session. | `Gate.test.tsx` |
 | **Complex Code** | Real multi-file work on `apps/` / `packages/`, not `docs/dogfood/*.md`. Ceiling so far: one comment, one CSS pass, 3-file fixtures. | Dogfood explainer; this conversation |
 | **Bypass honesty** | Bypass is not a saved workspace radio. Standing. | `FORGE_DAILY_GOAL.md` Settings look |
-| **0.6.7 tag** | Version stamped; notes drafted; vendor-spawn tests parked. Unblocks S1 AC5 + S4. Needs operator `release`. | `docs/releases/v0.6.7.md` |
+| **S1 AC5 SHA-in-app** | 0.6.7 installer is published; GATE Q must match notes SHA on a real install. | `docs/releases/v0.6.7.md` |
 | **Mermaid** | Chat diagrams. Later than 0.7. | EPICS C2 |
 | **Invent the next job** | If none of the above is the live FAIL, invent a harder Forge-builds-Forge job. | Ever-goal |
 

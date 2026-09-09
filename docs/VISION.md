@@ -94,7 +94,7 @@ Moving Chat onto `grok agent` is a **1.0+ product decision**, not an implementat
 
 | Horizon | We are this |
 |---------|-------------|
-| **Now (0.6.7 source)** | The operator’s Grok desktop. Unsigned Windows. Chat and Code are grok-acp. Published box is still 0.6.6 until `release`. |
+| **Now (0.6.7)** | The operator’s Grok desktop. Unsigned Windows. Chat and Code are grok-acp. |
 | **~2 quarters (0.7)** | A second human can install without us in the room. Publisher story is true (signed *or* honest-unsigned). First-run does not strand. |
 | **~1 year (1.0)** | P1 does not open the TUI for hard jobs. P2’s week stays in Chat. Mac exists. Remaining guest powers (worktrees / TUI handoff) are visible or honestly absent. Artifacts exist so Chat does not drown in the bubble. |
 | **2–3 years (2.0)** | Same house, new guests (Codex, Claude). File-based team policy. Still not an IDE. |
