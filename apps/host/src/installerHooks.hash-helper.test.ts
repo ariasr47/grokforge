@@ -22,55 +22,6 @@ const hookPath = path.join(
   "installer-hooks.nsh",
 );
 
-const HEX64 = /^[0-9a-f]{64}$/;
-
-function extractNsisExecCommands(source: string): string[] {
-  const out: string[] = [];
-  const needle = "nsExec::ExecToStack";
-  let i = 0;
-  while (i < source.length) {
-    const at = source.indexOf(needle, i);
-    if (at < 0) break;
-    let p = at + needle.length;
-    while (p < source.length && /\s/.test(source[p] ?? "")) p += 1;
-    if (source[p] !== "'") {
-      i = p;
-      continue;
-    }
-    p += 1;
-    let cmd = "";
-    while (p < source.length) {
-      const ch = source[p];
-      if (ch === "'") {
-        if (source[p + 1] === "'") {
-          cmd += "'";
-          p += 2;
-          continue;
-        }
-        p += 1;
-        break;
-      }
-      cmd += ch;
-      p += 1;
-    }
-    out.push(cmd);
-    i = p;
-  }
-  return out;
-}
-
-function expandNsisHashCommand(command: string, exePath: string): string {
-  const sysdir = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32");
-  const windir = process.env.SystemRoot ?? "C:\\Windows";
-  const dollar = "\u0000";
-  return command
-    .replaceAll("$$", dollar)
-    .replaceAll("$EXEPATH", exePath)
-    .replaceAll("$SYSDIR", sysdir)
-    .replaceAll("$WINDIR", windir)
-    .replaceAll(dollar, "$");
-}
-
 function pwsh7StylePsModulePath(): string {
   const inherited = process.env.PSModulePath ?? "";
   const fromInherited = inherited
@@ -90,48 +41,7 @@ function pwsh7StylePsModulePath(): string {
     .join(";");
 }
 
-function runExpandedHashCommand(
-  expanded: string,
-  env: NodeJS.ProcessEnv,
-): { stdout: string; stderr: string; status: number | null } {
-  if (/\bcertutil\b/i.test(expanded) && !/-Command\b/i.test(expanded)) {
-    const m = expanded.match(
-      /-hashfile\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s+SHA256/i,
-    );
-    const file = m?.[1] ?? m?.[2] ?? m?.[3];
-    if (!file) throw new Error(`certutil path not found in: ${expanded}`);
-    const r = spawnSync("certutil", ["-hashfile", file, "SHA256"], {
-      encoding: "utf8",
-      env,
-      windowsHide: true,
-      timeout: 30_000,
-    });
-    const noSpace = (r.stdout ?? "").replace(/\s+/g, "");
-    const hex = noSpace.match(/[0-9a-fA-F]{64}/)?.[0]?.toLowerCase() ?? "";
-    return { stdout: hex, stderr: r.stderr ?? "", status: r.status };
-  }
-
-  const quotedExe = expanded.match(/^"([^"]+)"/);
-  const bareExe = expanded.match(/^(\S+)/);
-  const exe = quotedExe?.[1] ?? bareExe?.[1];
-  const cmdMatch = expanded.match(/-Command\s+"(.*)"\s*$/s);
-  if (!exe || !cmdMatch) {
-    throw new Error(`cannot parse hash helper command: ${expanded}`);
-  }
-  const r = spawnSync(exe, ["-NoProfile", "-Command", cmdMatch[1]], {
-    encoding: "utf8",
-    env,
-    windowsHide: true,
-    timeout: 30_000,
-  });
-  return {
-    stdout: (r.stdout ?? "").replace(/[\r\n]+$/g, ""),
-    stderr: r.stderr ?? "",
-    status: r.status,
-  };
-}
-
-describe("NSIS POSTINSTALL hash helper under pwsh-7 PSModulePath", () => {
+describe("write-installer-pin.ps1 writes a vouched pin", () => {
   const dirs: string[] = [];
   after(() => {
     for (const dir of dirs) {
@@ -144,36 +54,73 @@ describe("NSIS POSTINSTALL hash helper under pwsh-7 PSModulePath", () => {
   });
 
   it(
-    "yields 64 lowercase hex matching node crypto when PSModulePath is pwsh-7",
+    "hashes a payload and writes version=/sha256= under the data dir",
     { skip: process.platform !== "win32" },
     () => {
-      const hook = fs.readFileSync(hookPath, "utf8");
-      const commands = extractNsisExecCommands(hook);
-      const hashCmd = commands.find((c) =>
-        /Get-FileHash|certutil|hashfile|SHA256/i.test(c),
+      const script = path.join(
+        root,
+        "apps",
+        "shell",
+        "src-tauri",
+        "windows",
+        "write-installer-pin.ps1",
       );
-      assert.ok(
-        hashCmd,
-        "installer-hooks.nsh must nsExec a local SHA-256 helper",
-      );
+      assert.equal(fs.existsSync(script), true, "write-installer-pin.ps1 must exist beside installer-hooks.nsh");
 
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grokforge-hash-helper-"));
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grokforge-write-pin-"));
       dirs.push(dir);
-      const payload = path.join(dir, "payload.bin");
-      const bytes = Buffer.from("grokforge-z1-psmodulepath-hash-helper\n");
+      const payload = path.join(dir, "Forge_setup.exe");
+      const dataDir = path.join(dir, "data");
+      const bytes = Buffer.from("grokforge-pin-write-helper\n");
       fs.writeFileSync(payload, bytes);
       const expected = crypto.createHash("sha256").update(bytes).digest("hex");
 
-      const expanded = expandNsisHashCommand(hashCmd, payload);
-      const env = { ...process.env, PSModulePath: pwsh7StylePsModulePath() };
-      const result = runExpandedHashCommand(expanded, env);
-      const hex = result.stdout.trim().toLowerCase();
-      assert.match(
-        hex,
-        HEX64,
-        `hash helper stdout must be 64 lowercase hex under pwsh-7 PSModulePath (status=${result.status} stderr=${result.stderr.slice(0, 400)})`,
+      const sysps = path.join(
+        process.env.SystemRoot ?? "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
       );
-      assert.equal(hex, expected);
+      const r = spawnSync(
+        sysps,
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          script,
+          "-ExePath",
+          payload,
+          "-DataDir",
+          dataDir,
+          "-Version",
+          "0.6.7",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, PSModulePath: pwsh7StylePsModulePath() },
+          windowsHide: true,
+          timeout: 30_000,
+        },
+      );
+      assert.equal(
+        r.status,
+        0,
+        `write-installer-pin.ps1 exit ${r.status} stdout=${r.stdout} stderr=${r.stderr.slice(0, 400)}`,
+      );
+      const pin = fs.readFileSync(path.join(dataDir, "installer-digest.pin"), "utf8");
+      assert.equal(pin, `version=0.6.7\r\nsha256=${expected}\r\n`);
     },
   );
+});
+
+describe("NSIS POSTINSTALL hash helper under pwsh-7 PSModulePath", () => {
+  it("nsExec launches write-installer-pin.ps1 with -File (no PowerShell $ in the command line)", () => {
+    const hook = fs.readFileSync(hookPath, "utf8");
+    const execLine = hook.split(/\r?\n/).find((line) => /nsExec::ExecToStack/.test(line)) ?? "";
+    assert.match(execLine, /-File/);
+    assert.match(execLine, /grokforge-write-pin\.ps1/);
+    assert.equal(/\$env\b/.test(execLine.replaceAll("$$", "")), false);
+  });
 });

@@ -19,6 +19,14 @@ const hookPath = path.join(
   "windows",
   "installer-hooks.nsh",
 );
+const helperPath = path.join(
+  root,
+  "apps",
+  "shell",
+  "src-tauri",
+  "windows",
+  "write-installer-pin.ps1",
+);
 
 describe("NSIS installerHooks packaging fixtures", () => {
   it("tauri.conf.json nsis.installerHooks equals ./windows/installer-hooks.nsh", () => {
@@ -38,27 +46,22 @@ describe("NSIS installerHooks packaging fixtures", () => {
 
   it("hook hashes locally (Get-FileHash or certutil) and names installer-digest.pin", () => {
     const hook = fs.readFileSync(hookPath, "utf8");
-    assert.match(hook, /Get-FileHash|certutil/);
-    assert.match(hook, /installer-digest\.pin/);
+    const helper = fs.readFileSync(helperPath, "utf8");
+    assert.match(helper, /Get-FileHash|certutil/);
+    assert.match(helper, /installer-digest\.pin/);
+    assert.match(hook, /write-installer-pin\.ps1/);
   });
 
   it("hash helper resets PSModulePath or uses certutil (not bare Get-FileHash)", () => {
-    const hook = fs.readFileSync(hookPath, "utf8");
-    const hashLines = hook
-      .split(/\r?\n/)
-      .filter((line) => /nsExec::ExecToStack/.test(line));
-    assert.ok(hashLines.length > 0, "POSTINSTALL must nsExec a hash helper");
-    const hashBlock = hashLines.join("\n");
-    const usesCertutil = /\bcertutil\b/i.test(hashBlock);
-    const resetsPsModulePath =
-      /\$\$env:PSModulePath/.test(hashBlock) ||
-      /Remove-Item\s+Env:\\PSModulePath/i.test(hashBlock);
+    const helper = fs.readFileSync(helperPath, "utf8");
+    const usesCertutil = /\bcertutil\b/i.test(helper);
+    const pinsPs51Modules = /WindowsPowerShell\\v1\.0\\Modules/i.test(helper);
     assert.ok(
-      usesCertutil || resetsPsModulePath,
-      "bare Get-FileHash without PSModulePath reset fails when setup.exe inherits pwsh 7 PSModulePath",
+      usesCertutil || pinsPs51Modules,
+      "bare Get-FileHash without a 5.1 module path fails when setup.exe inherits pwsh 7 PSModulePath",
     );
     if (!usesCertutil) {
-      assert.match(hashBlock, /Get-FileHash/);
+      assert.match(helper, /Get-FileHash/);
     }
   });
 
@@ -70,8 +73,46 @@ describe("NSIS installerHooks packaging fixtures", () => {
   });
 
   it("hook writes version= and sha256= lines", () => {
+    const helper = fs.readFileSync(helperPath, "utf8");
+    assert.match(helper, /version=/);
+    assert.match(helper, /sha256=/);
+  });
+
+  it("POSTINSTALL launches write-installer-pin.ps1 with -File so stdout length is not the pin gate", () => {
     const hook = fs.readFileSync(hookPath, "utf8");
-    assert.match(hook, /version=/);
-    assert.match(hook, /sha256=/);
+    assert.match(hook, /write-installer-pin\.ps1/);
+    assert.match(hook, /-File/);
+    assert.equal(
+      /IntCmp\s+\$R6\s+64/.test(hook),
+      false,
+      "64-char stdout IntCmp drops the pin when nsExec captures extra bytes",
+    );
+  });
+
+  it("packs write-installer-pin.ps1 via include-time GROKFORGE_WRITE_PIN_PS1 (not __FILEDIR__ inside the macro)", () => {
+    const hook = fs.readFileSync(hookPath, "utf8");
+    const defineIdx = hook.search(
+      /!define\s+GROKFORGE_WRITE_PIN_PS1\s+"\$\{__FILEDIR__\}\\write-installer-pin\.ps1"/,
+    );
+    const macroIdx = hook.search(/!macro\s+NSIS_HOOK_POSTINSTALL\b/);
+    assert.ok(
+      defineIdx >= 0,
+      "GROKFORGE_WRITE_PIN_PS1 must capture __FILEDIR__ at !include time",
+    );
+    assert.ok(macroIdx >= 0);
+    assert.ok(
+      defineIdx < macroIdx,
+      "GROKFORGE_WRITE_PIN_PS1 must be defined before NSIS_HOOK_POSTINSTALL — inside the macro __FILEDIR__ is the generated installer.nsi dir",
+    );
+    const macroBody = hook.slice(macroIdx);
+    assert.match(
+      macroBody,
+      /File\s+"\/oname=\$TEMP\\grokforge-write-pin\.ps1"\s+"\$\{GROKFORGE_WRITE_PIN_PS1\}"/,
+    );
+    assert.equal(
+      /\$\{__FILEDIR__\}/.test(macroBody),
+      false,
+      "${__FILEDIR__} inside the macro is the generated nsis/x64 dir; File then misses write-installer-pin.ps1",
+    );
   });
 });

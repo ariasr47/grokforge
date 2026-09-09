@@ -1,5 +1,16 @@
 ; Honest unsigned first-run — install-time pin outside the hashed payload (SPEC §2 / §9).
 ; Failure → no pin write. Never bake a digest into the NSIS payload.
+;
+; Do not put PowerShell $env / $null in the nsExec command string. NSIS expands $
+; at runtime ($$ is only one unescape), so $env becomes empty and Get-FileHash
+; never runs. Hash and write in write-installer-pin.ps1 launched with -File.
+;
+; ${__FILEDIR__} inside the macro is the generated installer.nsi dir. Capture it
+; at !include time so File packs this folder's helper.
+
+!ifndef GROKFORGE_WRITE_PIN_PS1
+  !define GROKFORGE_WRITE_PIN_PS1 "${__FILEDIR__}\write-installer-pin.ps1"
+!endif
 
 !macro NSIS_HOOK_POSTINSTALL
   ; Resolve channel dataDir (mirrors apps/host/src/channel.ts dataDir()).
@@ -22,35 +33,12 @@
 
   CreateDirectory "$R9"
 
-  ; Local hash of the setup exe ($EXEPATH). $$env:PSModulePath=$$null so Windows
-  ; PowerShell 5.1 still loads Get-FileHash when the parent inherited pwsh 7
-  ; module dirs. Console.Write avoids a trailing newline (must be 64 hex).
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$$env:PSModulePath=$$null; [Console]::Out.Write(((Get-FileHash -LiteralPath ''$EXEPATH'' -Algorithm SHA256).Hash.ToLowerInvariant()).Trim())"'
-  Pop $R0 ; exit code
-  Pop $R7 ; stdout (expected: 64 lowercase hex)
-  IntCmp $R0 0 grokforge_hash_strip grokforge_pin_done grokforge_pin_done
-
-  grokforge_hash_strip:
-    StrLen $R6 $R7
-    IntCmp $R6 0 grokforge_pin_done grokforge_pin_done 0
-    StrCpy $R5 $R7 1 -1
-    StrCmp $R5 "$\n" grokforge_hash_chop 0
-    StrCmp $R5 "$\r" grokforge_hash_chop grokforge_hash_len
-  grokforge_hash_chop:
-    IntOp $R6 $R6 - 1
-    StrCpy $R7 $R7 $R6
-    Goto grokforge_hash_strip
-
-  grokforge_hash_len:
-    StrLen $R6 $R7
-    IntCmp $R6 64 grokforge_hash_write grokforge_pin_done grokforge_pin_done
-
-  grokforge_hash_write:
-    ; Overwrite on upgrade. Exact two-line pin.
-    FileOpen $R2 "$R9\installer-digest.pin" w
-    FileWrite $R2 "version=${VERSION}$\r$\n"
-    FileWrite $R2 "sha256=$R7$\r$\n"
-    FileClose $R2
+  ; Pack the helper into $TEMP, then run it. Exit code is the gate — not stdout length.
+  File "/oname=$TEMP\grokforge-write-pin.ps1" "${GROKFORGE_WRITE_PIN_PS1}"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$TEMP\grokforge-write-pin.ps1" -ExePath "$EXEPATH" -DataDir "$R9" -Version "${VERSION}"'
+  Pop $R0
+  Pop $R7
+  Delete "$TEMP\grokforge-write-pin.ps1"
 
   grokforge_pin_done:
 !macroend
