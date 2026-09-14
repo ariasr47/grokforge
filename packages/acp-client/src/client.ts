@@ -427,6 +427,16 @@ export class StdioAcpClient implements AcpClient {
   private handleLine(line: string): void {
     const trimmed = line.trim();
     if (!trimmed) return;
+    // pdfjs-dist (optional @napi-rs/canvas) writes "Warning: Cannot load ..." on
+    // stdout during PDF extract. That is not JSON-RPC — log it, do not fail the turn.
+    if (trimmed[0] !== "{" && trimmed[0] !== "[") {
+      this.emit({
+        type: "agent_log",
+        level: "warn",
+        message: trimmed.slice(0, 500),
+      });
+      return;
+    }
     let msg: JsonRpcResponse | JsonRpcNotification;
     try {
       msg = JSON.parse(trimmed) as JsonRpcResponse | JsonRpcNotification;

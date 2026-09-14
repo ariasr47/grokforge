@@ -38,6 +38,8 @@ export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtractOutco
       isEvalSupported: false,
       useWorkerFetch: false,
       disableFontFace: true,
+      // 0 = errors only. Warnings like missing @napi-rs/canvas must not hit ACP stdout.
+      verbosity: 0,
     });
     const pdf = await loadingTask.promise;
     try {
