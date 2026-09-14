@@ -13,14 +13,14 @@
 | | |
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
-| **Published** | **v0.7.1** unsigned NSIS. Canvas stdout no longer breaks ACP. SHA pin in Settings/first-run. |
-| **Source (HEAD)** | **v0.7.1** plus Grok connectors Settings honesty and Chat mermaid (C2). Not a release. Do not re-stamp 0.6.7. |
+| **Published** | **v0.7.1** unsigned NSIS, installed on this box. SHA-256 live in Settings. Canvas stdout no longer breaks ACP. |
+| **Source (HEAD)** | **v0.7.1** plus Grok connectors Settings honesty and Chat mermaid (C2, local `a4d3c20`). Not a release. Do not re-stamp 0.6.7. |
 | **Not published** | Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. Goal is not completable; operator is the only STOP. |
 
-**Next product decision (operator):** S4 update-path is **blocked for anonymous clients** — repo is private, so `releases/latest/download/latest.json` 404s without GitHub auth (measured 2026-09-14). Asset exists on `v0.7.1` via `gh`. Public repo or a public `latest.json` host unblocks it. Do not re-stamp 0.6.7.
+**Next product decision (operator):** S4 proved 2026-09-14 — repo is **public**; 0.7.0 Check for updates offered **Install 0.7.1**; 0.7.1 now **No update available.** S2 still needs a cert. S5 walkthrough still held. Local `a4d3c20` is not on origin.
 
 ---
 
@@ -39,7 +39,7 @@ Two layers. Do not mix them.
 ### Still unproven on the box
 
 - A real multi-file feature built *in* Forge.
-- SHA-in-app (S1 AC5) until GATE Q walks this installer.
+- SHA-in-app (S1 AC5) — **observed** on this box’s 0.7.1 Settings + `/api/health` (`6abb936f…`). GATE Q clean-machine rows still open.
 
 ### Still not true
 
@@ -162,10 +162,10 @@ Money only after 1.0 weekly use. Personal Chat stays free.
 
 | Slice | Observable | Status |
 |-------|------------|--------|
-| **S1 honest-unsigned** | First-run says unknown-publisher is expected; SHA-256 findable in the app | GATE Q; **AC5 waits on next installer** |
+| **S1 honest-unsigned** | First-run says unknown-publisher is expected; SHA-256 findable in the app | **SHA live** on installed 0.7.1 (`6abb936f…` in Settings + `/api/health`). GATE Q clean-machine rows still open |
 | **S2 authenticode** | Signed NSIS; SmartScreen quiet | **BLOCKED on a cert** |
 | **S3 CLI-missing** | First Code visit is honest without bundling `grok.exe` | Mostly done (house Code no longer needs the CLI) |
-| **S4 update-path** | A 0.6.6 machine picks up the next tag via `latest.json` | **BLOCKED** — private GitHub repo; unauthenticated `releases/latest/download/latest.json` is 404 (2026-09-14) |
+| **S4 update-path** | A 0.6.6 machine picks up the next tag via `latest.json` | **PROVED** 2026-09-14 — `ariasr47/grokforge` public; anon `latest.json` 200; 0.7.0 UI **Install 0.7.1** |
 | **S5 brother walkthrough** | Clean-machine evidence | **Operator hold** since 15 Aug |
 
 ### Out of 0.7
@@ -229,7 +229,7 @@ The operating loop reads this table when live dogfood has not yet shown somethin
 | **Unix head on cmd** | Held 2026-09-10. Mixed Path with unexpanded `%NVM_HOME%` no longer `continue`s; Unix `head` preflight-rejects `leading_command_unresolved` (no Gate, no exit 255). Re-elect only if live regresses. | `shellPreflight.ts`; ever-goal §10 |
 | **Model label mismatch** | Held 2026-09-10. Fast chip is effort. After Vite reload, header/footer prefer last-run `appliedModel` (`sessionChromeModel`). After host process restart, GET `/api/state.appliedModel` restores from the last journal run (`restoreAppliedModelFromJournal`; `awaitReady` waits `runHydration`). Re-elect only if live regresses. | `sessionChromeModel`; `session-applied-model-hydrate.test.ts`; ever-goal §10 |
 | **Bypass honesty** | Bypass is not a saved workspace radio. Standing. | `FORGE_DAILY_GOAL.md` Settings look |
-| **S1 AC5 SHA-in-app** | 0.6.7 installer is published; GATE Q must match notes SHA on a real install. | `docs/releases/v0.6.7.md` |
+| **S1 AC5 SHA-in-app** | **Held 2026-09-14:** installed 0.7.1 Settings + health SHA `6abb936f…` match notes. Re-elect if a later tag paints unavailable. | `docs/releases/v0.7.1.md` |
 | **Mermaid** | Chat diagrams. Later than 0.7. | EPICS C2 |
 | **Empty-stop chrome honesty** | Held 2026-09-10 YOU 02:08: two-path `git status --short --` (no Gate) vouched the status lines; Copy; no Run failed on that YOU; host.log `done/stop` no agent error. Re-elect only if live regresses. | ever-goal §10 2026-09-10 |
 | **Invent the next job** | If none of the above is the live FAIL, invent a harder Forge-builds-Forge job. Skip inspection-grammar two-file `apply_patch` (TWO-FILE-HANG). | Ever-goal |

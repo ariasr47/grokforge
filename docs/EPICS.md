@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-27  
 **Living ladder:** `docs/PRODUCT_ROADMAP.md` (refreshed 2026-09-08 — Code on grok-acp; Gate hunts in §9).  
-**Status:** Grooming board. S1 in-flight (`honest-unsigned-first-run`, AC5 waits on next installer). G1, G2, and C1 shipped 2026-08-27.
+**Status:** Grooming board. S1 SHA live on installed 0.7.1; S4 proved (public repo). G1, G2, and C1 shipped 2026-08-27.
 
 Legend: **DONE** · **READY** · **BLOCKED** · **DEFERRED** (operator hold) · **PARKED** (later era) · **ANTI** (do not)
 
@@ -21,7 +21,7 @@ See `docs/VISION.md` (house/guest) and `docs/PRODUCT_ROADMAP.md` (eras).
 | **E-LOOP** | Code inspect loop | 0.5–0.6 | **DONE** |
 | **E-LIVE** | Live thought / words / tools / fences | 0.6.6 | **DONE** |
 | **E-GUEST** | Vendor guest completeness | 0.6.6 → 1.0 | **partial (G1+G2 shipped; G3/G4 blocked-on vendor)** |
-| **E-SHARE** | Other people can run it | **0.7** | **in flight (S1; AC 5 waits on next tag)** |
+| **E-SHARE** | Other people can run it | **0.7** | **in flight (S1 SHA live; S4 proved; S2 cert / S5 walkthrough still open)** |
 | **E-CHAT** | Capable Chat (P2) | 0.6 → 1.0 | **partial** |
 | **E-PLAT** | Mac (and later OS) | **1.0** | not started |
 | **E-TRUST** | Deeper confine / secrets | 1.0–2.0 | **PARKED** |
@@ -92,10 +92,10 @@ Shipped: `live-turn-attention` (v0.5.0), `acp-live-streams` + `syntax-themes` (v
 
 | ID | Story | IN | OUT | Depends | Blocked-on | Effort | Status |
 |----|--------|----|-----|---------|------------|--------|--------|
-| **S1** | **honest-unsigned-first-run** | Fresh install states unknown-publisher is expected; SHA-256 is findable (notes / first-run / Settings). Never a fake “Verified publisher” | Authenticode theater | v0.6.6 notes already have SHA | Operator **A** 2026-08-27 | S | **IN FLIGHT** GATE Q · AC 5 waits on next published installer |
+| **S1** | **honest-unsigned-first-run** | Fresh install states unknown-publisher is expected; SHA-256 is findable (notes / first-run / Settings). Never a fake “Verified publisher” | Authenticode theater | v0.6.6 notes already have SHA | Operator **A** 2026-08-27 | S | **SHA live** on installed 0.7.1 (Settings + health). GATE Q clean-machine rows still open |
 | **S2** | **authenticode-installer** | Current-user NSIS is Authenticode-signed; SmartScreen quiet | Buying a cert in-band | Cert in the org | **cert** | L | **BLOCKED** |
 | **S3** | **first-run-cli-missing** | First Code visit: “install Grok CLI” vs Mini-Grok is host-vouched; Chat works without CLI | Bundling `grok.exe` as a silent extra product | `spawn-grok-agent` fallback chrome | — | S | **mostly DONE**; close remaining mute gaps only |
-| **S4** | **update-path-proof** | A real 0.6.5/0.6.6 machine picks up the next tag via `latest.json` | New updater protocol | Updater key (present locally) | A 0.7 (or 0.6.7) tag | S | **READY** as verification, not a feature |
+| **S4** | **update-path-proof** | A real 0.6.5/0.6.6 machine picks up the next tag via `latest.json` | New updater protocol | Updater key (present locally) | A 0.7 (or 0.6.7) tag | S | **PROVED** 2026-09-14 public repo; 0.7.0 offered Install 0.7.1 |
 | **S5** | **brother-walkthrough** | Deferred `desktop-self-host` human/clean-machine rows close **or** stay named-deferred | Steering a session back to handoff without operator lift | Packaging already shipped | **Operator hold** since 2026-08-15 | M | **DEFERRED** |
 
 **Grooming call:** 0.7 can start on **S1+S3+S4** without a cert. **S2** waits. **S5** waits for the operator. Do not mix Mac into this epic.
