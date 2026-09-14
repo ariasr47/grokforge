@@ -868,7 +868,13 @@ export function createFakeHost(
           description: "",
         },
       };
-    if (path === "/api/connectors") return { connectors: [] };
+    if (path === "/api/connectors")
+      return {
+        linkedStatus: "unknown",
+        manageUrl: "https://grok.com/connectors",
+        chatUsesGrokConnectors: false,
+        catalogDocs: ["Gmail", "Custom MCP"],
+      };
     if (path === "/api/audit-path") return { path: "" };
     if (path === "/api/logs")
       return { ok: true, dir: "", hostPath: "", clientPath: "", host: "", client: "" };

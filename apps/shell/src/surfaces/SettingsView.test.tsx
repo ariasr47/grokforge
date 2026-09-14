@@ -98,6 +98,13 @@ test("Settings still renders every section (auth, policy, trusted classes, model
   assert.ok(screen.getByText("Auth priority"));
   assert.ok(screen.getByText(/Active:/));
 
+  // Grok connectors (honesty — not the parked paste catalog)
+  assert.ok(await screen.findByRole("heading", { name: "Grok connectors" }));
+  assert.ok(screen.getByText(/Linked status: unknown/));
+  assert.ok(screen.getByRole("link", { name: "Open grok.com/connectors" }));
+  assert.equal(screen.queryByText(/Paste workflow/i), null);
+  assert.equal(screen.queryByRole("button", { name: "Try in Chat" }), null);
+
   // Policy controls (Task 4's PolicyControls, still wired the same way)
   assert.ok(screen.getByText("Permission policy"));
   assert.ok(await screen.findByText("Policy: Review"));

@@ -1,4 +1,3 @@
-import type { RefObject } from "react";
 import {
   api,
   ApiError,
@@ -78,10 +77,6 @@ export interface SettingsViewProps {
   bootApp: () => Promise<void>;
   oauth: OAuthPending | null;
   setOauth: (value: OAuthPending | null) => void;
-  /** App.tsx's `View` union, inlined to avoid importing a type from App.tsx. */
-  setView: (value: "chat" | "settings" | "review") => void;
-  setDraft: (value: string) => void;
-  composerRef: RefObject<HTMLTextAreaElement | null>;
   apiKeyDraft: string;
   setApiKeyDraft: (value: string) => void;
   modelDraft: string;
@@ -130,9 +125,6 @@ export function SettingsView({
   bootApp,
   oauth,
   setOauth,
-  setView,
-  setDraft,
-  composerRef,
   apiKeyDraft,
   setApiKeyDraft,
   modelDraft,
@@ -313,14 +305,7 @@ export function SettingsView({
           </p>
         </div>
 
-        <ConnectorsPanel
-          onOpenChat={() => setView("chat")}
-          onUseSample={(text) => {
-            setDraft(text);
-            setView("chat");
-            setTimeout(() => composerRef.current?.focus(), 0);
-          }}
-        />
+        <ConnectorsPanel signedIn={state?.authSource === "oauth"} />
         <div className="field">
           <label htmlFor="apiKey">xAI API key (backup only)</label>
           <input

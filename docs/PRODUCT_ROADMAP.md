@@ -14,13 +14,13 @@
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
 | **Published** | **v0.7.1** unsigned NSIS. Canvas stdout no longer breaks ACP. SHA pin in Settings/first-run. |
-| **Source (HEAD)** | **v0.7.1** — same as published. Do not re-stamp 0.6.7. |
+| **Source (HEAD)** | **v0.7.1** plus Grok connectors Settings honesty and Chat mermaid (C2). Not a release. Do not re-stamp 0.6.7. |
 | **Not published** | Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. Goal is not completable; operator is the only STOP. |
 
-**Next product decision (operator):** S4 update-path from a 0.6.7/0.7.0 box to 0.7.1. Do not re-stamp 0.6.7.
+**Next product decision (operator):** S4 update-path is **blocked for anonymous clients** — repo is private, so `releases/latest/download/latest.json` 404s without GitHub auth (measured 2026-09-14). Asset exists on `v0.7.1` via `gh`. Public repo or a public `latest.json` host unblocks it. Do not re-stamp 0.6.7.
 
 ---
 
@@ -165,7 +165,7 @@ Money only after 1.0 weekly use. Personal Chat stays free.
 | **S1 honest-unsigned** | First-run says unknown-publisher is expected; SHA-256 findable in the app | GATE Q; **AC5 waits on next installer** |
 | **S2 authenticode** | Signed NSIS; SmartScreen quiet | **BLOCKED on a cert** |
 | **S3 CLI-missing** | First Code visit is honest without bundling `grok.exe` | Mostly done (house Code no longer needs the CLI) |
-| **S4 update-path** | A 0.6.6 machine picks up the next tag via `latest.json` | READY as verify on the next tag |
+| **S4 update-path** | A 0.6.6 machine picks up the next tag via `latest.json` | **BLOCKED** — private GitHub repo; unauthenticated `releases/latest/download/latest.json` is 404 (2026-09-14) |
 | **S5 brother walkthrough** | Clean-machine evidence | **Operator hold** since 15 Aug |
 
 ### Out of 0.7
@@ -188,7 +188,7 @@ Mac · Mermaid · Forge MCP host · extra ACP adapters · billing · computer us
 | Worktree identity | Show if the guest names a worktree | **BLOCKED** on a vendor field |
 | TUI handoff | Open *this* session from Grok TUI | **BLOCKED** on vendor deep-link |
 | Artifacts | Long / grok-ui Open beside the bubble | **Shipped** 27 Aug |
-| Mermaid | Fenced mermaid draws or stays honest plain | READY to BRIEF; later than 0.7 |
+| Mermaid | Fenced mermaid draws or stays honest plain | **Live in Chat** 2026-09-14 (`data-mermaid=drawn` Forge Chat → Mermaid). Not a published tag |
 | Mac | Current-user Mac install | PARKED Windows-first |
 | Chat week | Brother (or equivalent) uses Chat a week | DEFERRED (operator hold) |
 | **Gate loved** | Shell / write / plan / ask all used in real work; Keep planning and Trust folder work | **Loop hunt** — see §9 |

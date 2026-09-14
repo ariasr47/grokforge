@@ -3281,9 +3281,6 @@ export function App() {
               bootApp={bootApp}
               oauth={oauth}
               setOauth={setOauth}
-              setView={setView}
-              setDraft={setDraft}
-              composerRef={composerRef}
               apiKeyDraft={apiKeyDraft}
               setApiKeyDraft={setApiKeyDraft}
               modelDraft={modelDraft}

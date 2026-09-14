@@ -12,14 +12,17 @@ import { parseMarkdownBlocks } from "./markdownParse";
 import { RichBlocks } from "./RichBlocks";
 import { classifyFence, tokenizeLine } from "./codeHighlight";
 import { highlightToHtml } from "./codeHighlightAsync";
+import { isMermaidLang } from "./mermaidFence";
+import { MermaidDiagram } from "./MermaidDiagram";
 import { loadPrefs } from "../lib/prefs";
 import { Button } from "../ui/Button";
 import { writeClipboard } from "../lib/copyClipboard";
 
 /**
- * Lightweight markdown for chat (no heavy deps).
- * Supports: fenced code (+ soft highlight), tables, task lists, strikethrough,
- * bold/italic/links, headers, lists, hr, and allowlisted ```grok-ui blocks.
+ * Lightweight markdown for chat (no heavy deps except mermaid for ```mermaid).
+ * Supports: fenced code (+ soft highlight), mermaid (or honest plain), tables,
+ * task lists, strikethrough, bold/italic/links, headers, lists, hr, and
+ * allowlisted ```grok-ui blocks.
  */
 
 function inlineToNodes(text: string, keyPrefix: string): ReactNode[] {
@@ -88,6 +91,7 @@ export const CodeBlock = memo(function CodeBlock({
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const genRef = useRef(0);
   const gate = useMemo(() => classifyFence(code, lang), [code, lang]);
+  const mermaid = isMermaidLang(lang);
   const label = gate.token || "code";
 
   useEffect(
@@ -120,6 +124,10 @@ export const CodeBlock = memo(function CodeBlock({
 
   useEffect(() => {
     const gen = ++genRef.current;
+    if (mermaid) {
+      setRichHtml(null);
+      return;
+    }
     if (!gate.token && gate.lineCount === 1 && code.trim() !== "") {
       setRichHtml(null);
       return;
@@ -142,7 +150,7 @@ export const CodeBlock = memo(function CodeBlock({
       },
     );
     // Cleanup does not clear richHtml (streaming hold + pending warm hold).
-  }, [code, lang, appearanceKey, gate.gatePassed, gate.class, gate.resolvedLang, gate.lineCount]);
+  }, [code, lang, appearanceKey, mermaid, gate.gatePassed, gate.class, gate.resolvedLang, gate.lineCount]);
 
   const lines = useMemo(
     () => code.replace(/\r\n/g, "\n").split("\n"),
@@ -159,6 +167,10 @@ export const CodeBlock = memo(function CodeBlock({
       {copied ? "Copied" : "Copy"}
     </Button>
   );
+
+  if (mermaid) {
+    return <MermaidDiagram code={code} />;
+  }
 
   return (
     <div

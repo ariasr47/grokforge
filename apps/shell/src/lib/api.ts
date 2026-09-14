@@ -934,44 +934,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ id, action }),
     }),
-  listConnectors: () =>
-    json<{ connectors: ConnectorInfo[] }>("/api/connectors"),
-  setConnectorToken: (id: string, token: string | null) =>
-    json<{ connectors: ConnectorInfo[] }>("/api/connectors/token", {
-      method: "POST",
-      body: JSON.stringify({ id, token }),
-    }),
-  testConnector: (id: string) =>
-    json<{
-      ok: boolean;
-      message: string;
-      connectors: ConnectorInfo[];
-    }>("/api/connectors/test", {
-      method: "POST",
-      body: JSON.stringify({ id }),
-    }),
+  grokConnectors: () => json<GrokConnectorsView>("/api/connectors"),
 };
 
-export type ConnectorStatus =
-  | "live"
-  | "configured"
-  | "paste_workflow"
-  | "planned";
+export const GROK_CONNECTORS_MANAGE_URL = "https://grok.com/connectors";
 
-export interface ConnectorInfo {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  status: ConnectorStatus;
-  howToday: string;
-  samplePrompt: string;
-  tokenConfigurable?: boolean;
-  tokenLabel?: string;
-  lastTestOk?: boolean | null;
-  lastTestAt?: string | null;
-  lastTestMessage?: string | null;
-  hasToken?: boolean;
+export interface GrokConnectorsView {
+  linkedStatus: "unknown";
+  manageUrl: string;
+  chatUsesGrokConnectors: false;
+  catalogDocs: string[];
 }
 
 function browserFallbackStatus(ok: boolean, message: string): DesktopHostStatus {

@@ -115,7 +115,7 @@ Shipped: `live-turn-attention` (v0.5.0), `acp-live-streams` + `syntax-themes` (v
 | ID | Story | IN | OUT | Depends | Blocked-on | Effort | Era | Status |
 |----|--------|----|-----|---------|------------|--------|-----|--------|
 | **C1** | **artifacts-panel** | Large grok-ui / long docs open beside the bubble; bubble stays scannable | PPT clone; HTML sandbox; PDF viewer | Rich display already in Chat | — | M | 1.0 | **DONE** SHIPPED + ARCHIVED 2026-08-27 |
-| **C2** | **mermaid** | Fenced mermaid renders or stays honest plain | Second highlighter; clone of TUI diagrams | C1 (or syntax-themes non-goal stays) | — | S | 1.0 | **READY to BRIEF** (unblocked after C1; later than 0.7 remainder) |
+| **C2** | **mermaid** | Fenced mermaid renders or stays honest plain | Second highlighter; clone of TUI diagrams | C1 (or syntax-themes non-goal stays) | — | S | 1.0 | **DONE live** 2026-09-14 Chat recapture `data-mermaid=drawn` (tests 5 mermaid + 2 connectors panel). Not a release. |
 | **C3** | **chat-on-vendor** | Chat runs `grok agent` | Dumping homes/packs into a coding agent on day one | E-GUEST loved on Code | Product reason, not convenience | L | 1.0+ | **PARKED** — dual-engine is the 0.7/1.0 default |
 | **C4** | **Chat week evidence** | Brother (or equivalent) completes a week | A feature named “brother” | E-SHARE first-run | Operator/brother time | — | 0.7–1.0 | **DEFERRED** (same hold as S5) |
 

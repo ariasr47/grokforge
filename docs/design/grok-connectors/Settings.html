@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forge · Settings · Grok connectors — canvas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --void: #050508;
+      --bg2: rgba(255, 255, 255, 0.04);
+      --bg3: rgba(255, 255, 255, 0.07);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(120, 220, 255, 0.35);
+      --text: #f2f4f8;
+      --muted: #8b93a7;
+      --accent: #5ce1ff;
+      --accent2: #a78bfa;
+      --accent3: #f0b45a;
+      --danger: #ff7a90;
+      --success: #5ee4a8;
+      --r-control: 10px;
+      --h-md: 32px;
+      --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--sans);
+      background:
+        radial-gradient(900px 480px at 8% -12%, rgba(92, 225, 255, 0.07), transparent 58%),
+        radial-gradient(760px 420px at 100% -6%, rgba(167, 139, 250, 0.08), transparent 55%),
+        var(--void);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+      letter-spacing: -0.01em;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    code { font-family: var(--mono); font-size: 12px; }
+
+    .page {
+      display: grid;
+      grid-template-columns: 320px minmax(560px, 1fr);
+      min-height: 100vh;
+    }
+    .brief {
+      padding: 28px 22px 40px;
+      border-right: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.015);
+    }
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+    .brief h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .brief p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+    .brief ul { margin: 0 0 18px; padding-left: 18px; color: var(--text); font-size: 13px; }
+    .brief li { margin: 0 0 6px; }
+    .brief li.out { color: var(--muted); }
+    .states {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 18px 0 0;
+    }
+    .states button {
+      text-align: left;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .states button:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+    .states button.on {
+      border-color: var(--border-strong);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    .states .k {
+      display: block;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .states .d {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .chip {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      margin-left: 6px;
+      vertical-align: 1px;
+    }
+    .chip.ship { color: var(--success); border-color: rgba(94, 228, 168, 0.4); }
+    .chip.later { color: var(--accent3); border-color: color-mix(in srgb, var(--accent3) 40%, transparent); }
+    .chip.reject { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+    .stage {
+      padding: 28px 32px 48px;
+      overflow: auto;
+    }
+    .banner {
+      max-width: 560px;
+      margin: 0 0 16px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+    }
+    .banner.later {
+      color: var(--accent3);
+      border-color: color-mix(in srgb, var(--accent3) 35%, transparent);
+      background: color-mix(in srgb, var(--accent3) 8%, transparent);
+    }
+    .banner.reject {
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+      background: color-mix(in srgb, var(--danger) 8%, transparent);
+    }
+
+    .settings {
+      padding: 28px;
+      max-width: 560px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(5, 5, 8, 0.55);
+    }
+    .settings h1 {
+      margin: 0 0 6px;
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .settings .lead {
+      color: var(--muted);
+      margin: 0 0 20px;
+      font-size: 14px;
+    }
+    .callout {
+      border-left: 3px solid var(--accent2);
+      background: linear-gradient(90deg, color-mix(in srgb, var(--accent2) 12%, transparent), transparent);
+      padding: 12px 14px;
+      border-radius: 0 12px 12px 0;
+      color: #d8d0f0;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+    .settings-meta {
+      margin: -10px 0 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      border-radius: var(--r-control);
+      padding: 0 12px;
+      height: var(--h-md);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .btn.primary {
+      background: radial-gradient(circle at 30% 30%, #fff 0%, var(--accent) 42%, var(--accent2) 100%);
+      border-color: transparent;
+      color: #041016;
+      font-weight: 600;
+      box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 40%, transparent);
+    }
+    .btn.ghost { background: transparent; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .field .hint { font-size: 12px; color: var(--muted); }
+    .field input, .ghost-input {
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: var(--muted);
+    }
+
+    .connectors-panel {
+      margin: 8px 0 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .connectors-title {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .connectors-lead { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+    .absent {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--bg2);
+      padding: 14px;
+      font-size: 13px;
+    }
+    .absent strong { font-weight: 600; }
+    .catalog-note {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+    .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--bg2);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .card .name { font-weight: 600; font-size: 14px; }
+    .card .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    .badge {
+      font-size: 10px;
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .badge.live { color: var(--success); border-color: rgba(94, 228, 168, 0.4); background: rgba(94, 228, 168, 0.08); }
+    .badge.off { color: var(--muted); }
+    .badge.paste { color: var(--accent2); border-color: color-mix(in srgb, var(--accent2) 35%, transparent); }
+
+    .panel { display: none; }
+    .panel.on { display: block; }
+
+    @media (max-width: 900px) {
+      .page { grid-template-columns: 1fr; }
+      .brief { border-right: 0; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="brief">
+      <p class="eyebrow">Canvas · not shipped</p>
+      <h1>Grok connectors in Settings</h1>
+      <p>Replace the paste-workflow catalog. Same 560px Settings column. Grok owns the links; Forge shows honesty, then a door to grok.com.</p>
+      <p><strong>In</strong></p>
+      <ul>
+        <li>Signed-in: honest-absent + Open grok.com/connectors</li>
+        <li>Signed-out: same door; Sign in with Grok stays above</li>
+        <li>Copy: Forge Chat does not use grok.com links yet</li>
+      </ul>
+      <p><strong>Out</strong></p>
+      <ul>
+        <li class="out">Forge Gmail/Notion OAuth or token fields</li>
+        <li class="out">Test / Try in Chat sample prompts</li>
+        <li class="out">Invented Connected badges</li>
+        <li class="out">Forge MCP host / add-custom form</li>
+        <li class="out">Local files as a “connector”</li>
+      </ul>
+      <div class="states" role="tablist" aria-label="Artboard state">
+        <button type="button" class="on" data-state="in" aria-selected="true">
+          <span class="k">Signed in <span class="chip ship">Ship</span></span>
+          <span class="d">Cannot list links. Open grok.com.</span>
+        </button>
+        <button type="button" data-state="out" aria-selected="false">
+          <span class="k">Signed out <span class="chip ship">Ship</span></span>
+          <span class="d">Same honesty. Sign in is already in Settings.</span>
+        </button>
+        <button type="button" data-state="later" aria-selected="false">
+          <span class="k">Vouched list <span class="chip later">Later</span></span>
+          <span class="d">Only if xAI vouches connected vs available.</span>
+        </button>
+        <button type="button" data-state="reject" aria-selected="false">
+          <span class="k">Paste catalog <span class="chip reject">Reject</span></span>
+          <span class="d">Today’s screenshot. Do not keep.</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <p class="banner" id="banner">Ship this. No status list until a vouched API exists.</p>
+
+      <div class="settings" aria-label="Settings mock">
+        <h1>Settings</h1>
+        <p class="lead">Forge · sign in with Grok (flagship agent) or API key backup. Ctrl+K for commands.</p>
+        <div class="callout">
+          Desktop Forge — the engine starts automatically.<br />
+          Version: <code>0.7.1</code> (prod)<br />
+          Unknown publisher is expected. SHA-256 is in this panel when the pin matches.
+        </div>
+        <p class="settings-meta" id="meta">prod · Grok · live · oauth</p>
+        <div class="row">
+          <button type="button" class="btn primary" id="signin">Sign in with Grok</button>
+          <button type="button" class="btn ghost" id="signout">Sign out</button>
+        </div>
+        <div class="field">
+          <label>Auth priority</label>
+          <p class="hint" id="authhint">1) SuperGrok / subscription pool · 2) API key backup · Active: <strong>oauth (sub_pool)</strong></p>
+        </div>
+
+        <section class="connectors-panel" aria-label="Grok connectors">
+          <h2 class="connectors-title">Grok connectors</h2>
+          <div id="body"></div>
+        </section>
+
+        <div class="field">
+          <label>xAI API key (backup only)</label>
+          <div class="ghost-input">Optional if signed in with Grok</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const banner = document.getElementById("banner");
+    const meta = document.getElementById("meta");
+    const authhint = document.getElementById("authhint");
+    const body = document.getElementById("body");
+    const signin = document.getElementById("signin");
+
+    const catalogNote = `<p class="catalog-note">Grok documents Gmail, Google Calendar, Google Drive, Outlook, Teams, OneDrive, SharePoint, Salesforce, a third-party catalog, and Custom MCP. Browse and connect on grok.com — this list is documentation, not your account.</p>`;
+
+    const html = {
+      in: {
+        banner: "Ship this. No status list until a vouched API exists.",
+        bannerClass: "banner",
+        meta: "prod · Grok · live · oauth",
+        auth: `1) SuperGrok / subscription pool · 2) API key backup · Active: <strong>oauth (sub_pool)</strong>`,
+        signinPrimary: false,
+        body: `
+          <p class="connectors-lead">These live on your Grok account at grok.com. Forge cannot see which ones are linked. Forge Chat does not use them yet.</p>
+          <div class="absent" role="status">
+            <strong>Linked status: unknown.</strong>
+            There is no vouched API for this account’s connectors. Open grok.com to see what’s connected.
+          </div>
+          <div class="cta-row">
+            <button type="button" class="btn primary">Open grok.com/connectors</button>
+          </div>
+          ${catalogNote}
+        `,
+      },
+      out: {
+        banner: "Ship this. Sign-in row is existing Settings chrome, not a new OAuth for Gmail.",
+        bannerClass: "banner",
+        meta: "prod · engine stopped · none",
+        auth: `1) SuperGrok / subscription pool · 2) API key backup · Active: <strong>none</strong>`,
+        signinPrimary: true,
+        body: `
+          <p class="connectors-lead">Connector links still live on grok.com. Signing into Forge does not reveal them, and Forge Chat still would not use them.</p>
+          <div class="absent" role="status">
+            <strong>Linked status: unknown.</strong>
+            Sign in with Grok to use this account in Forge. Manage connectors on grok.com either way.
+          </div>
+          <div class="cta-row">
+            <button type="button" class="btn primary">Open grok.com/connectors</button>
+          </div>
+        `,
+      },
+      later: {
+        banner: "Not this slice. Ship only when xAI vouches connected vs available. Do not hardcode.",
+        bannerClass: "banner later",
+        meta: "prod · Grok · live · oauth",
+        auth: `1) SuperGrok / subscription pool · 2) API key backup · Active: <strong>oauth (sub_pool)</strong>`,
+        signinPrimary: false,
+        body: `
+          <p class="connectors-lead">Your Grok account. Status below would be from Grok, not a Forge catalog.</p>
+          <ul class="list">
+            <li class="card"><span class="name">Gmail <span class="sub">account from Grok — never invented</span></span><span class="badge live">Connected</span></li>
+            <li class="card"><span class="name">Google Drive</span><span class="badge live">Connected</span></li>
+            <li class="card"><span class="name">Notion</span><span class="badge off">Not linked</span></li>
+            <li class="card"><span class="name">Custom MCP</span><span class="badge off">Not linked</span></li>
+          </ul>
+          <div class="cta-row">
+            <button type="button" class="btn primary">Open grok.com/connectors</button>
+          </div>
+        `,
+      },
+      reject: {
+        banner: "Reject. This is today’s Settings screenshot: paste prompts wearing connector badges.",
+        bannerClass: "banner reject",
+        meta: "prod · Grok · live · oauth",
+        auth: `1) SuperGrok / subscription pool · 2) API key backup · Active: <strong>oauth (sub_pool)</strong>`,
+        signinPrimary: false,
+        body: `
+          <p class="connectors-lead">Link work tools when available. Today most apps use a <strong>paste workflow</strong>…</p>
+          <ul class="list">
+            <li class="card"><span class="name">Gmail</span><span class="badge paste">Paste workflow</span></li>
+            <li class="card"><span class="name">Notion</span><span class="badge paste">Paste workflow</span></li>
+            <li class="card"><span class="name">Google Drive</span><span class="badge paste">Paste workflow</span></li>
+            <li class="card"><span class="name">Local files</span><span class="badge live">Live</span></li>
+          </ul>
+        `,
+      },
+    };
+
+    function show(id) {
+      const s = html[id];
+      banner.className = s.bannerClass;
+      banner.textContent = s.banner;
+      meta.textContent = s.meta;
+      authhint.innerHTML = s.auth;
+      body.innerHTML = s.body;
+      signin.classList.toggle("primary", s.signinPrimary);
+      signin.classList.toggle("ghost", !s.signinPrimary);
+      document.querySelectorAll(".states button").forEach((b) => {
+        const on = b.dataset.state === id;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    }
+
+    document.querySelector(".states").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-state]");
+      if (b) show(b.dataset.state);
+    });
+    show("in");
+  </script>
+</body>
+</html>

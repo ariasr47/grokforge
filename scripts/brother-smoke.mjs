@@ -1,22 +1,12 @@
 /**
- * Brother dogfood smoke: host health + connectors catalog + paste workflows.
- * Does not require Grok auth or live Notion token.
+ * Brother dogfood smoke: host health + Grok connectors honesty.
+ * Does not require Grok auth. Paste-catalog token/test is parked.
  */
 const BASE = process.env.GROKFORGE_HOST || "http://127.0.0.1:8787";
 
 async function get(path) {
   const r = await fetch(`${BASE}${path}`);
   if (!r.ok) throw new Error(`${path} → ${r.status}`);
-  return r.json();
-}
-
-async function post(path, body = {}) {
-  const r = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`${path} → ${r.status} ${await r.text()}`);
   return r.json();
 }
 
@@ -48,49 +38,37 @@ try {
 }
 
 try {
-  const { connectors } = await get("/api/connectors");
-  if (!Array.isArray(connectors) || connectors.length < 4) {
-    throw new Error(`expected ≥4 connectors, got ${connectors?.length}`);
+  const body = await get("/api/connectors");
+  if (body.linkedStatus !== "unknown") {
+    throw new Error(`linkedStatus ${body.linkedStatus}`);
   }
-  const ids = connectors.map((c) => c.id).sort().join(",");
-  ok(`GET /api/connectors (${connectors.length}: ${ids})`);
-
-  const gmail = connectors.find((c) => c.id === "gmail");
-  if (!gmail?.samplePrompt || gmail.status !== "paste_workflow") {
-    throw new Error("gmail paste workflow missing");
+  if (body.chatUsesGrokConnectors !== false) {
+    throw new Error("chat must not claim grok.com connectors");
   }
-  ok("gmail paste_workflow + sample");
-
-  const local = connectors.find((c) => c.id === "local-files");
-  if (local?.status !== "live") throw new Error("local-files should be live");
-  ok("local-files live");
+  if (body.manageUrl !== "https://grok.com/connectors") {
+    throw new Error(`manageUrl ${body.manageUrl}`);
+  }
+  if (Array.isArray(body.connectors)) {
+    throw new Error("paste catalog must not ship as connectors[]");
+  }
+  if (!Array.isArray(body.catalogDocs) || !body.catalogDocs.includes("Gmail")) {
+    throw new Error("catalogDocs missing Gmail");
+  }
+  ok("GET /api/connectors honesty");
 } catch (e) {
-  fail("connectors catalog", e);
+  fail("connectors honesty", e);
 }
 
 try {
-  const t = await post("/api/connectors/test", { id: "local-files" });
-  if (!t.ok) throw new Error(t.message);
-  ok("POST /api/connectors/test local-files");
+  const r = await fetch(`${BASE}/api/connectors/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: "gmail" }),
+  });
+  if (r.status !== 410) throw new Error(`expected 410, got ${r.status}`);
+  ok("POST /api/connectors/test parked 410");
 } catch (e) {
-  fail("test local-files", e);
-}
-
-try {
-  const t = await post("/api/connectors/test", { id: "gmail" });
-  if (!t.ok) throw new Error(t.message);
-  ok("POST /api/connectors/test gmail (paste path)");
-} catch (e) {
-  fail("test gmail", e);
-}
-
-try {
-  const t = await post("/api/connectors/test", { id: "notion" });
-  // no token → ok false is expected
-  if (t.ok) ok("notion test (token present — live)");
-  else ok(`notion test without token (expected fail): ${t.message?.slice(0, 60)}`);
-} catch (e) {
-  fail("test notion", e);
+  fail("test parked", e);
 }
 
 console.log("");

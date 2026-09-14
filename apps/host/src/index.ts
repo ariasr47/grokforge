@@ -21,12 +21,7 @@ import { resolveConfinedTarget } from "./workspace-confinement.js";
 import { spawn } from "node:child_process";
 import { resolveApiKeyAsync, loadConfig } from "./config.js";
 import { getGitBranch } from "./git.js";
-import {
-  hydrateConnectorEnv,
-  listConnectors,
-  setConnectorToken,
-  testConnector,
-} from "./connectors.js";
+import { grokConnectorsView } from "./connectors.js";
 import { channelMeta, defaultPort, dataDir } from "./channel.js";
 import {
   isJsonContentType,
@@ -75,7 +70,7 @@ function mirrorComposerPlanOnto(owner: AgentSession): void {
   if (!composer.engaged || owned.engaged || !composer.vouched || !owned.vouched) return;
   try { owner.setPlanEngagement(true); } catch { /* plan_not_applicable / unvouched */ }
 }
-hydrateConnectorEnv();
+
 
 /**
  * Never sends the `*` wildcard — GATE Z lockdown (SPEC §8, INTERFACE_CONTRACT.md "Request
@@ -624,34 +619,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (method === "GET" && url.pathname === "/api/connectors") {
-      sendJson(res, 200, { connectors: listConnectors() });
+      sendJson(res, 200, grokConnectorsView());
       return;
     }
 
-    if (method === "POST" && url.pathname === "/api/connectors/token") {
-      const body = JSON.parse((await readBody(req)) || "{}") as {
-        id?: string;
-        token?: string | null;
-      };
-      if (!body.id) {
-        sendJson(res, 400, { error: "id required" });
-        return;
-      }
-      const connectors = setConnectorToken(body.id, body.token ?? null);
-      sendJson(res, 200, { connectors });
-      return;
-    }
-
-    if (method === "POST" && url.pathname === "/api/connectors/test") {
-      const body = JSON.parse((await readBody(req)) || "{}") as { id?: string };
-      if (!body.id) {
-        sendJson(res, 400, { error: "id required" });
-        return;
-      }
-      const result = await testConnector(body.id);
-      sendJson(res, 200, {
-        ...result,
-        connectors: listConnectors(),
+    if (
+      method === "POST" &&
+      (url.pathname === "/api/connectors/token" ||
+        url.pathname === "/api/connectors/test")
+    ) {
+      sendJson(res, 410, {
+        error: "parked",
+        message:
+          "Paste-catalog token/test is parked. Restore apps/host/parked-src/connectors.paste-catalog.ts",
       });
       return;
     }

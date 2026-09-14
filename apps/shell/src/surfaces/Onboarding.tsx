@@ -121,7 +121,7 @@ export function Onboarding({
     {
       id: "connectors",
       title: isChat
-        ? "Work tools (Gmail, Notion, files)"
+        ? "Grok connectors live on grok.com"
         : "Workspace tools (repo folder)",
       done: isChat
         ? firstRun.sentMessage || firstRun.openedFolder || firstRun.dismissed
@@ -129,11 +129,11 @@ export function Onboarding({
       action:
         isChat && onOpenSettings ? (
           <Button onClick={onOpenSettings}>
-            Open Connectors in Settings
+            Open Grok connectors in Settings
           </Button>
         ) : null,
       hint: isChat
-        ? "No Gmail login yet — paste emails into Chat. Notion: optional API secret under Settings → Connectors. Local files: Open folder or Attach."
+        ? "Forge cannot list which Grok connectors are linked. Settings → Grok connectors opens grok.com. Forge Chat does not use them yet. Local files: Open folder or Attach."
         : "Code mode uses the project folder for tools and diffs.",
     },
     {
