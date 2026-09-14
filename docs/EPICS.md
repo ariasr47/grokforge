@@ -94,7 +94,7 @@ Shipped: `live-turn-attention` (v0.5.0), `acp-live-streams` + `syntax-themes` (v
 |----|--------|----|-----|---------|------------|--------|--------|
 | **S1** | **honest-unsigned-first-run** | Fresh install states unknown-publisher is expected; SHA-256 is findable (notes / first-run / Settings). Never a fake “Verified publisher” | Authenticode theater | v0.6.6 notes already have SHA | Operator **A** 2026-08-27 | S | **SHA live** on installed 0.7.1 (Settings + health). GATE Q clean-machine rows still open |
 | **S2** | **authenticode-installer** | Current-user NSIS is Authenticode-signed; SmartScreen quiet | Buying a cert in-band | Cert in the org | **cert** | L | **BLOCKED** |
-| **S3** | **first-run-cli-missing** | First Code visit: “install Grok CLI” vs Mini-Grok is host-vouched; Chat works without CLI | Bundling `grok.exe` as a silent extra product | `spawn-grok-agent` fallback chrome | — | S | **mostly DONE**; close remaining mute gaps only |
+| **S3** | **first-run-cli-missing** | First Code visit: “install Grok CLI” vs Mini-Grok is host-vouched; Chat works without CLI | Bundling `grok.exe` as a silent extra product | `spawn-grok-agent` fallback chrome | — | S | **DONE** house Code is Grok; Mini-Grok only on vendor-CLI fallback |
 | **S4** | **update-path-proof** | A real 0.6.5/0.6.6 machine picks up the next tag via `latest.json` | New updater protocol | Updater key (present locally) | A 0.7 (or 0.6.7) tag | S | **PROVED** 2026-09-14 public repo; 0.7.0 offered Install 0.7.1 |
 | **S5** | **brother-walkthrough** | Deferred `desktop-self-host` human/clean-machine rows close **or** stay named-deferred | Steering a session back to handoff without operator lift | Packaging already shipped | **Operator hold** since 2026-08-15 | M | **DEFERRED** |
 

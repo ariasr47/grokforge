@@ -13,14 +13,14 @@
 | | |
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
-| **Published** | **v0.7.1** unsigned NSIS, installed on this box. SHA-256 live in Settings. Canvas stdout no longer breaks ACP. |
-| **Source (HEAD)** | **v0.7.1** plus Grok connectors Settings honesty and Chat mermaid (C2, local `a4d3c20`). Not a release. Do not re-stamp 0.6.7. |
+| **Published** | **v0.7.2** unsigned NSIS. Grok connectors honesty + Chat mermaid. SHA pin in Settings. |
+| **Source (HEAD)** | **v0.7.2**. Do not re-stamp 0.6.7. |
 | **Not published** | Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. Goal is not completable; operator is the only STOP. |
 
-**Next product decision (operator):** S4 proved 2026-09-14 — repo is **public**; 0.7.0 Check for updates offered **Install 0.7.1**; 0.7.1 now **No update available.** S2 still needs a cert. S5 walkthrough still held. Local `a4d3c20` is not on origin.
+**Next product decision (operator):** S5 brother walkthrough still held. S2 still needs a cert. Mill stays off.
 
 ---
 
@@ -164,7 +164,7 @@ Money only after 1.0 weekly use. Personal Chat stays free.
 |-------|------------|--------|
 | **S1 honest-unsigned** | First-run says unknown-publisher is expected; SHA-256 findable in the app | **SHA live** on installed 0.7.1 (`6abb936f…` in Settings + `/api/health`). GATE Q clean-machine rows still open |
 | **S2 authenticode** | Signed NSIS; SmartScreen quiet | **BLOCKED on a cert** |
-| **S3 CLI-missing** | First Code visit is honest without bundling `grok.exe` | Mostly done (house Code no longer needs the CLI) |
+| **S3 CLI-missing** | First Code visit is honest without bundling `grok.exe` | **DONE** — house Code is Grok; Mini-Grok only if vendor CLI fallback |
 | **S4 update-path** | A 0.6.6 machine picks up the next tag via `latest.json` | **PROVED** 2026-09-14 — `ariasr47/grokforge` public; anon `latest.json` 200; 0.7.0 UI **Install 0.7.1** |
 | **S5 brother walkthrough** | Clean-machine evidence | **Operator hold** since 15 Aug |
 
