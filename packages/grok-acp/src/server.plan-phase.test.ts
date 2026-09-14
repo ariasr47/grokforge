@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Plan-phase updates are grok-acp, not a Forge plan engine.
 import { GrokAcpServer, type Session } from "./server.js";
 import { bindExecutionCapability } from "./executionCapability.js";
 

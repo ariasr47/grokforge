@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Project-instruction tests cover host-read AGENTS.md, not a Forge skills catalog.
 import { GrokAcpServer } from "./server.js";
 import { PROJECT_INSTRUCTIONS_MAX_BYTES } from "./project-instructions.js";
 

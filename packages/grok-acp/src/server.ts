@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import {
   applyPendingEdit,
+  capToolResultForContext,
   executeReadTool,
   prepareDeleteEdit,
   prepareRenameEdit,
@@ -97,7 +98,15 @@ export const MAX_SESSION_MESSAGES = Number(
   process.env.GROKFORGE_MAX_SESSION_MESSAGES || 80,
 ) || 80;
 
-const MAX_TURNS = Number(process.env.GROKFORGE_MAX_TURNS || 20) || 20;
+function readMaxTurns(): number {
+  return Number(process.env.GROKFORGE_MAX_TURNS || 20) || 20;
+}
+
+/** Vouched when the loop spent the turn budget on tools and never wrote a final. */
+export function turnBudgetFinalText(turns: number): string {
+  const unit = turns === 1 ? "round" : "rounds";
+  return `Stopped after ${turns} tool ${unit} without a final answer. Retry to continue.`;
+}
 
 export function trimSessionMessages(
   messages: ChatMessage[],
@@ -123,6 +132,8 @@ export class GrokAcpServer {
     string,
     { resolve: (d: string) => void; reject: (e: Error) => void }
   >();
+  /** Shell Allow may carry an in-place edited command (YOU 03:00). */
+  private permissionCommandById = new Map<string, string>();
   private editWaiters = new Map<
     string,
     { resolve: (action: "accept" | "reject") => void; reject: (e: Error) => void }
@@ -327,6 +338,9 @@ export class GrokAcpServer {
         case "permission/respond": {
           const pid = String(params?.id ?? "");
           const decision = String(params?.decision ?? "deny");
+          const command = typeof params?.command === "string" ? params.command.trim() : "";
+          if (command) this.permissionCommandById.set(pid, command);
+          else this.permissionCommandById.delete(pid);
           const waiter = this.permissionWaiters.get(pid);
           if (waiter) {
             this.permissionWaiters.delete(pid);
@@ -395,7 +409,7 @@ export class GrokAcpServer {
 
   private waitPermission(
     id: string,
-    kind: "write" | "shell",
+    kind: "write" | "shell" | "ask",
     detail: string,
     owner?: RunOwner,
   ): Promise<string> {
@@ -488,7 +502,9 @@ export class GrokAcpServer {
       });
       // Agent loop — stream each model turn so thinking appears live
       let turns = 0;
-      const maxTurns = MAX_TURNS;
+      let toolRounds = 0;
+      let hadFinal = false;
+      const maxTurns = readMaxTurns();
       while (turns < maxTurns && !this.cancelled) {
         turns += 1;
         trimSessionMessages(session.messages);
@@ -645,6 +661,7 @@ export class GrokAcpServer {
         }
 
         if (result.tool_calls?.length) {
+          toolRounds += 1;
           this.notify("run_phase", {
             phase: "tools",
             detail: `Using ${result.tool_calls.length} tool(s)…`,
@@ -654,13 +671,10 @@ export class GrokAcpServer {
             content: result.content,
             tool_calls: result.tool_calls,
           });
-          for (const call of result.tool_calls) {
+          const batch = await this.executeTools(session, result.tool_calls);
+          for (const { call, toolResult } of batch) {
             if (this.cancelled) break;
-            const toolResult = await this.handleToolCall(session, call);
-            const capped =
-              toolResult.length > 12_000
-                ? toolResult.slice(0, 12_000) + "\n…[truncated for context]"
-                : toolResult;
+            const capped = capToolResultForContext(toolResult);
             session.messages.push({
               role: "tool",
               tool_call_id: call.id,
@@ -705,6 +719,11 @@ export class GrokAcpServer {
             streamedContent = true;
           }
           session.messages.push({ role: "assistant", content: finalText });
+          hadFinal = true;
+        } else if (!streamedContent && toolRounds > 0) {
+          // Live 2026-09-10: inspection/shell jobs stop after tools with no
+          // answer. Vouch a final instead of missing_final_answer.
+          break;
         } else if (!streamedContent) {
           // Reasoning is never an answer. A missing final is an explicit retryable
           // failure; the host finalizer owns the terminal outcome.
@@ -717,6 +736,14 @@ export class GrokAcpServer {
           return;
         }
         break;
+      }
+
+      if (!this.cancelled && !hadFinal && toolRounds > 0) {
+        const n = turns >= maxTurns ? maxTurns : toolRounds;
+        const text = turnBudgetFinalText(n);
+        this.notify("text_delta", { text });
+        session.messages.push({ role: "assistant", content: text });
+        hadFinal = true;
       }
 
       this.notify("run_phase", { phase: "done" });
@@ -759,8 +786,9 @@ export class GrokAcpServer {
     if (priorCall) { if (priorCall.args !== normalizedArgs) return JSON.stringify({error:"tool_call_id_reused_with_different_arguments"}); return priorCall.result; }
 
     const capability = session.capability;
-    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : ok ? null : typeof extra.error === "string" ? extra.error : out, reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null, kind: extra.kind ?? null, fromPath: extra.fromPath ?? null, toPath: extra.toPath ?? null }, executionOwner);
-    this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: null, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
+    const askSummary = name === "ask_user" ? String(args.question ?? "").trim() || null : null;
+    const emitTerminal = (out: string, ok: boolean, extra: Record<string, unknown> = {}) => this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "terminal", execution: extra.execution ?? "executed", status: extra.status ?? (ok ? "succeeded" : "failed"), name, input: extra.input ?? args, summary: extra.summary ?? askSummary, command: name === "run_shell" ? String(extra.command ?? args.command ?? "") : null, output: out, error: extra.execution === "not_executed" ? null : ok ? null : typeof extra.error === "string" ? extra.error : out, reasonCode: extra.reasonCode ?? null, reason: extra.reason ?? null, shellDisplayName: capability.displayName, detailAvailable: true, automaticEligibility: extra.automaticEligibility ?? "not_eligible", autoApplied: extra.autoApplied === true, editId: extra.editId ?? null, diff: extra.diff ?? null, path: extra.path ?? null, recovery: extra.recovery ?? null, kind: extra.kind ?? null, fromPath: extra.fromPath ?? null, toPath: extra.toPath ?? null }, executionOwner);
+    this.notify("tool_run", { schemaVersion: 2, type: "tool_run", activityId: call.id, toolCallId: call.id, lifecycle: "pending", execution: null, status: "running", name, input: args, summary: askSummary, command: name === "run_shell" ? String(args.command ?? "") : null, output: null, error: null, reasonCode: null, reason: null, shellDisplayName: capability.displayName, detailAvailable: true }, executionOwner);
 
     const fromRun = executionOwner
       ? [...this.activeRuns.values()].find((r) => r.owner.runId === executionOwner.runId)
@@ -769,7 +797,8 @@ export class GrokAcpServer {
     if (phase === "plan") {
       const isRead = name === "read_file" || name === "list_dir" || name === "grep";
       const isInspection = name === "run_shell" && compileFixedInspection(String(args.command ?? "")) != null;
-      if (!isRead && !isInspection) {
+      const isAsk = name === "ask_user";
+      if (!isRead && !isInspection && !isAsk) {
         const msg = JSON.stringify({
           error: "Plan phase refuses mutations",
           execution: "not_executed",
@@ -797,6 +826,73 @@ export class GrokAcpServer {
         normalizedArgs,
         emitTerminal,
       );
+    }
+
+    if (name === "ask_user") {
+      const question = String(args.question ?? "").trim();
+      const options = Array.isArray(args.options)
+        ? args.options.map((o) => String(o ?? "").trim()).filter(Boolean)
+        : [];
+      if (!question || options.length < 2) {
+        const msg = JSON.stringify({
+          error: "ask_user requires a question and at least two options",
+          execution: "not_executed",
+        });
+        emitTerminal(msg, false, {
+          execution: "not_executed",
+          status: "rejected",
+          reasonCode: "invalid_arguments",
+          reason: "ask_user requires a question and at least two options",
+          automaticEligibility: "not_eligible",
+        });
+        return msg;
+      }
+      let decision: string;
+      try {
+        decision = await this.waitPermission(
+          call.id,
+          "ask",
+          JSON.stringify({ question, options }),
+          executionOwner,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === "cancelled") {
+          const msg = JSON.stringify({
+            error: "User dismissed the question",
+            execution: "not_executed",
+          });
+          emitTerminal(msg, false, {
+            execution: "not_executed",
+            status: "rejected",
+            reasonCode: "authorization_refused",
+            reason: "cancelled",
+            automaticEligibility: "not_eligible",
+          });
+          return msg;
+        }
+        throw err;
+      }
+      const match = /^option:(\d+)$/.exec(decision);
+      const selected = match ? Number(match[1]) : NaN;
+      if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) {
+        const msg = JSON.stringify({
+          error: "User dismissed the question",
+          execution: "not_executed",
+        });
+        emitTerminal(msg, false, {
+          execution: "not_executed",
+          status: "rejected",
+          reasonCode: "authorization_refused",
+          reason: decision,
+          automaticEligibility: "not_eligible",
+        });
+        return msg;
+      }
+      const out = JSON.stringify({ selected, label: options[selected] });
+      emitTerminal(out, true, { automaticEligibility: "not_eligible" });
+      this.completedToolCalls.set(ownerKey, { args: normalizedArgs, result: out });
+      return out;
     }
 
     const perm = toolPermissionKind(name);
@@ -876,11 +972,16 @@ export class GrokAcpServer {
           emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: "protected_recursive_delete", reason: "Protected recursive deletion target", automaticEligibility: "not_eligible", autoApplied: false });
           return msg;
         }
-        const preflight = await preflightShell(capability, String(args.command ?? ""));
-        if (preflight.disposition === "reject") {
-          const msg = JSON.stringify({ execution: "not_executed", reasonCode: preflight.reasonCode, command: preflight.command, reason: preflight.reason, shellDisplayName: preflight.shellDisplayName });
-          emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason, automaticEligibility: "not_eligible", autoApplied: false });
-          return msg;
+        // Fixed-inspection auto path spawns git/rg directly — cmd preflight of the
+        // original string must not rewrite Bypass/inspection eligibility (live
+        // junction Bypass was `not_eligible` when rg was missing from Path).
+        if (!(inspection && authorization.decision === "auto")) {
+          const preflight = await preflightShell(capability, String(args.command ?? ""));
+          if (preflight.disposition === "reject") {
+            const msg = JSON.stringify({ execution: "not_executed", reasonCode: preflight.reasonCode, command: preflight.command, reason: preflight.reason, shellDisplayName: preflight.shellDisplayName });
+            emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: preflight.reasonCode, reason: preflight.reason, automaticEligibility: "not_eligible", autoApplied: false });
+            return msg;
+          }
         }
         if (!session.sessionShell && session.permissionMode !== "bypass_permissions" && authorization.decision !== "auto") {
           let decision: string;
@@ -908,6 +1009,7 @@ export class GrokAcpServer {
           }
           if (decision === "allow_session") session.sessionShell = true;
           if (decision === "deny" || decision === "cancelled") {
+            this.permissionCommandById.delete(call.id);
             const msg = JSON.stringify({ error: "User denied shell permission", execution: "not_executed" });
             emitTerminal(msg, false, {
               execution: "not_executed",
@@ -916,6 +1018,17 @@ export class GrokAcpServer {
               reason: decision === "cancelled" ? "cancelled" : "User denied shell permission",
               automaticEligibility: authorization.automaticEligibility,
             });
+            return msg;
+          }
+        }
+        const commandOverride = this.permissionCommandById.get(call.id);
+        this.permissionCommandById.delete(call.id);
+        const runCommand = commandOverride || String(args.command ?? "");
+        if (commandOverride) {
+          const editedPreflight = await preflightShell(capability, runCommand);
+          if (editedPreflight.disposition === "reject") {
+            const msg = JSON.stringify({ execution: "not_executed", reasonCode: editedPreflight.reasonCode, command: editedPreflight.command, reason: editedPreflight.reason, shellDisplayName: editedPreflight.shellDisplayName });
+            emitTerminal(msg, false, { execution: "not_executed", status: "rejected", reasonCode: editedPreflight.reasonCode, reason: editedPreflight.reason, automaticEligibility: "not_eligible", autoApplied: false });
             return msg;
           }
         }
@@ -938,7 +1051,7 @@ export class GrokAcpServer {
         try {
           out = await runShell(
             capability,
-            String(args.command ?? ""),
+            runCommand,
             Number(args.timeout_ms ?? 60_000),
             { enforceAllowlist },
           );
@@ -962,6 +1075,7 @@ export class GrokAcpServer {
           authorization.automaticEligibility === "trusted_command_class";
         const bypassAuto = session.permissionMode === "bypass_permissions";
         emitTerminal(out, ok, {
+          command: runCommand,
           automaticEligibility: bypassAuto
             ? "bypass"
             : listAuto
@@ -1351,5 +1465,19 @@ export class GrokAcpServer {
   /** Backend test seam: executes the same production tool path used by prompt turns. */
   async executeTool(session: Session, call: ToolCall, owner?: RunOwner): Promise<string> {
     return this.handleToolCall(session, call, owner);
+  }
+
+  /** Same-turn tool batch: permission Gates overlap instead of serializing. */
+  async executeTools(
+    session: Session,
+    calls: ToolCall[],
+    owner?: RunOwner,
+  ): Promise<Array<{ call: ToolCall; toolResult: string }>> {
+    return Promise.all(
+      calls.map(async (call) => ({
+        call,
+        toolResult: await this.handleToolCall(session, call, owner),
+      })),
+    );
   }
 }

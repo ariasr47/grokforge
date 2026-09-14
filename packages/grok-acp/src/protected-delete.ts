@@ -1,4 +1,5 @@
 import path from "node:path";
+// Root/home/workspace deletes stay blocked even when recursive flags are present.
 export function isProtectedDelete(target:string,workspace:string,home=process.env.USERPROFILE||process.env.HOME||""){const n=(p:string)=>path.resolve(p).toLowerCase();const t=n(target);return [workspace,home,path.parse(t).root].filter(Boolean).some(x=>t===n(x))}
 export function parseProtectedDelete(command:string,workspace:string){
   const tokens=[...command.trim().matchAll(/"((?:\\.|[^"])*)"|'([^']*)'|(\S+)/g)].map(m=>(m[1]??m[2]??m[3]).replace(/\\"/g,'"'));

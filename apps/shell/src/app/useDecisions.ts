@@ -119,7 +119,7 @@ export interface UseDecisionsResult {
   pendingPlanDecision: PendingPlanDecision | null;
   pendingRecoveryDecision: PendingRecoveryDecision | null;
   planArm: PlanArmProjection;
-  decidePermission: (decision: "allow_once" | "allow_session" | "deny") => Promise<void>;
+  decidePermission: (decision: "allow_once" | "allow_session" | "deny" | `option:${number}`) => Promise<void>;
   trustFolder: () => Promise<void>;
   settlePlan: (action: "accept" | "keep_planning") => Promise<void>;
   recoverFromDock: () => Promise<void>;
@@ -237,7 +237,7 @@ export function useDecisions({
   );
 
   const decidePermission = useCallback(
-    async (decision: "allow_once" | "allow_session" | "deny") => {
+    async (decision: "allow_once" | "allow_session" | "deny" | `option:${number}`, command?: string) => {
       const p = permissions[0];
       if (!p) return;
       if (permissionInFlightRef.current === p.id) return;
@@ -250,6 +250,7 @@ export function useDecisions({
           requestId: p.id,
           invocationId: p.invocationId,
           decision,
+          ...(command?.trim() ? { command: command.trim() } : {}),
         });
         if (decision === "allow_session") {
           if (p.kind === "write") setSessionWrite(true);
@@ -263,7 +264,7 @@ export function useDecisions({
           if (stillPending) return prev.some((x) => x.id === p.id) ? prev : [p, ...prev];
           return prev.filter((x) => x.id !== p.id);
         });
-        if (decision !== "allow_once") {
+        if (decision !== "allow_once" && !decision.startsWith("option:")) {
           toast.push(
             decision === "deny"
               ? `Denied ${p.kind}`
@@ -398,10 +399,15 @@ export function useDecisions({
   // missing) so their hint never lies again once a second option exists.
   const chooseAskOption = useCallback(
     (index: number) => {
+      const p = permissions[0];
+      if (p?.kind === "ask") {
+        void decidePermission(`option:${index}`);
+        return;
+      }
       if (!pendingRecoveryDecision) return;
       if (index === 0) void recoverFromDock();
     },
-    [pendingRecoveryDecision, recoverFromDock],
+    [permissions, decidePermission, pendingRecoveryDecision, recoverFromDock],
   );
 
   const anyDecisionPending =

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+// Shell-policy tests cover grok-acp host allowlist, not a Forge auto-mode.
 import { checkShellCommand } from "./shell-policy.js";
 
 describe("checkShellCommand", () => {

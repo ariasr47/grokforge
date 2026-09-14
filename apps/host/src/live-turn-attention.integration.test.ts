@@ -121,3 +121,17 @@ test("write permission pins title Write file", async () => {
     await live.close();
   }
 });
+
+test("ask permission pins title Grok has a question", async () => {
+  const live = await startLiveTurnHost();
+  try {
+    const out = await live.prompt("ask-permission");
+    const request = pendingPermissionFromEnvelope(out);
+    assert.equal(request.kind, "permission");
+    assert.equal(request.status, "pending");
+    assert.equal(request.title, "Grok has a question");
+    assert.match(String(request.detail), /Which copy\?/);
+  } finally {
+    await live.close();
+  }
+});

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Usage events are vendor ACP session/update.
 import { StdioAcpClient } from "./client.js";
 
 const profile = {

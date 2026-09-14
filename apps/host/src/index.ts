@@ -859,6 +859,7 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse((await readBody(req)) || "{}") as {
         id?: string; sessionId?:string; runId?:string; requestId?:string; invocationId?:string;
         decision?: PermissionDecision;
+        command?: string;
       };
       if (!body.sessionId || !body.runId || !body.requestId || !body.invocationId || !body.decision) {
         sendContractError(res,400,"invalid_request","decision ownership fields required");
@@ -867,7 +868,7 @@ const server = http.createServer(async (req, res) => {
       const owner=sessionFor(body.sessionId,false) ?? (session.getState().session?.sessionId===body.sessionId?session:null); if(!owner){sendContractError(res,404,"run_not_found","Run not found");return;}
       try {
         const run=owner.getRun(body.runId); if(!run || run.sessionId!==body.sessionId) throw Object.assign(new Error("no pending permission"),{code:"decision_not_found"});
-        const settled = await owner.permission(body.id ?? body.requestId, body.decision,{sessionId:run.sessionId,runId:body.runId,connectionGeneration:run.connectionGeneration}, body.invocationId);
+        const settled = await owner.permission(body.id ?? body.requestId, body.decision,{sessionId:run.sessionId,runId:body.runId,connectionGeneration:run.connectionGeneration}, body.invocationId, typeof body.command === "string" ? body.command : undefined);
         sendJson(res, 200, { ok: true, request:{requestId:body.requestId,invocationId:body.invocationId,kind:"permission",status:settled,title:"Permission",detail:"",expiresAt:new Date().toISOString(),policy:run.policy} });
       } catch (e) {
         const code=(e as any)?.code??"decision_not_found"; sendContractError(res,(code==="run_terminal"||code==="request_expired")?409:404,code,"no pending permission");

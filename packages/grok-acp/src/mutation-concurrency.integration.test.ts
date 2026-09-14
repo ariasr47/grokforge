@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Mutation-concurrency tests cover grok-acp session serialize, not a Forge undo engine.
 import { MutationCoordinator } from "./mutation-coordinator.js";
 
 test("overlapping ACP-session edits serialize and stale base is rejected", async () => {

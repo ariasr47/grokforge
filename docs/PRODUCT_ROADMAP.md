@@ -1,6 +1,6 @@
 # Product roadmap — Forge (living)
 
-**Last refreshed:** 2026-09-08  
+**Last refreshed:** 2026-09-10  
 **Kind:** living product document. The loop (`docs/FORGE_EVER_GOAL.md`) may add a hunt row; it must not silently rewrite eras or anti-goals.  
 **Identity:** `docs/VISION.md` · **Epics:** `docs/EPICS.md` · **Daily pick:** this file §9 then `.spire/clusters/tech/context/BACKLOG.md`
 
@@ -14,13 +14,13 @@
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
 | **Published** | **v0.6.7** Windows unsigned NSIS. Code is **house grok-acp**. Gate. Changes. Home. |
-| **Source (HEAD)** | same cut. SHA-in-app (S1 AC5) still needs GATE Q on this installer. |
-| **Not published** | Signed cert. Mac. |
+| **Source (HEAD)** | **v0.7.0** in-repo. Pin helper (`write-installer-pin.ps1`) is in this cut. SHA-in-app (S1 AC5) still needs GATE Q on a built installer + operator `release`. Do not re-stamp 0.6.7. |
+| **Not published** | Signed cert. Mac. Next installer (pin helper). |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
-| **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. |
+| **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. Goal is not completable; operator is the only STOP. |
 
-**Next product decision (operator):** cut 0.6.7 so S1 AC5 and update-path can close, *or* keep looping on source.
+**Next product decision (operator):** keep looping on source, *or* cut the next installer so S1 AC5 and update-path can close. Do not re-stamp 0.6.7.
 
 ---
 
@@ -38,7 +38,7 @@ Two layers. Do not mix them.
 
 ### Still unproven on the box
 
-- Trust this folder, Edit command, ask-tier, queued Gates, keyboard settle, a real multi-file feature built *in* Forge.
+- A real multi-file feature built *in* Forge.
 - SHA-in-app (S1 AC5) until GATE Q walks this installer.
 
 ### Still not true
@@ -214,22 +214,29 @@ The operating loop reads this table when live dogfood has not yet shown somethin
 
 | Hunt | Why it is here | Evidence |
 |------|----------------|----------|
-| **Changes — write_file whole-file ±** | Live Keep-planning execute: git was **+1**, Changes showed **+301 −300** (`@@ -1,300 +1,301 @@` every line deleted then added). Review is unusable. | `countDiffLines` in `diffUtil.ts`; `docs/FORGE_EVER_GOAL.md` §10 |
-| **Copy — Settle this in the card below** | After write **Allow**, the pending settle is Changes Accept, not ActionDock. Transcript still says the card is below. | `SETTLE_IN_DOCK` |
-| **Gate — Trust this folder** | Write Gate has the control; no live journey persisted Trusted from the card. | `GATE_TRUST_FOLDER` in `copyDock.ts` |
-| **Gate — Edit command** | Shell Gate can prefill the composer; not dogfooded. | `GATE_EDIT_COMMAND` |
-| **Gate — ask tier** | Grok Build’s product page leads with multiple-choice Q&A. Our Ask Gate is coded (`GATE_ASK_TITLE`) and unproven live. | `Gate.tsx` `tier: "ask"`; [x.ai/build](https://x.ai/build) “Q&A” |
-| **Gate — queue** | Two live cards (1 of 2). Only a stale second click after settle was seen (404). | KEEP-TWELVE banner |
-| **Gate — keys** | ⏎ / S / esc exist in the Gate. Not proven in a live session. | `Gate.test.tsx` |
-| **Complex Code** | Real multi-file work on `apps/` / `packages/`, not `docs/dogfood/*.md`. Ceiling so far: one comment, one CSS pass, 3-file fixtures. | Dogfood explainer; this conversation |
+| **Changes — write_file whole-file ±** | Keep-planning execute once showed **+301 −300** vs git **+1**. Later Trusted one-line writes were **+1 −0**. Re-elect only if live regresses. | `countDiffLines` in `diffUtil.ts`; ever-goal §10 2026-09-09 |
+| **Copy — Settle this in the card below** | Held 2026-09-09: after write Allow, settle copy is **Settle this in Changes.** Re-elect only if live regresses. | `SETTLE_IN_CHANGES`; ever-goal §10 |
+| **Gate — Trust this folder** | Held 2026-09-09: persist Trusted from the write Gate; later same-day New Code session auto-applied eligible text (**Applied**, +1 −0, no Accept). Re-elect only if live regresses. | `GATE_TRUST_FOLDER`; ever-goal §10 2026-09-09 auto-apply |
+| **Gate — Edit command** | Held 2026-09-10: unlock (deny+prefill) and in-place Allow (Gate stays; Allow runs edited string; stdout `forge-edit-right`). Stale acp-client dist dropped `command` on `permission/respond` — rebuilt. Re-elect only if live regresses. | `GATE_EDIT_COMMAND`; `client.permission-command.test.ts`; ever-goal §10 2026-09-10 |
+| **Gate — ask tier** | Held 2026-09-09: `ask_user` raises cyan **Grok has a question**; click numbered option settles `option:N`. Receipt and transcript show the question, not raw JSON. Re-elect only if live regresses. | `GATE_ASK_TITLE`; grok-acp `ask_user`; `decisionRecordDetail`; ever-goal §10 |
+| **Gate — queue** | Held 2026-09-09: same-turn tool batch overlaps permission_request; dock shows **1 of 2**; Allow advances to the remaining card. Re-elect only if live regresses. | ActionDock `queue-pos`; grok-acp `executeTools`; ever-goal §10 |
+| **Gate — keys** | Held 2026-09-09: ⏎ Allow, **s** session, **esc** Deny. Footer says **esc deny** while a Gate is pending (Stop no longer claims esc). | `Gate.test.tsx`; ComposerPane `META_HINT_GATE`; ever-goal §10 |
+| **Complex Code** | Held 2026-09-10 as a first real ≥2-file Forge-builds-Forge: Review `apply_patch` of `xai.ts` (+ no-reread SYSTEM_PROMPT rule) and `xai.no-reread.test.ts`; Changes Accept both; test **1/1**. Re-elect if a later large-file job 20-read-loops anyway. | ever-goal §10 2026-09-10 |
+| **Large apply_patch** | Hunk apply held 2026-09-09; unprefixed/blank context held; trailing-newline phantom blank context held 2026-09-10 (live Deny-one `@@ -0,0` / minus-plus); V4A `*** End Patch` skipped; empty/unparseable names missing `@@` + first body line; hunk-fail quotes first differing line, 120-truncation tails, and **first expected line at file line N** when the block is elsewhere (`describeHunkFail`). Re-elect only if live regresses. | `tools.apply-patch.test.ts`; ever-goal §10 |
+| **Git tab stdout** | Held 2026-09-09. Git tab Status paints unwrapped `activity.output` stdout (`M`/`??` lines), not only the command string and not the JSON envelope. | `gitStdoutText`; ever-goal §10 |
+| **Gate — Deny one / session-allow other** | Held 2026-09-10. Review + New Code session + two write Gates **1 of 2**; Deny one path; Allow for this session the other; Retry denied still cards. Trusted auto-apply is not this hunt. | ever-goal §10 2026-09-10 |
+| **Chat glance** | Held 2026-09-10. After Code chrome: Chat Home **Good evening.**, **Grok · live**, no engine-stop. Re-elect only if live regresses. | ever-goal §10 |
+| **Unix head on cmd** | Held 2026-09-10. Mixed Path with unexpanded `%NVM_HOME%` no longer `continue`s; Unix `head` preflight-rejects `leading_command_unresolved` (no Gate, no exit 255). Re-elect only if live regresses. | `shellPreflight.ts`; ever-goal §10 |
+| **Model label mismatch** | Held 2026-09-10. Fast chip is effort. After Vite reload, header/footer prefer last-run `appliedModel` (`sessionChromeModel`). After host process restart, GET `/api/state.appliedModel` restores from the last journal run (`restoreAppliedModelFromJournal`; `awaitReady` waits `runHydration`). Re-elect only if live regresses. | `sessionChromeModel`; `session-applied-model-hydrate.test.ts`; ever-goal §10 |
 | **Bypass honesty** | Bypass is not a saved workspace radio. Standing. | `FORGE_DAILY_GOAL.md` Settings look |
 | **S1 AC5 SHA-in-app** | 0.6.7 installer is published; GATE Q must match notes SHA on a real install. | `docs/releases/v0.6.7.md` |
 | **Mermaid** | Chat diagrams. Later than 0.7. | EPICS C2 |
-| **Invent the next job** | If none of the above is the live FAIL, invent a harder Forge-builds-Forge job. | Ever-goal |
+| **Empty-stop chrome honesty** | Held 2026-09-10 YOU 02:08: two-path `git status --short --` (no Gate) vouched the status lines; Copy; no Run failed on that YOU; host.log `done/stop` no agent error. Re-elect only if live regresses. | ever-goal §10 2026-09-10 |
+| **Invent the next job** | If none of the above is the live FAIL, invent a harder Forge-builds-Forge job. Skip inspection-grammar two-file `apply_patch` (TWO-FILE-HANG). | Ever-goal |
 
 **Done in the preferred loop (do not re-elect unless live regresses):** Allow once; Allow for this session; Deny + Retry; Accept plan records; Revert offered and chip says Reverted; session-grant Changes membership; Plan WOULD CHANGE is mutations only; Your turn after a clean finish; catch-up Changes not stuck Loading. Full log: `docs/FORGE_PREFERRED_GOAL.md` §9.
 
-**Done in the ever loop:** Home no longer covers a bound Code empty session (AGENTS.md loads). Keep planning as the chosen path through constraint → second Plan Gate → Accept → write Allow → Changes Accept (disk +1). Log: `docs/FORGE_EVER_GOAL.md` §10.
+**Done in the ever loop:** Home no longer covers a bound Code empty session (AGENTS.md loads). Keep planning as the chosen path through constraint → second Plan Gate → Accept → write Allow → Changes Accept (disk +1). Trust this folder persists Trusted from the write Gate. Trusted in-flight eligible text auto-applies (**Applied automatically · Trusted workspace**, no second Changes Accept). Edit command one-click prefills and unlocks the composer (denies the pending shell). Keyboard ⏎ / s / esc settle a shell Gate; footer says **esc deny** while pending. One-line write Changes ± is **+1 −0**. After write Allow, settle copy is **Settle this in Changes.** Empty/dead `events.cas.lock` is stolen so the next Dev host can listen. Ask-tier **Grok has a question** live (`ask_user`, numbered click, `option:N`). Same-turn queued Gates **1 of 2**. Turn-budget vouches a final after max tool rounds. Ask receipt and transcript show the question, not JSON. `git status --short` is fixed inspection (no Gate), including `--` + one or more relatives (three-path too); `git diff --stat --` one or more relatives (three-path too). Plan then do Accept-plan path. 12k tool-result cap now 100k. `apply_patch` hunk-by-hunk (no `write_file` steer), blank/unprefixed hunk context, trailing-newline not phantom blank, V4A `*** End Patch` skipped, empty-unparseable names missing `@@`, hunk-fail quotes first-diff / 120-tails / first-expected-elsewhere / `(blank line)`. Git tab Status paints unwrapped stdout. Deny-one: Deny one write + session-allow the other + Retry denied still cards. Chat glance after Code is Home **Good evening.** / **Grok · live**. Unix `head` on mixed Path preflight-rejects (no Gate). After-reload SHELL chrome and host-hydrate GET `/api/state.appliedModel` match the YOU line after Vite reload / process restart. First real ≥2-file Forge-builds-Forge: SYSTEM_PROMPT no-reread rule under `Rules:` + `xai.no-reread.test.ts`. grok-acp tools-then-empty-stop vouches a final (agent-side). Shell-run of `inspection-grammar.test.ts` vouched **Tests passed (exit 0).** (YOU 01:55). Empty-stop chrome: two-path `git status --short --` vouched status lines (YOU 02:08). Singular `1 tool round` voucher live (YOU 02:36, 02:49). Log: `docs/FORGE_EVER_GOAL.md` §10.
 
 ---
 
@@ -273,6 +280,34 @@ Locked: 0.7 may ship unsigned-and-honest (27 Aug A). Code engine is grok-acp (30
 | 2026-09-08 | Living refresh. Source truth: house grok-acp, Gate, Changes, Home. Competitive bar re-read (Claude auto default, Grok TUI Q&A/plan, Codex sandbox≠approval, ACP v2 draft, 33-agent matrix). §9 loop hunts added. Engine sentence corrected. |
 | 2026-09-08 | Folded deep-research (partial): ACP permission option kinds, plan-exit `reject_once`, Grok plan-file edit gate, Cursor Build-after-plan, Codex `/plan` not a hard edit lock. |
 | 2026-09-08 | Keep planning full loop done in ever-goal. New hunts: write_file whole-file ±; SETTLE_IN_DOCK when Changes owns the settle. |
+| 2026-09-09 | Ever-loop relaunch. HELD: Trust folder, Trusted auto-apply, Edit command unlock, ⏎/s/esc, footer esc deny, one-line write ±, SETTLE_IN_CHANGES, lock-steal. OPEN ordered: ask-tier → queued Gates → multi-file. `/goal` no longer completable via “named the next hunt.” |
+| 2026-09-09 | Ask-tier live held: grok-acp `ask_user` + host title **Grok has a question** + numbered Gate click `option:N`. OPEN next: queued Gates (1 of 2). |
+| 2026-09-09 | Queued Gates held: `executeTools` overlaps same-turn shell permissions; dock **1 of 2**. OPEN next: multi-file Forge-builds-Forge. |
+| 2026-09-09 | Turn-budget honesty: tool-only max turns vouches a final instead of **Run failed · No final answer**. Multi-file JSON dump still OPEN. |
+| 2026-09-09 | Ask receipt JSON held: Waiting-for-you row shows the question, not `{question,options}`. Leftover: transcript body still dumps permission JSON. |
+| 2026-09-09 | Ask transcript JSON held: RunSurface pending-ask record shows the question, not raw JSON. git via shell held (fixed inspection, no Gate). |
+| 2026-09-09 | Ever-loop relaunch 2. STARTED = Send + wait/Gate. Remaining OPEN: multi-file, large `apply_patch`, Git tab stdout, Deny-one, Chat glance. IN-FLIGHT: Plan then do. |
+| 2026-09-09 | 12k tool-result cap held: `capToolResultForContext` now 100k so a 24k `read_file` keeps `GitTab`. Plan then do Accept-plan held. OPEN in-flight: large `apply_patch`. |
+| 2026-09-09 | apply_patch hunk apply held; write_file steer removed. Leftover: unparseable patches with no `@@`. OPEN next: multi-file. |
+| 2026-09-09 | apply_patch unprefixed/blank hunk context held (live `@@ -1,3`). OPEN next: Git tab stdout. |
+| 2026-09-09 | Git tab stdout held: Status row paints unwrapped `activity.output`. OPEN next: Deny-one. |
+| 2026-09-09 | Ever-loop relaunch 3. Disk beats paste IN-FLIGHT. STARTED ≠ OBSERVED (compact mid-wait = click). Operator re-paste is not restart OPEN #1. Deny-one is Review + New session, never Trusted follow-up. OPEN: Deny-one → Chat glance → multi-file → Unix `head` on cmd → grok-4-fast label. |
+| 2026-09-10 | Deny-one held. apply_patch trailing-newline phantom context held (`splitKeepNl` + skip `***`). Chat glance held. OPEN in-flight: multi-file Unix `head` preflight. |
+| 2026-09-10 | Unix `head` mixed Path held: skip unexpanded `%NVM_HOME%` Path entries; recapture **Command not found: head**, no Gate. OPEN next: grok-4-fast label. |
+| 2026-09-10 | apply_patch hunk-fail quotes `file line N` + `patch expected`. Fast chip is effort (live run matches). After-reload header `grok-4-fast` vs YOU `grok-4-fast-non-reasoning` still OPEN. |
+| 2026-09-10 | After-reload model chrome held: `sessionChromeModel` prefers last-run appliedModel. OPEN next: multi-file. |
+| 2026-09-10 | Host hydrate `appliedModel` held: `awaitReady` waits `runHydration`; last journal run restores GET `/api/state.appliedModel` after process restart (pid 54480 → 13664). Ever-loop relaunch 4: 20-read-loop is TUI-ship, not STOP; remaining OPEN is durable multi-file in Forge. |
+| 2026-09-10 | apply_patch hunk-fail 120-truncation held: `quoteHunkLine` shows later mismatch (live SYSTEM_PROMPT lines looked identical at 120). OPEN next: durable multi-file SYSTEM_PROMPT no-reread + test in Forge. |
+| 2026-09-10 | First real ≥2-file Forge-builds-Forge held (no-reread paragraph + test). Path `git status --short -- <relative>` held. Empty/unparseable names missing `@@`. OPEN: Rules-bullet move. |
+| 2026-09-10 | apply_patch hunk-fail first-expected-line-elsewhere held: `describeHunkFail` names `first expected line at file line N` (live `@@ -481` quoted Be concise vs Writes-and-shell at 479). Ever-loop relaunch 5. OPEN next: Rules-bullet via GREP-THE-SENTENCE. |
+| 2026-09-10 | apply_patch hunk-fail blank-line quote held: empty patch line is `(blank line)` not `""` (live `@@ -470` `}` vs empty). OPEN: move no-reread `-` bullet under `Rules:` (it sits above). |
+| 2026-09-10 | No-reread sentence is a `Rules:` bullet (TUI-ship after Forge hunk-fail + hung missing_final_answer). Test asserts `/Rules:[\\s\\S]*Never re-read/`. OPEN: invent harder. |
+| 2026-09-10 | Two-path `git status --short --` and `git diff --stat --` held as fixed inspection. grok-acp tools-then-empty-stop vouches (agent-side **2/2**). YOU 01:55 shell-run vouched **Tests passed (exit 0).** Ever-loop relaunch 6: LAST-YOU-ONLY + EMPTY-STOP RECAPTURE. OPEN: empty-stop chrome honesty. |
+| 2026-09-10 | `git status --short -- <rel> <rel>` is fixed inspection (live two-path carded a Gate; grammar had exactly-one-path). `git diff --stat -- a.ts b.ts` locked by test. OPEN: invent harder. |
+| 2026-09-10 | Tools then empty stop vouches `Stopped after N tool rounds` instead of **No final answer was produced.** (live inspection/shell jobs). OPEN: invent harder. |
+| 2026-09-10 | Ever-loop relaunch 7: FIRST ACTION is click-if-Gate else log-then-Send; VOUCHER-CHROME vs VOUCHER-PARROT; TWO-FILE-HANG; HELD-DRIFT (empty-stop is HELD, do not resurrect). YOU 03:00 Edit command still deny+prefill. OPEN: in-place Allow (Gate stays; Allow runs edited string). |
+| 2026-09-10 | Ever-loop relaunch 8: CHROME-MCP STALL LAW. TUI chrome-devtools `take_snapshot`/`wait_for` on a live Forge page poisons JSON-RPC (`mcp_transport_decode_error`) then waits 6000s. Glance with `evaluate_script` `waitForStableDom: false`; snapshot only with `filePath`; after decode error stop Chrome MCP this session. OPEN unchanged: in-place Allow. |
+| 2026-09-10 | Edit command in-place Allow held. Live stdout was still `forge-edit-wrong` until `@grokforge/acp-client` dist included `command` on `permission/respond`. Recapture stdout `forge-edit-right`. OPEN next: invent harder. |
 
 ---
 

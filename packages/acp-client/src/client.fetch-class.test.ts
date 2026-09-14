@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Fetch class is host HTTP, not a second agent runtime.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile } from "./types.js";
 

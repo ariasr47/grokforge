@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// AuthorizationBroker tests cover grok-acp Gate policy, not a Forge auto-mode.
 import { AuthorizationBroker } from "./authorization-broker.js";
 
 const broker = new AuthorizationBroker();

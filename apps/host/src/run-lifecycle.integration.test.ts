@@ -156,6 +156,26 @@ test("replay cursor cannot hide a durable terminal from stale metadata", async (
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test("empty or dead-owner events.cas.lock is stolen so the next host can hydrate", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "rar-lock-stale-"));
+  try {
+    const j = new RunJournal(root);
+    const c = new RunCoordinator(j);
+    const run = await c.admit({ sessionId: "lock-stale", prompt: "x", connectionGeneration: 1, policy, model });
+    const lock = path.join(root, "runs", run.sessionId, run.runId, "events.cas.lock");
+    await fs.writeFile(lock, "", "utf8");
+    const t0 = Date.now();
+    const first = await (j as any).fileLock(run.sessionId, run.runId, async () => "ok");
+    assert.equal(first, "ok");
+    assert.ok(Date.now() - t0 < 400, "empty lock must be stolen immediately, not waited out");
+    await fs.writeFile(lock, "99999999\n", "utf8");
+    const second = await (j as any).fileLock(run.sessionId, run.runId, async () => "ok2");
+    assert.equal(second, "ok2");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("cross-process journal lock is not stolen while owner is alive", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "rar-lock-owner-"));
   try {

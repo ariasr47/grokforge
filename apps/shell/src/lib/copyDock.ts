@@ -1,3 +1,5 @@
+// ever-goal trusted auto-apply
+// ever-goal write-stat
 /** Dock / gate chrome copy. Host grants last until the folder changes. */
 export const SETTLE_CARD_BELOW = "Settle the card below";
 export const SETTLE_IN_DOCK = "Settle this in the card below.";

@@ -55,6 +55,8 @@ type ChatPackMutation =
 export interface ChatViewProps {
   activeHome: ChatSession | null;
   state: PublicState | null;
+  /** Header model id: last-run appliedModel after reload, not session.model. */
+  chromeModel: string | null;
   effortLevel: EffortLevel;
   runStartedAt: number | null;
   liveNow: number;
@@ -153,7 +155,7 @@ export interface ChatViewProps {
   boundArtifact: { body: string; contentKind: ArtifactContentKind } | null;
   oauth: OAuthPending | null;
   /** Matches `decidePermission`'s real signature in App.tsx. */
-  decidePermission: (decision: "allow_once" | "allow_session" | "deny") => Promise<void>;
+  decidePermission: (decision: "allow_once" | "allow_session" | "deny" | `option:${number}`, command?: string) => Promise<void>;
   trustFolder: () => Promise<void>;
   editGateCommand: (command: string) => void;
   planSettling: boolean;
@@ -216,6 +218,7 @@ export interface ChatViewProps {
 export function ChatView({
   activeHome,
   state,
+  chromeModel,
   effortLevel,
   runStartedAt,
   liveNow,
@@ -300,7 +303,6 @@ export function ChatView({
   oauth,
   decidePermission,
   trustFolder,
-  editGateCommand,
   planSettling,
   planDecisionError,
   settlePlan,
@@ -348,7 +350,7 @@ export function ChatView({
     <div className="panel-chat">
       <ThreadHeader
         title={activeHome?.title ?? ""}
-        model={state?.appliedModel || state?.model || null}
+        model={chromeModel}
         effortLabel={
           effortLevel !== "auto"
             ? effortLevel.charAt(0).toUpperCase() + effortLevel.slice(1)
@@ -509,16 +511,16 @@ export function ChatView({
       <ActionDock
         permissions={permissions}
         oauth={oauth}
-        onPermission={(d) => void decidePermission(d)}
+        onPermission={(d, command) => void decidePermission(d, command)}
         onTrustFolder={
           permissions[0]?.kind === "write" && state?.workspace
             ? () => void trustFolder()
             : undefined
         }
         onEditCommand={
-          permissions[0]?.kind === "shell"
-            ? () => editGateCommand(permissions[0]!.detail)
-            : undefined
+          // PARKED 2026-09-10: deny+prefill unlock. Restore: editGateCommand(detail); decidePermission("deny").
+          // In-place Allow: Gate stays; Allow runs the edited command. Do not deny here.
+          permissions[0]?.kind === "shell" ? () => {} : undefined
         }
         workspaceName={state?.workspaceName ?? null}
         onOauthCancel={() => {
@@ -620,7 +622,13 @@ export function ChatView({
         onQueue={queueCurrentDraft}
         onCancelQueued={cancelQueuedDraft}
         queuedCount={queuedDraft && queuedDraft.sessionId === sessionId ? 1 : 0}
-        decisionPending={decisionPending}
+        decisionPending={
+          decisionPending ||
+          permissions.length > 0 ||
+          diffQueue.length > 0 ||
+          Boolean(pendingPlanDecision) ||
+          sessionHasDockOwnedPending
+        }
         chatHomeLabel={chatHomeLabel}
         chips={composerChips}
         contextRing={contextRing}

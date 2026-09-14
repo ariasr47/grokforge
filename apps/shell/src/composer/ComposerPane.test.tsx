@@ -357,6 +357,19 @@ describe("ComposerPane meta line: one mono line, facts left, shortcuts right", (
     assert.equal(text.includes("⏎ send"), false);
     assert.equal(text.includes("Ctrl+K commands"), false);
   });
+
+  it("while a Gate is pending, the busy hint says esc deny not esc stop", () => {
+    render(<ComposerPane {...base} busy decisionPending />);
+    const text = document.querySelector(".cmeta")?.textContent ?? "";
+    assert.ok(text.includes("esc deny"));
+    assert.equal(text.includes("esc stop"), false);
+  });
+
+  it("while a Gate is pending, Stop does not claim esc (Deny owns that key)", () => {
+    render(<ComposerPane {...base} busy decisionPending />);
+    const stop = screen.getByRole("button", { name: "Stop" });
+    assert.equal(stop.querySelector("kbd") === null, true);
+  });
 });
 
 describe("ComposerPane @file menu", () => {

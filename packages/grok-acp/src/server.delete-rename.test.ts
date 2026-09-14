@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Delete/rename journal is grok-acp recovery, not a Forge undo engine.
 import { GrokAcpServer, type Session } from "./server.js";
 import { bindExecutionCapability } from "./executionCapability.js";
 

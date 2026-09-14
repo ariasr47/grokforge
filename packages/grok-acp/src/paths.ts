@@ -5,6 +5,7 @@ import fs from "node:fs";
  * Resolve a user-supplied path under workspace root.
  * Rejects absolute paths outside root and `..` escapes.
  */
+// Workspace confinement: user paths must stay under the bound root.
 export function resolveUnderWorkspace(
   workspaceRoot: string,
   userPath: string,

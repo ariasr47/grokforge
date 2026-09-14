@@ -1,4 +1,5 @@
 /** GATE-named MCP advertisement pin — do not invent; update only from GATE_SPIKE_DISCRIMINANT.md */
+// Advertised MCP status is vendor JSON-RPC, not a Forge MCP host.
 export const NAMED_MCP_SESSION_UPDATE = "_x.ai/mcp/server_status";
 
 /** Live wire is a JSON-RPC notification method, not a sessionUpdate discriminant. */

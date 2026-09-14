@@ -135,6 +135,28 @@ test("RunSurface pending decision is evidence-only — buttons do not call settl
   }
 });
 
+test("pending ask decision shows the question, not the raw JSON detail", () => {
+  render(
+    <RunSurface
+      run={run({
+        decisions: {
+          p: permissionDecision({
+            title: "Grok has a question",
+            detail: JSON.stringify({
+              question: "Which copy for GATE_ASK_POLICY?",
+              options: ["keep current", "change it"],
+            }),
+          }),
+        },
+      })}
+    />,
+  );
+  const group = screen.getByRole("group", { name: "Grok has a question" });
+  assert.ok(within(group).getByText("Which copy for GATE_ASK_POLICY?"));
+  assert.equal(within(group).queryByText(/\{"question"/) === null, true);
+  assert.ok(within(group).getByText("Settle this in the card below."));
+});
+
 test("pending diff points the operator at Changes, not a missing action-dock card", () => {
   render(
     <RunSurface

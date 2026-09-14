@@ -17,6 +17,22 @@ rl.on("line", (line) => {
     }, 20);
     return;
   }
+  if (prompt.includes("ask-permission")) {
+    setTimeout(() => {
+      write({
+        jsonrpc: "2.0", method: "permission_request",
+        params: {
+          id: "live-perm-ask",
+          kind: "ask",
+          detail: JSON.stringify({
+            question: "Which copy?",
+            options: ["keep current", "change it"],
+          }),
+        },
+      });
+    }, 20);
+    return;
+  }
   let i = 0;
   const tick = () => {
     i += 1;

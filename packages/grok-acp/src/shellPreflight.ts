@@ -99,11 +99,18 @@ export async function preflightShell(capability: ExecutionEnvironmentCapability,
     const key = Object.keys(capability.effectiveEnvironment).find((k) => k.toLowerCase() === "path");
     const extKey = Object.keys(capability.effectiveEnvironment).find((k) => k.toLowerCase() === "pathext");
     const pathEntries = key ? capability.effectiveEnvironment[key].split(";") : [];
+    let sawAbsolutePath = false;
+    let sawRelativePath = false;
     for (const entry of pathEntries) {
       if (!entry) continue;
-      if (!path.isAbsolute(entry)) return { disposition: "continue" };
+      if (!path.isAbsolute(entry)) {
+        sawRelativePath = true;
+        continue;
+      }
+      sawAbsolutePath = true;
       candidates.push(path.join(entry, firstCommand));
     }
+    if (sawRelativePath && !sawAbsolutePath) return { disposition: "continue" };
     if (!path.extname(firstCommand)) {
       const extensions = extKey ? capability.effectiveEnvironment[extKey].split(";").filter(Boolean) : [];
       for (const extension of extensions) for (const candidate of [...candidates]) candidates.push(candidate + extension);

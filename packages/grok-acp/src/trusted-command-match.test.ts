@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Trusted-command match is grok-acp host policy, not a Forge auto-mode.
 import { matchTrustedCommandClass } from "./trusted-command-match.js";
 
 const saved = new Set(["npm", "npx", "cargo", "git:status", "git:diff", "git:log", "git:show"]);

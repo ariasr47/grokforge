@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 type Lease={release:()=>void};
+// Mutation coordinator serializes host edits, not a Forge worktree engine.
 export class MutationCoordinator {
   private leases=new Map<string,string>();
   baseHash(content:string|null){return content===null?null:crypto.createHash("sha256").update(content).digest("hex");}

@@ -40,7 +40,7 @@ interface OauthPending {
 interface Props {
   permissions: PermissionReq[];
   oauth: OauthPending | null;
-  onPermission: (d: "allow_once" | "allow_session" | "deny") => void;
+  onPermission: (d: "allow_once" | "allow_session" | "deny" | `option:${number}`, command?: string) => void;
   onTrustFolder?: () => void;
   onEditCommand?: () => void;
   /** Real, host-reported workspace name — shell gate's cwd. Omitted (not faked) when unknown. */
@@ -52,6 +52,18 @@ interface Props {
   /** Pending recovery_confirmation — cyan ask tier. */
   recoveryDecision?: RecoveryDockDecision | null;
   onRecover?: () => void;
+}
+
+function parseAskDetail(detail: string): { question: string; options: { label: string }[] } | null {
+  try {
+    const parsed = JSON.parse(detail) as { question?: unknown; options?: unknown };
+    if (typeof parsed.question !== "string" || !Array.isArray(parsed.options)) return null;
+    const options = parsed.options.map((o) => String(o ?? "").trim()).filter(Boolean);
+    if (options.length < 2) return null;
+    return { question: parsed.question, options: options.map((label) => ({ label })) };
+  } catch {
+    return null;
+  }
 }
 
 /** Normal flex child above the composer — a gate rises here while Grok waits on you. */
@@ -97,6 +109,8 @@ export const ActionDock = memo(function ActionDock({
 
   if (!head && !oauth && !hasPlan && !activeRecovery) return null;
 
+  const ask = head?.kind === "ask" ? parseAskDetail(head.detail) : null;
+
   return (
     <div
       className="action-dock"
@@ -130,12 +144,25 @@ export const ActionDock = memo(function ActionDock({
         </div>
       )}
 
-      {head ? (
+      {permissions.length > 1 ? (
+        <div className="queue-pos" role="status">
+          1 of {permissions.length}
+        </div>
+      ) : null}
+
+      {ask ? (
+        <Gate
+          tier="ask"
+          question={ask.question}
+          options={ask.options}
+          onChoose={(i) => onPermission(`option:${i}`)}
+        />
+      ) : head && head.kind !== "ask" ? (
         <Gate
           tier={head.kind}
           detail={head.detail}
           cwd={head.kind === "shell" ? workspaceName : undefined}
-          onAllow={() => onPermission("allow_once")}
+          onAllow={(command) => onPermission("allow_once", command)}
           onAllowSession={() => onPermission("allow_session")}
           onDeny={() => onPermission("deny")}
           onEditCommand={head.kind === "shell" ? onEditCommand : undefined}

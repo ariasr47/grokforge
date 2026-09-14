@@ -57,3 +57,20 @@ test("malformed Path entries continue without authoritative rejection", async ()
   const malformed = bindExecutionCapability(cap, "C:\\repo", { Path: "relative", PATHEXT: ".EXE" });
   assert.equal((await preflightShell(malformed, "ls", { stat: absent as never })).disposition, "continue");
 });
+
+test("mixed Path with unexpanded %NVM_HOME% still rejects Unix head (live cmd Gate then exit 255)", async () => {
+  const mixed = bindExecutionCapability(cap, "C:\\repo", {
+    Path: "C:\\bin;%NVM_HOME%;%NVM_SYMLINK%",
+    PATHEXT: ".EXE;.CMD",
+  });
+  const result = await preflightShell(mixed, "head -c 5 apps/shell/src/testEnv.ts | od -c", { stat: absent as never });
+  assert.equal(result.disposition, "reject");
+  assert.equal((result as { reasonCode?: string }).reasonCode, "leading_command_unresolved");
+});
+
+test("ls on mixed Path with an unexpanded env var still rejects", async () => {
+  const mixed = bindExecutionCapability(cap, "C:\\repo", { Path: "C:\\bin;%NVM_HOME%", PATHEXT: ".EXE" });
+  const result = await preflightShell(mixed, "ls", { stat: absent as never });
+  assert.equal(result.disposition, "reject");
+  assert.equal((result as { reasonCode?: string }).reasonCode, "leading_command_unresolved");
+});

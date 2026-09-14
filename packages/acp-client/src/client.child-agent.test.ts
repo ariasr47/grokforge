@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Child-agent spawn is vendor ACP, not a Forge subagent engine.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile } from "./types.js";
 

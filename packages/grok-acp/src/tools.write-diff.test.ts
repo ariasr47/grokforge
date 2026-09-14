@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+// Write-diff is grok-acp host tool, not a Forge file editor.
 import { prepareWriteEdit } from "./tools.js";
 
 function plusMinus(diff: string): { added: number; removed: number } {

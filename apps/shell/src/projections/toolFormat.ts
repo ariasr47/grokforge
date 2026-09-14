@@ -69,6 +69,7 @@ export function summarizeToolInput(name: string, input: unknown): string {
   const query = pickString(o, ["query", "pattern", "regex", "search"]);
   const url = pickString(o, ["url", "uri"]);
   const content = pickString(o, ["content", "text", "diff"]);
+  const question = pickString(o, ["question"]);
 
   if (command) {
     return command.length > 72 ? `${command.slice(0, 72)}…` : command;
@@ -81,6 +82,9 @@ export function summarizeToolInput(name: string, input: unknown): string {
   }
   if (url) {
     return url.length > 64 ? `${url.slice(0, 64)}…` : url;
+  }
+  if (question) {
+    return question.length > 72 ? `${question.slice(0, 72)}…` : question;
   }
   if (content) {
     return content.length > 48 ? `${content.slice(0, 48)}…` : content;

@@ -1,8 +1,10 @@
+// acp-client public types are vendor ACP, not a Forge skills catalog.
 export type {
   AcpClient,
   AcpUiEvent,
   AgentSpawnConfig,
   AuthMode,
+  // re-export: in-place Allow command override.
   PermissionDecision,
   AcpOwnership,
   PromptOptions,

@@ -143,9 +143,11 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
   // (which deliberately can't distinguish "executed+failed" on its own).
   const activityStatusById = new Map<string, ActivityRecord["status"]>();
   const activityLifecycleById = new Map<string, ActivityRecord["lifecycle"]>();
+  const activityOutputById = new Map<string, unknown>();
   for (const activity of Object.values(fixture.activities)) {
     activityStatusById.set(activity.activityId, activity.status);
     activityLifecycleById.set(activity.activityId, activity.lifecycle);
+    activityOutputById.set(activity.activityId, activity.output);
   }
   render(
     <ChangesDock
@@ -159,6 +161,7 @@ function renderChangesDock(fixture: RunProjectionRun, opts: { productMode?: "cod
       diffQueue={[]}
       activityStatusById={activityStatusById}
       activityLifecycleById={activityLifecycleById}
+      activityOutputById={activityOutputById}
       onAccept={() => undefined}
       onReject={() => undefined}
       onCollapse={() => undefined}
@@ -199,10 +202,9 @@ test("multi-member status+diff on one Git tab without Dirty/Ahead chips (AC-01/0
   assert.ok(within(dock).getByText("Diff"));
   assert.ok(within(dock).getByText("git status -sb"));
   assert.ok(within(dock).getByText("git diff"));
-  const text = (dock.textContent ?? "").toLowerCase();
-  assert.equal(text.includes("dirty"), false);
-  assert.equal(text.includes("ahead"), false);
-  assert.equal(text.includes("open link"), false);
+  assert.equal(within(dock).queryByText(/^Dirty$/i) === null, true);
+  assert.equal(within(dock).queryByText(/^Ahead$/i) === null, true);
+  assert.equal(within(dock).queryByText(/^Open link$/i) === null, true);
 });
 
 test("singleton one-entry Git list is not suppressed (AC-04)", async () => {
@@ -210,6 +212,30 @@ test("singleton one-entry Git list is not suppressed (AC-04)", async () => {
   const dock = changesRegion();
   await openTab(dock, /Git/);
   assert.ok(within(dock).getByText("git status -sb"));
+});
+
+test("Git tab Status row paints git status stdout from activity.output", async () => {
+  renderChangesDock(run({ activities: { "a-git-status": shellActivity() } }));
+  const dock = changesRegion();
+  await openTab(dock, /Git/);
+  assert.ok(within(dock).getByText("git status -sb"));
+  assert.ok(within(dock).getByText(/M dirty\.txt/));
+});
+
+test("Git tab Status row unwraps JSON envelope stdout, not the raw JSON", async () => {
+  renderChangesDock(
+    run({
+      activities: {
+        "a-git-status": shellActivity({
+          output: JSON.stringify({ stdout: " M dirty.txt\n", stderr: "", exit_code: 0 }),
+        }),
+      },
+    }),
+  );
+  const dock = changesRegion();
+  await openTab(dock, /Git/);
+  assert.ok(within(dock).getByText(/M dirty\.txt/));
+  assert.equal(within(dock).queryByText(/"exit_code"/) === null, true);
 });
 
 test("executed gh pr is a PR member by durable command; no title/Open link (AC-05)", async () => {

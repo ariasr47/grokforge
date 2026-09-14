@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Vendor ACP session/update is advertised JSON-RPC, not a Forge ACP host.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile } from "./types.js";
 

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 
+// Edit journal is host recovery, not a Forge undo engine.
 export class EditJournal {
   constructor(private readonly root: string) {}
   private file(id: string) {

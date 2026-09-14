@@ -123,6 +123,39 @@ test("F1: a bare S grants nothing unless the action dock owns focus — the same
   });
 });
 
+test("while a shell Gate is pending, composer hint says esc deny not esc stop", async () => {
+  seedFirstRun();
+  reloadSessionsFromDisk({ byWorkspace: {}, activeId: {}, pinned: [], expanded: [] });
+  FakeWebSocket.reset();
+  const host = createFakeHost({ mode: "code", workspace: WORKSPACE, workspaceName: "repo", busy: false });
+  globalThis.fetch = host.fetchImpl;
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  render(<App />);
+  const composer = await screen.findByLabelText("Message to agent");
+  const user = userEvent.setup();
+  await user.type(composer, "run tests");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => assert.ok(host.callsTo("/api/prompt").length >= 1));
+  const promptBody = host.callsTo("/api/prompt")[0]!.body as { sessionId?: string };
+  assert.ok(promptBody?.sessionId);
+  const socket = FakeWebSocket.latest();
+  assert.ok(socket);
+  socket!.emit({
+    ...envelope(
+      { kind: "run_started", run: baseSnapshot({ sessionId: promptBody!.sessionId, acceptedPrompt: "run tests" }) },
+      1,
+    ),
+    sessionId: promptBody!.sessionId,
+  } as unknown as Record<string, unknown>);
+  socket!.emit({ type: "permission_request", id: "perm-esc-hint", kind: "shell", detail: "npm test" });
+  await screen.findByRole("region", { name: "Grok wants to run a command" });
+  await waitFor(() => {
+    const text = document.querySelector(".cmeta")?.textContent ?? "";
+    assert.ok(text.includes("esc deny"), text);
+    assert.equal(text.includes("esc stop"), false);
+  });
+});
+
 test("F4: Digit1 chooses the ask gate's option only while the action dock owns focus", async () => {
   seedFirstRun();
   reloadSessionsFromDisk({

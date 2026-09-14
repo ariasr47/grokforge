@@ -1,3 +1,4 @@
+// Trusted command class IDs are grok-acp host policy, not a Forge auto-mode.
 const CLASS_IDS = new Set([
   "npm", "npx", "cargo", "git:status", "git:diff", "git:log", "git:show",
 ]);
@@ -62,6 +63,7 @@ function leadingFamily(token: string): string {
  * leading catalog class present in `saved`, else null.
  * Git subcommand = first argument after leading git token (W1: no global-option skip).
  */
+// Trusted class match is host policy, not a Forge auto-mode.
 export function matchTrustedCommandClass(
   command: string,
   saved: ReadonlySet<string>,

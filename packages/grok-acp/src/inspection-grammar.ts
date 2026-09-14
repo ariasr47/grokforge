@@ -7,11 +7,18 @@ export function compileFixedInspection(input:string,platform:NodeJS.Platform=pro
   const relativePath=(value:string)=>value.length>0&&!value.startsWith("-")&&!absolute(value)&&!value.split(/[\\/]/).includes("..");
   if(cmd!=="git"&&cmd!=="rg")return null;
   if(a.some(x=>x.split(/[\\/]/).includes("..")))return null;
-  if(cmd==="git"&&a[0]==="status"&&(a.length===1||(a.length===2&&a[1]==="--short")))return {executable:"git",args:a,label:"fixed_inspection"};
+  if(cmd==="git"&&a[0]==="status"){
+    let i=1;if(a[i]==="--short")i++;
+    if(i===a.length)return {executable:"git",args:a,label:"fixed_inspection"};
+    // one or more relative paths after --
+    if(a[i]==="--"&&a.length>i+1&&a.slice(i+1).every(relativePath))return {executable:"git",args:a,label:"fixed_inspection"};
+    return null;
+  }
   if(cmd==="git"&&a[0]==="diff"){
     let i=1;if(a[i]==="--stat")i++;
     if(i===a.length)return {executable:"git",args:a,label:"fixed_inspection"};
-    if(a[i]==="--"&&a.length===i+2&&relativePath(a[i+1]!))return {executable:"git",args:a,label:"fixed_inspection"};
+    // one or more relative paths after --
+    if(a[i]==="--"&&a.length>i+1&&a.slice(i+1).every(relativePath))return {executable:"git",args:a,label:"fixed_inspection"};
     return null;
   }
   if(cmd==="git"&&a[0]==="log"){

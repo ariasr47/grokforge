@@ -31,6 +31,13 @@ describe("summarizeToolInput", () => {
       summarizeToolInput("search", { query: "TODO" }),
       "TODO",
     );
+    assert.equal(
+      summarizeToolInput("ask_user", {
+        question: "Which copy for GATE_ASK_POLICY?",
+        options: ["keep current", "change it"],
+      }),
+      "Which copy for GATE_ASK_POLICY?",
+    );
   });
 });
 

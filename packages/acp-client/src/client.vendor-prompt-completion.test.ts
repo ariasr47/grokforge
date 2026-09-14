@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// Vendor prompt completion is advertised ACP, not a Forge classifier.
 import { StdioAcpClient } from "./client.js";
 import type { HostExecutionProfile } from "./types.js";
 

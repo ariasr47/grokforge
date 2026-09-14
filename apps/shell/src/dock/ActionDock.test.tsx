@@ -94,3 +94,45 @@ test("no recovery decision means no ask gate and an empty dock stays hidden", ()
   const { container } = render(<ActionDock {...baseProps()} recoveryDecision={null} />);
   assert.equal(container.firstChild, null);
 });
+
+test("two pending permissions surface 1 of 2 on the dock", () => {
+  render(
+    <ActionDock
+      {...baseProps()}
+      permissions={[
+        permission({ id: "perm-a", invocationId: "perm-a", detail: "echo q1" }),
+        permission({ id: "perm-b", invocationId: "perm-b", detail: "echo q2" }),
+      ]}
+    />,
+  );
+  const dock = screen.getByRole("region", { name: "Pending agent actions" });
+  assert.ok(within(dock).getByText("1 of 2"));
+  assert.ok(within(dock).getByRole("region", { name: "Grok wants to run a command" }));
+});
+
+test("ask permission renders numbered options and click settles option:N", () => {
+  let decision: string | null = null;
+  render(
+    <ActionDock
+      {...baseProps()}
+      permissions={[
+        permission({
+          kind: "ask",
+          detail: JSON.stringify({
+            question: "Which copy for GATE_ASK_POLICY?",
+            options: ["keep current", "change it"],
+          }),
+        }),
+      ]}
+      onPermission={(d) => {
+        decision = d;
+      }}
+    />,
+  );
+  const gate = screen.getByRole("region", { name: "Grok has a question" });
+  assert.ok(within(gate).getByText("Which copy for GATE_ASK_POLICY?"));
+  const opt2 = within(gate).getByRole("button", { name: /change it/ });
+  assert.equal(within(opt2).getByText("2").tagName, "KBD");
+  opt2.click();
+  assert.equal(decision, "option:1");
+});

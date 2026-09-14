@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Vendor edit path is advertised ACP, not a Forge file editor.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile, ToolRunEvent } from "./types.js";
 
@@ -39,16 +40,32 @@ r.on('line',l=>{
 `;
 }
 
+async function rmQuiet(root: string): Promise<void> {
+  for (let i = 0; i < 8; i++) {
+    try {
+      await fs.rm(root, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "ENOTEMPTY") throw err;
+      await new Promise((r) => setTimeout(r, 40 * (i + 1)));
+    }
+  }
+}
+
 test("vendor Write title stamps fs path onto tool_run for File changes", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forge-title-"));
+  const rel = "docs/dogfood/LOOP.md";
+  const abs = path.join(root, rel);
   const script = childScript({
     sessionUpdate: "tool_call",
     toolCallId: "w1",
-    title: "Write `C:\\\\Dev\\\\grokforge\\\\docs\\\\dogfood\\\\LOOP.md`",
+    title: `Write \`${abs}\``,
     kind: "edit",
     status: "completed",
   });
   const client = new StdioAcpClient({
-    workspaceRoot: process.cwd(),
+    workspaceRoot: root,
     command: process.execPath,
     args: ["-e", script],
     env: Object.freeze({}),
@@ -63,12 +80,13 @@ test("vendor Write title stamps fs path onto tool_run for File changes", async (
     await new Promise((r) => setTimeout(r, 80));
     const hit = events.find((e): e is ToolRunEvent => e.type === "tool_run");
     assert.ok(hit);
-    assert.match(String(hit.path), /LOOP\.md$/);
+    assert.equal(hit.path, rel);
     assert.equal(hit.path?.includes(":") || /\\/.test(String(hit.path)), false, "display path is workspace-relative");
     assert.equal(hit.kind, "content");
     assert.equal(hit.editId, "w1");
   } finally {
     await client.dispose();
+    await rmQuiet(root);
   }
 });
 
@@ -111,7 +129,7 @@ test("vendor write file_path + content stamps relative path and a new-file diff"
     assert.match(String(hit.diff), /docs\/dogfood\/REL\.md/);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 
@@ -194,7 +212,7 @@ test("stale vendor old_string uses the on-disk baseline as the minus side", asyn
     assert.equal(diff.includes("-NEXT-OK"), false);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 
@@ -355,7 +373,7 @@ test("overwrite of an existing file diffs against the on-disk before-image", asy
     assert.equal(String(hit.diff).includes("/dev/null"), false);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 
@@ -395,7 +413,7 @@ test("late snapshot of an already-written file still stamps a new-file diff", as
     assert.match(String(hit.diff), /\/dev\/null/);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 
@@ -430,7 +448,7 @@ test("completed write without rawInput content uses on-disk body for the diff", 
     assert.match(String(hit.diff), /\+DISK-OK/);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 
@@ -547,7 +565,7 @@ r.on('line',l=>{
     assert.equal(String(hit.diff).includes("NEXT-OK"), false);
   } finally {
     await client.dispose();
-    await fs.rm(root, { recursive: true, force: true });
+    await rmQuiet(root);
   }
 });
 

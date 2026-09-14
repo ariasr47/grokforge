@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// MCP advertisement is vendor JSON-RPC, not a Forge MCP host.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile } from "./types.js";
 import {

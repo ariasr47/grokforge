@@ -26,13 +26,16 @@ test("pendingPermissionsFromRun maps Run shell / Write file with detail pass-thr
     b: { requestId: "b", invocationId: "b", kind: "permission", status: "pending", title: "Write file", detail: "notes.md", expiresAt: null, policy: {} },
     c: { requestId: "c", invocationId: "c", kind: "permission", status: "accepted", title: "Run shell", detail: "gone", expiresAt: null, policy: {} },
     d: { requestId: "d", invocationId: "d", kind: "permission", status: "pending", title: "Approval needed", detail: "x", expiresAt: null, policy: {} },
+    e: { requestId: "e", invocationId: "e", kind: "permission", status: "pending", title: "Grok has a question", detail: "{\"question\":\"Which copy?\",\"options\":[\"keep current\",\"change it\"]}", expiresAt: null, policy: {} },
   }));
   assert.deepEqual(queue.map((p) => ({ id: p.id, kind: p.kind, detail: p.detail })), [
     { id: "a", kind: "shell", detail: "echo hi" },
     { id: "b", kind: "write", detail: "notes.md" },
+    { id: "e", kind: "ask", detail: "{\"question\":\"Which copy?\",\"options\":[\"keep current\",\"change it\"]}" },
   ]);
   assert.equal(permissionChromeFromTitle("Run shell")?.rail, "Permission requested: shell");
   assert.equal(permissionChromeFromTitle("Write file")?.rail, "Permission requested: write");
+  assert.equal(permissionChromeFromTitle("Grok has a question")?.kind, "ask");
   assert.equal(permissionChromeFromTitle("Approval needed"), null);
 });
 

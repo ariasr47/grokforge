@@ -137,6 +137,7 @@ export interface ChangesDockProps {
   diffQueue: PendingDiff[];
   activityStatusById?: Map<string, ActivityRecord["status"]>;
   activityLifecycleById?: Map<string, ActivityRecord["lifecycle"]>;
+  activityOutputById?: Map<string, unknown>;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onRevert?: (member: ChangesDockMember) => void;
@@ -421,14 +422,33 @@ const GIT_KIND_LABEL: Record<RunGitReviewMember["kind"], string> = {
   pr: "PR",
 };
 
+function gitStdoutText(output: unknown): string | null {
+  if (output && typeof output === "object" && "stdout" in output) {
+    const stdout = (output as { stdout?: unknown }).stdout;
+    if (typeof stdout === "string" && stdout.trim()) return stdout.trim();
+  }
+  if (typeof output !== "string") return null;
+  const text = output.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as { stdout?: unknown };
+    if (typeof parsed.stdout === "string" && parsed.stdout.trim()) return parsed.stdout.trim();
+  } catch {
+    /* plain tool output */
+  }
+  return text;
+}
+
 function GitTab({
   members,
   activityStatusById,
   activityLifecycleById,
+  activityOutputById,
 }: {
   members: RunGitReviewMember[];
   activityStatusById?: Map<string, ActivityRecord["status"]>;
   activityLifecycleById?: Map<string, ActivityRecord["lifecycle"]>;
+  activityOutputById?: Map<string, unknown>;
 }) {
   if (members.length === 0) return <p className="changes-empty">{GIT_REVIEW_EMPTY}</p>;
   return (
@@ -446,6 +466,7 @@ function GitTab({
           activityLifecycleById?.get(member.activityId) ?? fallbackLifecycle,
         );
         const running = chrome === "Running";
+        const stdout = gitStdoutText(activityOutputById?.get(member.activityId));
         return (
           <div className="vrow" key={`${member.activityId}::${member.invocationId}`}>
             {running ? (
@@ -459,6 +480,7 @@ function GitTab({
             <code className="vn" title={member.command}>
               {member.command}
             </code>
+            {stdout ? <pre className="git-stdout">{stdout}</pre> : null}
             {chrome !== "ok" ? <span className={`vt vt-${chrome.toLowerCase().replace(/\s+/g, "-")}`}>{chrome}</span> : null}
           </div>
         );
@@ -496,6 +518,7 @@ export const ChangesDock = memo(function ChangesDock({
   diffQueue,
   activityStatusById,
   activityLifecycleById,
+  activityOutputById,
   onAccept,
   onReject,
   onRevert,
@@ -625,6 +648,7 @@ export const ChangesDock = memo(function ChangesDock({
                 members={members}
                 activityStatusById={activityStatusById}
                 activityLifecycleById={activityLifecycleById}
+                activityOutputById={activityOutputById}
               />
             ))
           : null}

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Trusted command tests cover grok-acp host policy, not a Forge auto-mode.
 import { GrokAcpServer, type Session } from "./server.js";
 import { bindExecutionCapability } from "./executionCapability.js";
 

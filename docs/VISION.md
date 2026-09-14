@@ -38,6 +38,9 @@ Read this as the last six weeks of operator rulings, not as a new strategy.
 | 26 Aug | A-pool drained | No more Option A slices until a cert / Mac override / new evidence |
 | 27 Aug | 0.6.6 | The Option A wave is published, still unsigned |
 | 27 Aug | Roadmap refresh | Next *era* is shareable (0.7), then daily Grok desktop (1.0), then ACP platform (2.0) |
+| 30 Aug | House Code | Code is in-house **grok-acp**. Vendor `grok agent stdio` retired in Forge Code (`docs/ACP_CODE_GOAL.md`). Do not grow grok-acp into a skills/MCP/subagent engine. Vendor-spawn tests PARKED under `apps/host/parked-tests/`. |
+| 8 Sep | 0.6.7 | House Code published, still unsigned. SHA-in-app (S1 AC5) waits on the **next** installer (pin helper is on HEAD, not in that exe). |
+| 13 Sep | Ever-goal pause | Operator paused the stamp-comment mill. `/goal` is not a substitute for 0.7 Shareable. |
 
 Failed futures we already named:
 
@@ -94,7 +97,7 @@ Moving Chat onto `grok agent` is a **1.0+ product decision**, not an implementat
 
 | Horizon | We are this |
 |---------|-------------|
-| **Now (0.6.7)** | The operator’s Grok desktop. Unsigned Windows. Chat and Code are grok-acp. |
+| **Now (0.7.0 in-repo / 0.6.7 published)** | Operator Grok desktop. Unsigned Windows. Chat and Code are grok-acp. Next installer writes the SHA pin. |
 | **~2 quarters (0.7)** | A second human can install without us in the room. Publisher story is true (signed *or* honest-unsigned). First-run does not strand. |
 | **~1 year (1.0)** | P1 does not open the TUI for hard jobs. P2’s week stays in Chat. Mac exists. Remaining guest powers (worktrees / TUI handoff) are visible or honestly absent. Artifacts exist so Chat does not drown in the bubble. |
 | **2–3 years (2.0)** | Same house, new guests (Codex, Claude). File-based team policy. Still not an IDE. |

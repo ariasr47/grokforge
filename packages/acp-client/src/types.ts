@@ -1,4 +1,5 @@
 /** Normalized UI events emitted by the ACP host client. */
+// AcpUiEvent is vendor ACP session/update, not a Forge classifier.
 export type AcpUiEvent =
   | { type: "text_delta"; text: string }
   /** Summarized model reasoning / think-aloud (when API provides it). */
@@ -13,7 +14,7 @@ export type AcpUiEvent =
   | {
       type: "permission_request";
       id: string;
-      kind: "write" | "shell";
+      kind: "write" | "shell" | "ask";
       detail: string;
       /** Vendor toolCallId when present — File changes membership joins on this, not the RPC id. */
       toolCallId?: string | null;
@@ -87,7 +88,8 @@ export type AcpUiEvent =
 
 export type AuthMode = "signed_out" | "api_key" | "sub_pool";
 
-export type PermissionDecision = "allow_once" | "allow_session" | "deny";
+// Shell Allow may include an edited command string.
+export type PermissionDecision = "allow_once" | "allow_session" | "deny" | `option:${number}`;
 
 /** Ownership tuple carried on every prompt-owned ACP frame. */
 export interface AcpOwnership {
@@ -180,7 +182,7 @@ export interface AcpClient {
   cancel?(ownership?: AcpOwnership): Promise<void>;
   dispose(): Promise<void>;
   onEvent(handler: (event: AcpUiEvent) => void): () => void;
-  respondPermission(id: string, decision: PermissionDecision, ownership?: AcpOwnership): Promise<void>;
+  respondPermission(id: string, decision: PermissionDecision, ownership?: AcpOwnership, command?: string): Promise<void>;
   respondEdit?(
     id: string,
     action: "accept" | "reject",

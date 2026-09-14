@@ -17,6 +17,7 @@ import { isListAutoExecuted } from "../projections/trustedCommandProvenance";
 import {
   appliedAutomaticallyNote,
   changeListCoversActivity,
+  decisionRecordDetail,
   projectRunChangeList,
   type CatchUpSignal,
 } from "../projections/runChangeList";
@@ -587,7 +588,7 @@ export const RunSurface = memo(function RunSurface({ run, catchUp = { phase: "cl
           // permission/diff cards show — never a live control of its own.
           <div className="run-decision" key={d.requestId} role="group" aria-label={d.title}>
             <strong>{d.title}</strong>
-            <p>{d.detail}</p>
+            <p>{decisionRecordDetail(d.title, d.detail)}</p>
             {d.status === "pending" ? (
               <p className="run-decision-dock-hint">
                 {d.kind === "diff" ? SETTLE_IN_CHANGES : SETTLE_IN_DOCK}

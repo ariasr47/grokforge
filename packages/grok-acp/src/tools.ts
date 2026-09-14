@@ -7,6 +7,17 @@ import { ensureDirForFile, relativeToWorkspace, resolveUnderWorkspace } from "./
 import { checkShellCommand } from "./shell-policy.js";
 
 export const READ_FILE_EMIT_MAX_UTF8 = 100_000;
+export const TOOL_RESULT_CONTEXT_MAX = READ_FILE_EMIT_MAX_UTF8;
+export const TOOL_RESULT_TRUNCATION_MARK = "\n…[truncated for context]";
+
+/** Cap a tool result before it is pushed into the model transcript. */
+export function capToolResultForContext(
+  toolResult: string,
+  max = TOOL_RESULT_CONTEXT_MAX,
+): string {
+  if (toolResult.length <= max) return toolResult;
+  return toolResult.slice(0, max) + TOOL_RESULT_TRUNCATION_MARK;
+}
 
 /** Cap emitted extract text for read_file (UTF-8 bytes). */
 export function capReadFileEmittedText(
@@ -147,6 +158,26 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "ask_user",
+      description:
+        "Ask the operator a multiple-choice question and wait for their click on the Gate. Use when two implementations are mutually exclusive and you must not pick yourself. Do not write the question into the transcript instead of calling this tool.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The question shown on the Gate" },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description: "Two or more mutually exclusive choices, in click order",
+          },
+        },
+        required: ["question", "options"],
+      },
+    },
+  },
 ];
 export function toolDefinitionsFor(capability: { status: string; displayName?: string | null; dialect?: string | null }) {
   if (!capability) return TOOL_DEFINITIONS;
@@ -161,13 +192,15 @@ export type ToolName =
   | "apply_patch"
   | "run_shell"
   | "delete_file"
-  | "rename_file";
+  | "rename_file"
+  | "ask_user";
 
 export type MutationKind = "content" | "delete" | "rename";
 
 export function toolPermissionKind(
   name: string,
-): "read" | "write" | "shell" {
+): "read" | "write" | "shell" | "ask" {
+  if (name === "ask_user") return "ask";
   if (name === "run_shell") return "shell";
   if (
     name === "write_file" ||
@@ -333,43 +366,166 @@ function simpleUnifiedDiff(
   return body.endsWith("\n") ? body : `${body}\n`;
 }
 
-/** Minimal unified-diff apply for single-file patches produced by simpleUnifiedDiff or simple hunks. */
-export function applyUnifiedDiff(original: string, patch: string): string {
-  // Prefer full replacement when patch contains only + lines after headers (from our generator)
+type PatchHunk = {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  oldLines: string[];
+  newLines: string[];
+};
+
+function splitKeepNl(text: string): { lines: string[]; trailingNl: boolean } {
+  if (text === "") return { lines: [], trailingNl: false };
+  const trailingNl = text.endsWith("\n");
+  const body = trailingNl ? text.slice(0, -1) : text;
+  return { lines: body.split("\n"), trailingNl };
+}
+
+function joinKeepNl(lines: string[], trailingNl: boolean): string {
+  if (lines.length === 0) return trailingNl ? "\n" : "";
+  return `${lines.join("\n")}${trailingNl ? "\n" : ""}`;
+}
+
+function findLineSequence(haystack: string[], needle: string[]): number {
+  if (needle.length === 0) return 0;
+  for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    let ok = true;
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return i;
+  }
+  return -1;
+}
+
+function parseUnifiedHunks(patch: string): PatchHunk[] {
   const body = patch.replace(/\r\n/g, "\n");
-  const lines = body.split("\n");
-  const plus: string[] = [];
-  const minus: string[] = [];
-  let inHunk = false;
+  // A patch that ends with \n must not grow a phantom blank context line.
+  const { lines } = splitKeepNl(body);
+  const hunks: PatchHunk[] = [];
+  let current: PatchHunk | null = null;
   for (const line of lines) {
-    if (line.startsWith("@@")) {
-      inHunk = true;
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (header) {
+      current = {
+        oldStart: Number(header[1]),
+        oldCount: header[2] === undefined ? 1 : Number(header[2]),
+        newStart: Number(header[3]),
+        newCount: header[4] === undefined ? 1 : Number(header[4]),
+        oldLines: [],
+        newLines: [],
+      };
+      hunks.push(current);
       continue;
     }
-    if (!inHunk) continue;
-    if (line.startsWith("+") && !line.startsWith("+++")) plus.push(line.slice(1));
-    else if (line.startsWith("-") && !line.startsWith("---")) minus.push(line.slice(1));
+    if (!current) continue;
+    if (line.startsWith("\\")) continue;
+    if (line.startsWith("***")) continue;
+    if (line.startsWith("diff ") || line.startsWith("index ")) continue;
+    if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
+    if (line.startsWith("+") && !line.startsWith("+++")) current.newLines.push(line.slice(1));
+    else if (line.startsWith("-") && !line.startsWith("---")) current.oldLines.push(line.slice(1));
     else if (line.startsWith(" ")) {
-      plus.push(line.slice(1));
-      minus.push(line.slice(1));
+      current.oldLines.push(line.slice(1));
+      current.newLines.push(line.slice(1));
+    } else if (line === "") {
+      // Models often omit the leading space on blank context lines.
+      current.oldLines.push("");
+      current.newLines.push("");
+    } else {
+      // Models often omit the leading space on every context line.
+      current.oldLines.push(line);
+      current.newLines.push(line);
     }
   }
-  if (plus.length === 0 && minus.length === 0) {
-    throw new Error("Empty or unparseable patch");
+  return hunks;
+}
+
+function quoteHunkLine(text: string, other: string): string {
+  if (text.length === 0) return "(blank line)";
+  if (text.length <= 240) return JSON.stringify(text);
+  let i = 0;
+  const n = Math.min(text.length, other.length);
+  while (i < n && text[i] === other[i]) i++;
+  const from = Math.max(0, i - 40);
+  const to = Math.min(text.length, i + 80);
+  return JSON.stringify(`${from > 0 ? "…" : ""}${text.slice(from, to)}${to < text.length ? "…" : ""}`);
+}
+
+function walkHunkMismatch(
+  work: string[],
+  oldLines: string[],
+  start: number,
+): { lineNo: number; got: string; want: string } {
+  let off = 0;
+  while (off < oldLines.length && (work[start + off] ?? "") === (oldLines[off] ?? "")) {
+    off++;
   }
-  // If original matches minus block as whole file, replace with plus
+  return {
+    lineNo: start + off + 1,
+    got: work[start + off] ?? "",
+    want: oldLines[off] ?? "",
+  };
+}
+
+function describeHunkFail(work: string[], hunk: PatchHunk, at: number): string {
+  const header = `Could not apply patch hunk @@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@.`;
+  const firstWant = hunk.oldLines[0] ?? "";
+  const found0 = firstWant.length > 0 ? work.indexOf(firstWant) : -1;
+  if (found0 >= 0 && found0 !== at) {
+    const w = walkHunkMismatch(work, hunk.oldLines, found0);
+    return `${header} context not found as a block; first expected line at file line ${found0 + 1}. file line ${w.lineNo}: ${quoteHunkLine(w.got, w.want)}; patch expected: ${quoteHunkLine(w.want, w.got)}`;
+  }
+  const w = walkHunkMismatch(work, hunk.oldLines, at);
+  const missing = found0 < 0 && firstWant.length > 0 ? " first expected line not in file." : "";
+  return `${header} file line ${w.lineNo}: ${quoteHunkLine(w.got, w.want)}; patch expected: ${quoteHunkLine(w.want, w.got)}${missing}`;
+}
+
+/** Apply a unified diff hunk-by-hunk. Does not steer write_file on failure. */
+export function applyUnifiedDiff(original: string, patch: string): string {
+  const hunks = parseUnifiedHunks(patch);
+  if (hunks.length === 0) {
+    const first =
+      patch
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .find(
+          (line) =>
+            line.length > 0 &&
+            !line.startsWith("diff ") &&
+            !line.startsWith("index ") &&
+            !line.startsWith("--- ") &&
+            !line.startsWith("+++ ") &&
+            !line.startsWith("***"),
+        ) ?? "";
+    throw new Error(
+      `Empty or unparseable patch (no @@ hunk); first line: ${JSON.stringify(first.slice(0, 240))}`,
+    );
+  }
   const origNorm = original.replace(/\r\n/g, "\n");
-  const minusText = minus.join("\n");
-  if (origNorm === minusText || origNorm === minusText + "\n" || original === "") {
-    return plus.join("\n");
+  const { lines, trailingNl } = splitKeepNl(origNorm);
+  const work = [...lines];
+  const ordered = [...hunks].sort((a, b) => b.oldStart - a.oldStart);
+  for (const hunk of ordered) {
+    const at = hunk.oldCount === 0 ? Math.max(0, hunk.oldStart) : hunk.oldStart - 1;
+    const exact =
+      hunk.oldLines.length === 0
+        ? at
+        : work.slice(at, at + hunk.oldLines.length).join("\n") === hunk.oldLines.join("\n")
+          ? at
+          : -1;
+    const idx = exact >= 0 ? exact : findLineSequence(work, hunk.oldLines);
+    if (idx < 0) {
+      throw new Error(describeHunkFail(work, hunk, at));
+    }
+    work.splice(idx, hunk.oldLines.length, ...hunk.newLines);
   }
-  // Fallback: if minus is substring, replace once
-  if (minusText && origNorm.includes(minusText)) {
-    return origNorm.replace(minusText, plus.join("\n"));
-  }
-  // Last resort: return plus as full file when original empty
-  if (!original) return plus.join("\n");
-  throw new Error("Could not apply patch cleanly; use write_file with full content");
+  return joinKeepNl(work, trailingNl);
 }
 
 async function walkFiles(
@@ -717,6 +873,7 @@ export async function runShell(
       shell: false,
       env: capability.effectiveEnvironment,
       windowsHide: true,
+      windowsVerbatimArguments: process.platform === "win32",
     });
     let stdout = "";
     let stderr = "";

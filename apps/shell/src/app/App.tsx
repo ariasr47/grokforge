@@ -25,6 +25,7 @@ import { composerChromeBusy, endPageSend, queueAdmitted } from "../composer/comp
 import { activityIsVendorSessionPlan, activityLooksLikeWrite } from "../projections/activityWriteLike";
 import { atFileSuggestions } from "../composer/atFileQuery";
 import { recentCrashes } from "../lib/crashSink";
+import { sessionChromeModel } from "../lib/sessionChromeModel";
 
 import { EffortControl } from "../composer/EffortControl";
 import { ContextRing } from "../composer/ContextRing";
@@ -861,6 +862,18 @@ export function App() {
     const lastId = ids[ids.length - 1];
     return (lastId ? runProjection.runsById[lastId]?.usage : undefined) ?? null;
   }, [runProjection, sessionId]);
+  const latestSessionRunAppliedModel = useMemo(() => {
+    const ids = runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId);
+    const lastId = ids[ids.length - 1];
+    const applied = (lastId ? runProjection.runsById[lastId]?.model as { appliedModel?: unknown } | undefined : undefined)?.appliedModel;
+    return typeof applied === "string" && applied.trim() ? applied : null;
+  }, [runProjection, sessionId]);
+  const chromeModel = sessionChromeModel({
+    appliedModel: state?.appliedModel,
+    lastRunAppliedModel: latestSessionRunAppliedModel,
+    sessionModel: state?.model,
+    draft: modelDraft,
+  });
   const projectedRunIds = useMemo(() => new Set(
     runProjection.runOrder.filter((id) => runProjection.runsById[id]?.sessionId === sessionId),
   ), [runProjection, sessionId]);
@@ -2302,7 +2315,7 @@ export function App() {
     [toast],
   );
 
-  /** Gate's "Edit command" — prefills the composer with the pending command, unchanged. */
+  /** Gate's "Edit command" — prefills the composer with the pending command, unchanged. ChatView also denies the pending shell so the composer unlocks. */
   const editGateCommand = useCallback((command: string) => {
     setDraft(command);
     setTimeout(() => composerRef.current?.focus(), 0);
@@ -2578,7 +2591,7 @@ export function App() {
         // which inEditable already excludes here.
         if (permissions.length > 0) {
           e.preventDefault();
-          void decidePermission("allow_once");
+          void decidePermission(permissions[0]!.kind === "ask" ? "option:0" : "allow_once");
           return;
         }
         if (pendingPlanDecision && planSettling !== true) {
@@ -2589,6 +2602,7 @@ export function App() {
       KeyY: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (permissions.length === 0) return;
+        if (permissions[0]?.kind === "ask") return;
         if (inEditable(e.target)) return;
         // F1: inEditable alone is not enough — it only rules out text
         // fields, not "focus is somewhere that is not this gate". Require
@@ -2609,6 +2623,7 @@ export function App() {
       KeyS: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (permissions.length === 0) return;
+        if (permissions[0]?.kind === "ask") return;
         if (inEditable(e.target)) return;
         if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
@@ -2616,7 +2631,7 @@ export function App() {
       },
       Digit1: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (!pendingRecoveryDecision) return;
+        if (!pendingRecoveryDecision && permissions[0]?.kind !== "ask") return;
         if (inEditable(e.target)) return;
         if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
@@ -2624,7 +2639,7 @@ export function App() {
       },
       Digit2: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (!pendingRecoveryDecision) return;
+        if (!pendingRecoveryDecision && permissions[0]?.kind !== "ask") return;
         if (inEditable(e.target)) return;
         if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
@@ -2632,7 +2647,7 @@ export function App() {
       },
       Digit3: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (!pendingRecoveryDecision) return;
+        if (!pendingRecoveryDecision && permissions[0]?.kind !== "ask") return;
         if (inEditable(e.target)) return;
         if (!dockOwnsFocus(e.target)) return;
         e.preventDefault();
@@ -3114,7 +3129,7 @@ export function App() {
         <span className="composer-identity">
           <CodeAgentStatus projection={codeAgentComposer} />
           <span className="composer-meta">
-            {state?.appliedModel || state?.model || modelDraft}
+            {chromeModel}
           </span>
         </span>
         <ProjectInstructionsStatus projection={projectInstructionsComposer} />
@@ -3123,7 +3138,7 @@ export function App() {
       <>
         <span>{chatHomeLabel || "Chat"}</span>
         <span className="composer-meta">
-          {state?.appliedModel || state?.model || modelDraft}
+          {chromeModel}
         </span>
       </>
     );
@@ -3311,6 +3326,7 @@ export function App() {
             <ChatView
               activeHome={activeHome}
               state={state}
+              chromeModel={chromeModel}
               effortLevel={effortLevel}
               runStartedAt={runStartedAt}
               liveNow={liveNow}
@@ -3453,6 +3469,7 @@ export function App() {
                 diffQueue={diffQueue}
                 activityStatusById={changesActivityStatusById}
                 activityLifecycleById={changesActivityLifecycleById}
+                activityOutputById={changesActivityOutputById}
                 onAccept={onChangesDockAccept}
                 onReject={onChangesDockReject}
                 onRevert={onChangesDockRevert}

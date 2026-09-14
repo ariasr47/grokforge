@@ -452,7 +452,7 @@ export class AgentSession {
   private sessionWriteGrant = false;
   private sessionShellGrant = false;
   private sessionDeniedWritePaths = new Set<string>();
-  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell";path?:string;status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
+  private pendingDecisions = new Map<string,{sessionId:string;runId:string;generation:number;invocationId:string;kind:DecisionKind;permissionKind?:"write"|"shell"|"ask";path?:string;status:"pending"|"accepted"|"declined"|"expired"|"kept_planning"|"cancelled";expiresAt:number;replyDialect?:"acp_result"|"grok_permission_respond"}>();
   /** In-memory queued vendor turn-end while an ask was already open at RPC return. */
   private queuedTurnEnd = new Map<string, { terminalKind: TerminalKind; failure: FailureView }>();
   private planEngaged = false;
@@ -495,7 +495,7 @@ export class AgentSession {
 
   constructor(stableSessionId?: string, opts?: { skillsCatalogObtainTimeoutMs?: number }) {
     this.stableClientSessionId = stableSessionId ?? null;
-    this.runHydration = this.runCoordinator.hydrate(stableSessionId).then(() => this.restorePlanDecisions()).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
+    this.runHydration = this.runCoordinator.hydrate(stableSessionId).then(() => this.restorePlanDecisions()).then(() => this.restoreAppliedModelFromJournal()).catch((error) => { throw Object.assign(new Error("Run journal unavailable"), { code: "journal_unavailable", cause: error }); });
     this.cfg = loadConfig();
     const timeoutRaw = Number(process.env.GROKFORGE_SKILLS_OBTAIN_TIMEOUT_MS);
     this.skillsCatalogObtainTimeoutMs =
@@ -532,7 +532,10 @@ export class AgentSession {
   }
 
   /** State surfaces await this before reading the first post-reload snapshot. */
-  async awaitReady(): Promise<void> { await this.ready; }
+  async awaitReady(): Promise<void> {
+    await this.ready;
+    try { await this.runHydration; } catch { /* journal unavailable: appliedModel stays null */ }
+  }
 
   /** Refresh current-workspace policy so legacy state reflects stable-session saves. */
   async refreshWorkspacePolicy(): Promise<void> {
@@ -2065,7 +2068,7 @@ export class AgentSession {
                   invocationId,
                   kind: "permission",
                   status: "pending",
-                  title: ev.kind === "shell" ? "Run shell" : "Write file",
+                  title: ev.kind === "shell" ? "Run shell" : ev.kind === "ask" ? "Grok has a question" : "Write file",
                   detail: ev.detail,
                   expiresAt: null,
                   policy: run.policy,
@@ -2996,14 +2999,14 @@ export class AgentSession {
     return this.runCoordinator.get(runId)!;
   }
 
-  async permission(id: string, decision: PermissionDecision, ownership?: {sessionId:string;runId:string;connectionGeneration:number}, invocationId?: string): Promise<"accepted"|"declined"> {
+  async permission(id: string, decision: PermissionDecision, ownership?: {sessionId:string;runId:string;connectionGeneration:number}, invocationId?: string, command?: string): Promise<"accepted"|"declined"> {
     if (!this.client) throw new Error("Agent not connected");
     if (ownership && !this.getRun(ownership.runId, ownership.sessionId)) throw Object.assign(new Error("decision not found"), {code:"decision_not_found"});
     const run = ownership ? this.runCoordinator.get(ownership.runId) : undefined;
     if (run?.state === "terminal") throw Object.assign(new Error("Run is terminal"), { code: "run_terminal" });
     const pending=this.pendingDecisions.get(id); const expired = this.isDecisionExpired(pending); if(ownership&&(!pending||pending.sessionId!==ownership.sessionId||pending.runId!==ownership.runId||pending.generation!==ownership.connectionGeneration||pending.kind!=="permission"||pending.status!=="pending"||expired||pending.invocationId!==invocationId)) throw Object.assign(new Error(expired?"decision expired":"decision not found"),{code:expired?"request_expired":"decision_not_found"});
-    await this.client.respondPermission(id, decision, ownership);
-    log("debug","permission acknowledged",{id,decision,runId:ownership?.runId,sessionId:ownership?.sessionId});
+    await this.client.respondPermission(id, decision, ownership, command);
+    log("debug","permission acknowledged",{id,decision,command:command ?? null,runId:ownership?.runId,sessionId:ownership?.sessionId});
     if (decision === "allow_session") {
       if (pending?.permissionKind === "write") this.sessionWriteGrant = true;
       if (pending?.permissionKind === "shell") this.sessionShellGrant = true;
@@ -3018,7 +3021,7 @@ export class AgentSession {
     }
     if(pending) pending.status=decision==="deny"?"declined":"accepted";
     if (pending) this.pendingDecisions.delete(id);
-    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:pending?.permissionKind==="shell"?"Run shell":"Write file",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
+    if (ownership && run) { await this.runCoordinator.appendOwnedEvent(ownership.runId,{kind:"decision_request",request:{requestId:id,invocationId:pending?.invocationId??id,kind:"permission",status:decision==="deny"?"declined":"accepted",title:pending?.permissionKind==="shell"?"Run shell":pending?.permissionKind==="ask"?"Grok has a question":"Write file",detail:"",expiresAt:null,policy:run.policy}},"decision_request").catch(()=>undefined); }
     if (ownership) await this.drainQueuedTurnEnd(ownership.runId);
     return decision === "deny" ? "declined" : "accepted";
   }
@@ -3356,6 +3359,17 @@ export class AgentSession {
         });
       }).catch(() => undefined);
     }
+  }
+
+  private async restoreAppliedModelFromJournal(): Promise<void> {
+    if (this.appliedModel) return;
+    const snapshots = await this.runCoordinator.listSnapshots();
+    const owned = this.stableClientSessionId
+      ? snapshots.filter((snap) => snap.sessionId === this.stableClientSessionId)
+      : snapshots;
+    const latest = owned.slice().sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+    const restored = latest?.model?.appliedModel?.trim();
+    if (restored) this.appliedModel = restored;
   }
 
   private async restorePlanDecisions(): Promise<void> {

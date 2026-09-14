@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+// Project instructions are host-read AGENTS.md, not a Forge skills catalog.
 export const PROJECT_INSTRUCTION_CANDIDATES = ["AGENTS.md", "CLAUDE.md"] as const;
 export const PROJECT_INSTRUCTIONS_MAX_BYTES = 100_000;
 

@@ -1,6 +1,7 @@
 /** GATE-named hooks advertisement pin — do not invent; update only from GATE_SPIKE_DISCRIMINANT.md */
 
 /** Complete execution member: JSON-RPC notification, not session/update. */
+// Advertised hooks are vendor JSON-RPC, not a Forge skills/hooks engine.
 export const NAMED_HOOKS_JSONRPC_METHOD = "_x.ai/session_notification";
 /** Roster obtain (advertised-not-firing). Extra `result` wrap on the JSON-RPC result. */
 export const NAMED_HOOKS_JSONRPC_LIST = "_x.ai/hooks/list";

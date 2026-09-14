@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Skills catalog is vendor-advertised, not a Forge skills engine.
 import { StdioAcpClient } from "./client.js";
 import type { AcpUiEvent, HostExecutionProfile } from "./types.js";
 

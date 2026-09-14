@@ -1,6 +1,7 @@
 import { compileFixedInspection } from "./inspection-grammar.js";
 import { matchTrustedCommandClass } from "./trusted-command-match.js";
 
+// Authorization broker is host policy, not a Forge auto-mode.
 export type AuthorizationResult = {
   decision: "auto" | "decision" | "refuse";
   automaticEligibility:

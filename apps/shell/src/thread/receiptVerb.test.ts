@@ -159,6 +159,29 @@ test("pending decision: not-eligible + unresolved execution waits on you", () =>
   assert.equal(r.tone, "waiting");
 });
 
+test("pending ask_user receipt shows the question, not the raw JSON input", () => {
+  const r = receiptVerb(
+    record({
+      name: "ask_user",
+      command: null,
+      summary: null,
+      execution: null,
+      status: "running",
+      lifecycle: "pending",
+      automaticEligibility: "not_eligible",
+      autoApplied: false,
+      input: {
+        question: "Which copy for GATE_ASK_POLICY?",
+        options: ["keep current", "change it"],
+      },
+    }),
+  );
+  assert.equal(r.verb, "Waiting for you");
+  assert.equal(r.what, "Which copy for GATE_ASK_POLICY?");
+  assert.equal(r.tail, "needs approval");
+  assert.doesNotMatch(r.what, /\{/);
+});
+
 test("generic: a name matching no pattern falls back to Did", () => {
   const r = receiptVerb(record({ name: "mystery_action", path: null, input: null, command: null }));
   assert.equal(r.verb, "Did");

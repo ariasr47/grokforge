@@ -1,6 +1,6 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { Gate } from "./Gate";
 import {
   GATE_ALLOW,
@@ -115,6 +115,52 @@ test("shell tier: Edit command fires its handler and never appears on write", ()
   );
   screen.getByRole("button", { name: GATE_EDIT_COMMAND }).click();
   assert.equal(edited, 1);
+});
+
+test("shell tier: Edit command keeps the Gate and Allow runs the edited command (YOU 03:00)", async () => {
+  let allowed: string | undefined;
+  render(
+    <Gate
+      tier="shell"
+      detail={'Run: node -e "console.log(\'forge-edit-wrong\')"'}
+      onAllow={(cmd) => {
+        allowed = cmd;
+      }}
+      onAllowSession={() => {}}
+      onDeny={() => {}}
+      onEditCommand={() => {}}
+    />,
+  );
+  screen.getByRole("button", { name: GATE_EDIT_COMMAND }).click();
+  assert.equal(screen.queryAllByRole("region", { name: "Grok wants to run a command" }).length, 1);
+  const input = await waitFor(() => screen.getByRole("textbox", { name: "Command to run" }) as HTMLTextAreaElement);
+  assert.equal(input.value, 'node -e "console.log(\'forge-edit-wrong\')"');
+  const native = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+  assert.ok(native);
+  native!.call(input, 'node -e "console.log(\'forge-edit-right\')"');
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  screen.getByRole("button", { name: GATE_ALLOW }).click();
+  assert.equal(allowed, 'node -e "console.log(\'forge-edit-right\')"');
+});
+
+test("shell tier: Allow reads the textarea DOM value even if React onChange did not fire", async () => {
+  let allowed: string | undefined;
+  render(
+    <Gate
+      tier="shell"
+      detail={'Run: node -e "console.log(\'forge-edit-wrong\')"'}
+      onAllow={(cmd) => {
+        allowed = cmd;
+      }}
+      onAllowSession={() => {}}
+      onDeny={() => {}}
+    />,
+  );
+  screen.getByRole("button", { name: GATE_EDIT_COMMAND }).click();
+  const input = await waitFor(() => screen.getByRole("textbox", { name: "Command to run" }) as HTMLTextAreaElement);
+  input.value = 'node -e "console.log(\'forge-edit-right\')"';
+  screen.getByRole("button", { name: GATE_ALLOW }).click();
+  assert.equal(allowed, 'node -e "console.log(\'forge-edit-right\')"');
 });
 
 test("shell tier: Allow/Deny/AllowSession call their handlers", () => {

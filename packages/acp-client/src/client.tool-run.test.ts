@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Tool-run events are ACP session/update, not a Forge MCP host.
 import { StdioAcpClient } from "./client.js";
 import { isValidToolRunEvent } from "./types.js";
 

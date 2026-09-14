@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// Live: vendor non-zero exit must stay visible in Forge chrome.
 import { outputImpliesNonZeroExit, vendorUpdateImpliesNonZeroExit } from "./vendorShellExit.js";
 
 test("empty or missing output is not a failure", () => {

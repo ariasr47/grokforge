@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Plan-phase updates are vendor ACP, not a Forge plan engine.
 import { StdioAcpClient } from "./client.js";
 import { isValidToolRunEvent } from "./types.js";
 

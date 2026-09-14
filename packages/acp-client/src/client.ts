@@ -1,3 +1,4 @@
+// StdioAcpClient is vendor ACP JSON-RPC, not a Forge MCP host.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -334,10 +335,12 @@ export class StdioAcpClient implements AcpClient {
     this.pending.clear();
   }
 
+  // In-place Allow: permission/respond must include command (host loads dist).
   async respondPermission(
     id: string,
     decision: PermissionDecision,
     ownership?: AcpOwnership,
+    command?: string,
   ): Promise<void> {
     if (this.pendingAcpRequestIds.has(id)) {
       const optionId =
@@ -352,7 +355,13 @@ export class StdioAcpClient implements AcpClient {
       this.pendingAcpRequestIds.delete(id);
       return;
     }
-    await this.request("permission/respond", { id, decision, ...(ownership ?? this.activeOwnership ?? {}) });
+    const trimmed = command?.trim();
+    await this.request("permission/respond", {
+      id,
+      decision,
+      ...(trimmed ? { command: trimmed } : {}),
+      ...(ownership ?? this.activeOwnership ?? {}),
+    });
   }
 
   async respondEdit(
@@ -656,7 +665,7 @@ export class StdioAcpClient implements AcpClient {
         this.emit({
           type: "permission_request",
           id: String(p.id ?? ""),
-          kind: (p.kind as "write" | "shell") ?? "shell",
+          kind: p.kind === "write" || p.kind === "ask" ? p.kind : "shell",
           detail: String(p.detail ?? ""),
         });
         break;

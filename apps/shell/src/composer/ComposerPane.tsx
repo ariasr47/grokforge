@@ -137,6 +137,7 @@ export function composerShouldGrow(
 const COMPOSER_MAX_HEIGHT = 200;
 const META_HINT_IDLE = "⏎ send · ⇧⏎ line · Ctrl+K commands";
 const META_HINT_BUSY = "⇧⏎ queue · esc stop";
+const META_HINT_GATE = "⇧⏎ queue · esc deny";
 
 export function ComposerPane({
   dragOver,
@@ -400,9 +401,12 @@ export function ComposerPane({
           {busy ? (
             <Button size="sm" variant="ghost" onClick={onCancel}>
               <span>Stop</span>
-              {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: see the Queue
-                  button's kbd above — same convention as Gate.tsx. */}
-              <kbd aria-hidden="true">esc</kbd>
+              {/* Gate Deny owns esc while a card is pending; Stop keeps the
+                  click path but must not also claim the key. */}
+              {!decisionPending ? (
+                /* biome-ignore lint/a11y/noAriaHiddenOnFocusable: same kbd hint as Queue */
+                <kbd aria-hidden="true">esc</kbd>
+              ) : null}
             </Button>
           ) : (
             <Button
@@ -420,7 +424,13 @@ export function ComposerPane({
       </div>
       <div className="cmeta">
         <span className="cmeta-facts">{metaFacts}</span>
-        <span className="r">{busy ? META_HINT_BUSY : META_HINT_IDLE}</span>
+        <span className="r">
+          {busy
+            ? decisionPending
+              ? META_HINT_GATE
+              : META_HINT_BUSY
+            : META_HINT_IDLE}
+        </span>
       </div>
       {footer}
     </section>

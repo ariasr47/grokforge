@@ -1,4 +1,5 @@
 /** Vendor ACP `completed` means the tool call finished, not exit 0. */
+// Vendor shell: non-zero exit must stay visible in Forge chrome.
 export function outputImpliesNonZeroExit(output: string | null | undefined): boolean {
   if (typeof output !== "string") return false;
   const text = output.trim();

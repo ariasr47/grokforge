@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { PlanProposedMember } from "../projections/runReducer";
 import { matchTrustedCommandClassId, trustedCommandClassLabel } from "../projections/trustedCommandProvenance";
 import { Button } from "../ui/Button";
@@ -44,10 +44,10 @@ export type GateProps =
       diffStat?: GateDiffStat | null;
       /** Write only, up to 2 lines shown, when the request carries a diff. */
       diffSnippet?: readonly string[] | null;
-      onAllow: () => void;
+      onAllow: (command?: string) => void;
       onAllowSession: () => void;
       onDeny: () => void;
-      /** Shell only — prefills the composer with the command text. */
+      /** Shell only — enter in-place edit on this Gate (parent must not deny). */
       onEditCommand?: () => void;
       /** Write only — persists Trusted workspace policy for this folder. */
       onTrustFolder?: () => void;
@@ -96,6 +96,11 @@ function diffLineClass(line: string): string {
   return "ln";
 }
 
+/** grok-acp prefixes shell Gates with `Run: `; tests may pass the bare command. */
+export function shellCommandFromDetail(detail: string): string {
+  return detail.startsWith("Run: ") ? detail.slice("Run: ".length) : detail;
+}
+
 function PermissionGate(props: Extract<GateProps, { tier: "shell" | "write" }>) {
   const isShell = props.tier === "shell";
   const title = isShell ? GATE_SHELL_TITLE : GATE_WRITE_TITLE;
@@ -103,6 +108,16 @@ function PermissionGate(props: Extract<GateProps, { tier: "shell" | "write" }>) 
   const matchedClass = isShell ? matchTrustedCommandClassId(props.detail) : null;
   const sessionLabel = gateAllowSessionLabel(matchedClass ? trustedCommandClassLabel(matchedClass) : null);
   const snippet = !isShell && props.diffSnippet ? props.diffSnippet.slice(0, 2) : [];
+  const [editing, setEditing] = useState(false);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  const allow = () => {
+    const live = (editRef.current?.value ?? shellCommandFromDetail(props.detail)).trim();
+    props.onAllow(isShell && editing && live ? live : undefined);
+  };
+  const startEdit = () => {
+    setEditing(true);
+    props.onEditCommand?.();
+  };
   return (
     <div className="gate" role="region" aria-label={title}>
       <GateHeader tone="needs" title={title} policy={policy} />
@@ -111,7 +126,25 @@ function PermissionGate(props: Extract<GateProps, { tier: "shell" | "write" }>) 
             .cmd's own text differs from the bare command/path that .why
             renders separately below — otherwise the two would collide as
             duplicate exact-text matches for anything querying by detail. */}
-        {isShell ? `$ ${props.detail}` : props.detail}
+        {isShell && editing ? (
+          <textarea
+            ref={editRef}
+            className="cmd-edit"
+            aria-label="Command to run"
+            rows={2}
+            defaultValue={shellCommandFromDetail(props.detail)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                allow();
+              }
+            }}
+          />
+        ) : isShell ? (
+          `$ ${props.detail}`
+        ) : (
+          props.detail
+        )}
         {isShell && props.cwd ? <span className="cwd">{props.cwd}</span> : null}
         {!isShell && props.diffStat ? (
           <span className="cwd">
@@ -129,9 +162,9 @@ function PermissionGate(props: Extract<GateProps, { tier: "shell" | "write" }>) 
           ))}
         </div>
       ) : null}
-      {isShell ? <div className="why">{props.detail}</div> : null}
+      {isShell && !editing ? <div className="why">{props.detail}</div> : null}
       <div className="acts">
-        <Button variant="accent" onClick={props.onAllow}>
+        <Button variant="accent" onClick={allow}>
           <span>{GATE_ALLOW}</span>
           <kbd aria-hidden="true">⏎</kbd>
         </Button>
@@ -143,10 +176,10 @@ function PermissionGate(props: Extract<GateProps, { tier: "shell" | "write" }>) 
           <span>{GATE_DENY}</span>
           <kbd aria-hidden="true">esc</kbd>
         </Button>
-        {isShell && props.onEditCommand ? (
+        {isShell ? (
           <>
             <span className="spacer" />
-            <Button variant="ghost" onClick={props.onEditCommand}>
+            <Button variant="ghost" onClick={startEdit}>
               <span>{GATE_EDIT_COMMAND}</span>
             </Button>
           </>

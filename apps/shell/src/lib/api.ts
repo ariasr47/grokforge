@@ -572,7 +572,7 @@ export type ServerEvent =
   | {
       type: "permission_request";
       id: string;
-      kind: "write" | "shell";
+      kind: "write" | "shell" | "ask";
       detail: string;
     }
   | {
@@ -774,7 +774,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   sessionPermissionMode: (body: { sessionId: string; mode: "workspace" | "bypass_permissions"; activationToken?: string }) => json<{ sessionId: string; effectivePermissionMode: string; bypassPermissions: Record<string, unknown> }>("/api/session-permission-mode", { method: "POST", body: JSON.stringify(body) }),
-  runPermission: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; decision: "allow_once" | "allow_session" | "deny" }) => json<{ ok: boolean }>("/api/permission", { method: "POST", body: JSON.stringify(body) }),
+  runPermission: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; decision: "allow_once" | "allow_session" | "deny" | `option:${number}`; command?: string }) => json<{ ok: boolean }>("/api/permission", { method: "POST", body: JSON.stringify(body) }),
   runDiff: (body: { sessionId: string; runId: string; requestId: string; invocationId: string; editId: string; action: "accept" | "reject" }) => json<{ ok: boolean }>("/api/diff", { method: "POST", body: JSON.stringify(body) }),
   editRecovery: (body: { sessionId: string; runId: string; editId: string }) => json<{ ok: boolean; activity: unknown }>("/api/edit-recovery", { method: "POST", body: JSON.stringify(body) }),
   workspaceFiles: () => json<{ files: string[] }>("/api/workspace/files"),
@@ -924,7 +924,7 @@ export const api = {
     json<{ ok: boolean }>("/api/oauth/cancel", { method: "POST", body: "{}" }),
   oauthLogout: () =>
     json<PublicState>("/api/oauth/logout", { method: "POST", body: "{}" }),
-  permission: (id: string, decision: "allow_once" | "allow_session" | "deny") =>
+  permission: (id: string, decision: "allow_once" | "allow_session" | "deny" | `option:${number}`) =>
     json<{ ok: boolean }>("/api/permission", {
       method: "POST",
       body: JSON.stringify({ id, decision }),

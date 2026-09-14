@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Workspace-confinement tests cover grok-acp protected delete, not a Forge undo engine.
 import { parseProtectedDelete } from "./protected-delete.js";
 import { AuthorizationBroker } from "./authorization-broker.js";
 

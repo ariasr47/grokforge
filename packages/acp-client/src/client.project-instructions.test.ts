@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Project instructions are host-supplied, not a Forge skills catalog.
 import { StdioAcpClient } from "./client.js";
 
 const profile = {

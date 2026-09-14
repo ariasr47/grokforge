@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// Session grant is Review/Trusted policy, not a Forge auto-mode.
 import { GrokAcpServer, type Session } from "./server.js";
 import { bindExecutionCapability } from "./executionCapability.js";
 

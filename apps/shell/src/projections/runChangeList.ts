@@ -14,17 +14,17 @@ export interface PendingDiff {
 
 export interface PermissionReq {
   id: string;
-  kind: "write" | "shell";
+  kind: "write" | "shell" | "ask";
   detail: string;
   sessionId: string;
   runId: string;
   invocationId: string;
 }
 
-export type PermissionTitle = "Run shell" | "Write file";
+export type PermissionTitle = "Run shell" | "Write file" | "Grok has a question";
 
 export function permissionChromeFromTitle(title: string): {
-  kind: "shell" | "write";
+  kind: "shell" | "write" | "ask";
   question: string;
   rail: string;
 } | null {
@@ -34,7 +34,22 @@ export function permissionChromeFromTitle(title: string): {
   if (title === "Write file") {
     return { kind: "write", question: "Allow saving a file?", rail: "Permission requested: write" };
   }
+  if (title === "Grok has a question") {
+    return { kind: "ask", question: "Grok has a question", rail: "Permission requested: ask" };
+  }
   return null;
+}
+
+/** Transcript record for a pending decision — ask JSON becomes the question. */
+export function decisionRecordDetail(title: string, detail: string): string {
+  if (title !== "Grok has a question") return detail;
+  try {
+    const parsed = JSON.parse(detail) as { question?: unknown };
+    if (typeof parsed.question === "string" && parsed.question.trim()) return parsed.question.trim();
+  } catch {
+    /* pass-through */
+  }
+  return detail;
 }
 
 function isLiveEnvelopeDecision(run: RunProjectionRun, d: DecisionRequest): boolean {

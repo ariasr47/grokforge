@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// Catalog-pin tests cover grok-acp Trusted match, not a Forge Git UI.
 import { matchTrustedCommandClass } from "./trusted-command-match.js";
 
 test("Trusted catalog still excludes bare git and gh (git-review observe must not expand)", () => {
