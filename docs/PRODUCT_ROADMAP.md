@@ -13,14 +13,14 @@
 | | |
 |--|--|
 | **Product** | ACP-native desktop shell. Chat + Code. Voidglass. Review / Trusted / Bypass. |
-| **Published** | **v0.6.7** Windows unsigned NSIS. Code is **house grok-acp**. Gate. Changes. Home. |
-| **Source (HEAD)** | **v0.7.0** in-repo. Pin helper (`write-installer-pin.ps1`) is in this cut. SHA-in-app (S1 AC5) still needs GATE Q on a built installer + operator `release`. Do not re-stamp 0.6.7. |
-| **Not published** | Signed cert. Mac. Next installer (pin helper). |
+| **Published** | **v0.7.1** unsigned NSIS. Canvas stdout no longer breaks ACP. SHA pin in Settings/first-run. |
+| **Source (HEAD)** | **v0.7.1** — same as published. Do not re-stamp 0.6.7. |
+| **Not published** | Signed cert. Mac. |
 | **Wedge** | Grok’s official surface is a TUI + `grok agent stdio`. Forge is the Grok *desktop that is not a terminal*. |
 | **Next era** | **0.7 Shareable** — a second human installs without us in the room. |
 | **Loop** | `docs/FORGE_EVER_GOAL.md` — use Forge to build Forge. Hunt §9. Goal is not completable; operator is the only STOP. |
 
-**Next product decision (operator):** keep looping on source, *or* cut the next installer so S1 AC5 and update-path can close. Do not re-stamp 0.6.7.
+**Next product decision (operator):** S4 update-path from a 0.6.7/0.7.0 box to 0.7.1. Do not re-stamp 0.6.7.
 
 ---
 

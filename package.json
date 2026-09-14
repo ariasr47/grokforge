@@ -1,6 +1,6 @@
 {
   "name": "grokforge",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Forge — ACP-native desktop agent shell (host + tools + diffs; Grok flagship)",
   "workspaces": [
